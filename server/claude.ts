@@ -127,7 +127,7 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
 
 /* Canned replies for TREECHATS_FAKE=1. Asks for JSON get JSON back, so naming and fan-out work offline. */
 function fakeReply(said: string): string {
-  if (/Reply with only JSON/i.test(said)) {
+  if (/Reply with only (a )?JSON/i.test(said)) {
     if (/"options"/.test(said)) return '{"options":[{"title":"First way","prompt":"Let\'s try the first way."},{"title":"Second way","prompt":"Let\'s try the second way."}],"recommended":0}';
     if (/"title"/.test(said)) return '{"title":"Test conversation"}';
     if (/"name"/.test(said)) return '{"name":"test-branch"}';

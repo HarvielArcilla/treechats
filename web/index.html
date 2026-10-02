@@ -84,6 +84,12 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
   .tb-brand{max-width:170px;opacity:1;transform:none;margin-right:6px}
   #spacesBtn{display:none}
 }
+.topbar .btn{white-space:nowrap;flex:none}
+/* as the main column narrows, the smaller buttons drop their words first, then everything does */
+@container main (max-width:900px){
+  #undoBtn .lbl,#redoBtn .lbl,#mapBtn .lbl,#paletteBtn .lbl,#settingsBtn .lbl,.topbar .tbk{display:none}
+  #undoBtn .ico,#redoBtn .ico,#mapBtn .ico,#paletteBtn .ico,#settingsBtn .ico{display:inline}
+}
 @container main (max-width:620px){
   .topbar .lbl{display:none}
   .topbar .tbk{display:none}
@@ -761,6 +767,9 @@ ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 .maprow .mtxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .maprow .mtags{display:flex;gap:4px;flex:none}
 .maprow.merge .mtxt{font-size:.8rem;color:var(--muted)}
+.pes{display:grid;gap:14px}
+.pes textarea{width:100%;min-height:5.5em;resize:vertical;font:.84rem/1.45 var(--mono)}
+.pefmt code{font:.76rem var(--mono);background:var(--code-bg);padding:1px 4px;border-radius:3px;overflow-wrap:anywhere}
 .maplegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.76rem;color:var(--muted);padding:0 18px 12px}
 /* conversations off screen skip layout and painting until you scroll to them */
 section.conv{content-visibility:auto;contain-intrinsic-size:auto 900px}
@@ -922,16 +931,35 @@ let editingNow = false;
 const SEAM = 'Separately, in a parallel thread that branched off earlier in this conversation, we discussed the following.';
 /* Every piece of text the app sends on your behalf. Each can be edited and reset to its default. */
 const PROMPTS = {
-  instructions:{label:'Standing instructions', def:'', help:'Sent at the start of every request, ahead of the first prompt. Empty sends nothing.',
+  instructions:{label:'Standing instructions', group:'every', def:'', help:'Sent at the start of every request, ahead of the first prompt. Empty sends nothing.',
     placeholder:'For example: This chat comes from a branching tool. Treat earlier replies as your own and answer naturally.'},
-  seam:{label:'Merge note', def:SEAM, help:'Sent just before the turns a merge brings in.'},
-  summarize:{label:'Summary request', def:'Summarize the conversation below so the summary can stand in for it as context when the discussion continues. Keep decisions, key facts, names, code identifiers and open questions. Write a brief recap in plain prose, under 150 words, with no preamble.\n\n{conversation}',
+  seam:{label:'Merge note', group:'ops', def:SEAM, help:'Sent just before the turns a merge brings in.'},
+  summarize:{label:'Summary request', group:'ops', def:'Summarize the conversation below so the summary can stand in for it as context when the discussion continues. Keep decisions, key facts, names, code identifiers and open questions. Write a brief recap in plain prose, under 150 words, with no preamble.\n\n{conversation}',
     help:'What Claude is asked when it writes a summary for Reroot or Squash. {conversation} becomes the turns being summarized.'},
-  distill:{label:'Distill request', def:'Distill the conversation below into a brief that can start a fresh conversation with the same understanding. Write Markdown with these sections, leaving out any that would be empty: Goal, Decisions (each with its reason), Key facts and names (exact identifiers, values, file paths), Constraints, Open questions, Next step. Be specific and concise. No preamble.\n\n{conversation}',
+  distill:{label:'Distill request', group:'tools', def:'Distill the conversation below into a brief that can start a fresh conversation with the same understanding. Write Markdown with these sections, leaving out any that would be empty: Goal, Decisions (each with its reason), Key facts and names (exact identifiers, values, file paths), Constraints, Open questions, Next step. Be specific and concise. No preamble.\n\n{conversation}',
     help:'What Claude is asked when you distill a conversation into a brief. {conversation} becomes the context up to the prompt you picked.'},
-  reroot:{label:'Reroot summary', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
+  fan:{label:'Fan out: reading the options', group:'tools', def:"You are helping someone branch a conversation into one thread per option.\n\nBelow are their message and the assistant's reply. If the reply offers several distinct options, approaches or directions to choose between, list each one. For each, give a short title of 2 to 4 words, and a follow-up message they could send to pursue only that option: written in their voice, one or two sentences, making sense on its own. Also say which option the reply recommends, if it clearly recommends one.\n\nTheir message:\n{message}\n\nThe assistant's reply:\n{reply}",
+    help:'What Claude is asked when you fan out a reply. {message} becomes your prompt and {reply} Claude\u2019s reply.',
+    fmt:'Reply with only JSON in this shape:\n{"options":[{"title":"Token bucket","prompt":"Let\'s go with the token bucket. Walk me through implementing it."}],"recommended":0}\nUse "recommended": null when nothing is clearly recommended, and "options": [] when the reply doesn\'t offer a choice.'},
+  wordings:{label:'Variants: suggesting wordings', group:'tools', def:'Rewrite the message below 3 different ways that a person might send it to an assistant. Keep the same request and meaning; vary the wording, framing or level of detail so the replies could reasonably differ.\n\nMessage:\n{message}',
+    help:'What Claude is asked by Suggest wordings. {message} becomes the first variant.', fmt:'Reply with only a JSON array of strings.'},
+  nameBranch:{label:'Naming branches', group:'naming', def:'Name a branch of a conversation, the way a developer names a git branch: 1 to 3 lowercase words joined by hyphens, at most 24 characters, saying what this branch explores.\n\n{branch}\n\nNames already used here: {used}',
+    help:'{branch} becomes the prompt the branch follows, its own prompt and the start of its reply. {used} becomes the names already taken.', fmt:'Reply with only JSON: {"name":"token-bucket"}'},
+  nameConv:{label:'Naming conversations', group:'naming', def:'Write a short title for a conversation, at most 6 words, no quotes and no ending punctuation, the way a chat app titles a conversation.\n\n{conversation}',
+    help:'{conversation} becomes the first message and the start of the first reply.', fmt:'Reply with only JSON: {"title":"Rate limiter design"}'},
+  nameSpace:{label:'Naming spaces', group:'naming', def:'Name a workspace that holds these conversations, in 1 to 4 words, no quotes.\n\nConversations:\n{titles}',
+    help:'{titles} becomes the titles of up to six conversations in the space.', fmt:'Reply with only JSON: {"name":"API rate limiting"}'},
+  reroot:{label:'Reroot summary', group:'ops', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
+/* A prompt with its {placeholders} filled. A value whose placeholder was edited out is added at the end, so Claude
+   always gets the material. Tools that need a set answer shape get it appended, since Treechats reads the answer. */
+function fillPrompt(k, vars){
+  let t=promptText(k); const rest=[];
+  for(const [name, val] of Object.entries(vars)){ const tag='{'+name+'}'; if(t.includes(tag)) t=t.split(tag).join(val); else if(val) rest.push(val); }
+  if(rest.length) t+='\n\n'+rest.join('\n\n');
+  return PROMPTS[k].fmt ? t+'\n\n'+PROMPTS[k].fmt : t;
+}
 const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---- Spaces ----
@@ -1488,6 +1516,7 @@ function promptEditor(k, suffix=''){
   const P=PROMPTS[k], v=promptText(k), custom=v!==P.def, id=`pr-${k}${suffix}`;
   return `<div class="pe" data-pe="${k}"><div class="pe-head"><label class="flabel" for="${id}">${P.label}</label><span class="tag custom" ${custom?'':'hidden'}>custom</span></div>
     <textarea id="${id}" data-prompt="${k}" rows="3" placeholder="${esc(P.placeholder||'')}">${esc(v)}</textarea>
+    ${P.fmt?`<p class="note pefmt">Treechats adds this after it, so it can read Claude\u2019s answer: <code>${esc(P.fmt.split('\n')[0])}</code></p>`:''}
     <div class="pe-foot"><p class="note">${P.help}</p><button class="btn xs" data-reset="${k}" ${custom?'':'disabled'}>Reset to default</button></div></div>`;
 }
 const OP_PROMPTS = {every:['instructions'], reroot:['reroot','summarize'], squash:['summarize'], merge:['seam']};
@@ -1524,8 +1553,16 @@ function refreshRunButtons(){
 function refreshCustomBadges(){
   const card=document.getElementById('opsCard');
   for(const [op,ks] of Object.entries(OP_PROMPTS)){ const b=card.querySelector(`[data-custom-for="${op}"]`); if(b) b.hidden=!ks.some(k=>promptText(k)!==PROMPTS[k].def); }
-  for(const pe of card.querySelectorAll('[data-pe]')){ const k=pe.dataset.pe, custom=promptText(k)!==PROMPTS[k].def; pe.querySelector('.tag.custom').hidden=!custom; pe.querySelector('[data-reset]').disabled=!custom; }
+  for(const pe of [...card.querySelectorAll('[data-pe]'), ...setEl.querySelectorAll('[data-pe]')]){ const k=pe.dataset.pe, custom=promptText(k)!==PROMPTS[k].def; pe.querySelector('.tag.custom').hidden=!custom; pe.querySelector('[data-reset]').disabled=!custom; }
 }
+/* every place a prompt can be edited (the Operations card and Settings › Prompts) shows the same text */
+function setPrompt(k, v, from){
+  opts.prompts[k] = v===PROMPTS[k].def ? null : v;
+  for(const t of document.querySelectorAll(`[data-prompt="${k}"]`)) if(t!==from) t.value=v;
+  save(); refreshCustomBadges(); renderCtx();
+}
+function syncPromptFields(){ for(const t of document.querySelectorAll('[data-prompt]')) t.value=promptText(t.dataset.prompt); save(); refreshCustomBadges(); renderCtx(); }
+function resetPrompt(k){ opts.prompts[k]=null; syncPromptFields(); toast(`${PROMPTS[k].label} is back to the default`); }
 function available(op, id){
   const n=S.nodes[id]; if(!n) return false;
   const isM=n.kind==='merge';
@@ -1906,8 +1943,7 @@ function paintSummary(id){
   const ed=document.getElementById('edit'); if(ed && editorFor===id && document.activeElement!==ed) ed.value=n.text;
 }
 async function summarizeInto(id, conversation, fallback){
-  const tpl=promptText('summarize');
-  const input = tpl.includes('{conversation}') ? tpl.split('{conversation}').join(conversation) : tpl+'\n\n'+conversation;
+  const input=fillPrompt('summarize', {conversation});
   const ctl=new AbortController(); sumGen={id, ctl};
   paintSummary(id);
   let failed=null;
@@ -1991,7 +2027,7 @@ function listOptions(reply){
   if(rec){ const low=rec.toLowerCase(); const i=options.findIndex(o=>o.title.length>2 && low.includes(o.title.toLowerCase())); if(i>=0) recommended=i; }
   return {options, recommended};
 }
-const FAN_ASK = (text, reply) => `You are helping someone branch a conversation into one thread per option.\n\nBelow are their message and the assistant's reply. If the reply offers several distinct options, approaches or directions to choose between, list each one. For each, give a short title of 2 to 4 words, and a follow-up message they could send to pursue only that option: written in their voice, one or two sentences, making sense on its own. Also say which option the reply recommends, if it clearly recommends one.\n\nReply with only JSON in this shape:\n{"options":[{"title":"Token bucket","prompt":"Let's go with the token bucket. Walk me through implementing it."}],"recommended":0}\nUse "recommended": null when nothing is clearly recommended, and "options": [] when the reply doesn't offer a choice.\n\nTheir message:\n${clip(text||'',4000)}\n\nThe assistant's reply:\n${clip(reply,24000)}`;
+const FAN_ASK = (text, reply) => fillPrompt('fan', {message:clip(text||'',4000), reply:clip(reply,24000)});
 async function openFan(id){
   const n=S.nodes[id]; if(!n || !n.reply) return;
   resendFor=null;
@@ -2123,7 +2159,7 @@ async function openDistill(id){
   if(sel!==id) select(id); else animRender([id]);
   const el=treeEl.querySelector('.distill'); if(el) el.scrollIntoView({block:'nearest', behavior: Motion.reduced()?'auto':'smooth'});
   const convo=turnsFor(id, true).map(t=>`${t.role==='user'?'User':'Claude'}: ${t.content}`).join('\n\n');
-  const tpl=promptText('distill'), input = tpl.includes('{conversation}') ? tpl.split('{conversation}').join(convo) : tpl+'\n\n'+convo;
+  const input=fillPrompt('distill', {conversation:convo});
   try{
     const r=await sampleFn(input, {modelTier:opts.model, cache:false, signal:ctl.signal, onText:({text})=>{ if(distill===d){ d.text=text; const b=treeEl.querySelector('.distill .rbody'); if(b) b.innerHTML=md(text); } }});
     if(distill!==d) return;
@@ -2412,7 +2448,7 @@ async function suggestWordings(){
   const base=v.rows[0].text.trim(); if(!base) return;
   v.suggesting=true; paintVariants();
   try{
-    const d=await sampleFn.json(`Rewrite the message below 3 different ways that a person might send it to an assistant. Keep the same request and meaning; vary the wording, framing or level of detail so the replies could reasonably differ. Reply with only a JSON array of 3 strings.\n\nMessage:\n${clip(base,4000)}`, {modelTier:'quick', cache:false});
+    const d=await sampleFn.json(fillPrompt('wordings', {message:clip(base,4000)}), {modelTier:'quick', cache:false});
     if(variants===v && Array.isArray(d)) for(const x of d.filter(x=>typeof x==='string' && x.trim()).slice(0,4)) v.rows.push({text:x.trim(), tier:v.rows[0].tier});
   }catch(e){ toast('Claude couldn\u2019t suggest wordings this time.'); }
   if(variants===v){ v.suggesting=false; paintVariants(); }
@@ -3661,17 +3697,13 @@ opsCardEl.addEventListener('change', e=>{
 });
 opsCardEl.addEventListener('input', e=>{
   const k=e.target.dataset && e.target.dataset.prompt; if(!k) return;
-  opts.prompts[k] = e.target.value===PROMPTS[k].def ? null : e.target.value;
-  for(const t of opsCardEl.querySelectorAll(`[data-prompt="${k}"]`)) if(t!==e.target) t.value=e.target.value;
-  save(); refreshCustomBadges(); renderCtx();
+  setPrompt(k, e.target.value, e.target);
 });
 opsCardEl.addEventListener('click', e=>{
   const ro=e.target.closest('[data-runop]'); if(ro){ if(sel!=null) run(ro.dataset.runop, sel); return; }
   if(e.target.closest('[data-openquick]')){ openSettings('bar'); return; }
   const r=e.target.closest('[data-reset]'); if(!r) return;
-  const k=r.dataset.reset; opts.prompts[k]=null;
-  for(const t of opsCardEl.querySelectorAll(`[data-prompt="${k}"]`)) t.value=PROMPTS[k].def;
-  save(); refreshCustomBadges(); renderCtx(); toast(`${PROMPTS[k].label} reset to the default`);
+  resetPrompt(r.dataset.reset);
 });
 const asideEl=document.querySelector('aside');
 asideEl.addEventListener('toggle', e=>{ const d=e.target, k=d.dataset && d.dataset.openkey; if(k && (opts.open[k] ?? null)!==d.open){ opts.open[k]=d.open; save(); } }, true);
@@ -3841,7 +3873,8 @@ function applyAppearance(){
 if(darkMQ.addEventListener) darkMQ.addEventListener('change', ()=>{ if(set('theme')==='system'){ applyAppearance(); if(!setEl.hidden) renderSettings(); } });
 
 const setEl=document.getElementById('settings'), setBodyEl=document.getElementById('setBody'), setTabsEl=document.getElementById('setTabs');
-const SET_TABS=[['look','Personalization'],['system','System'],['bar','Quick access'],['keys','Keyboard']];
+const SET_TABS=[['look','Personalization'],['system','System'],['prompts','Prompts'],['bar','Quick access'],['keys','Keyboard']];
+const PROMPT_GROUPS=[['every','Sent with every request',''], ['ops','Operations','Used by Merge, Reroot and Squash.'], ['tools',AI+'Tools','What Claude is asked when you use a '+AI+'tool.'], ['naming',AI+'Naming','Used when Claude names branches, conversations and spaces (turn these on under System).']];
 let setReturn=null;
 const segs=(key, choices, label)=>`<div class="segs" role="group" aria-label="${esc(label)}">${choices.map(([v,l])=>`<button class="seg" data-set="${key}" data-val="${v}" aria-pressed="${String(set(key))===String(v)}">${esc(l)}</button>`).join('')}</div>`;
 const setRow=(lab, sub, ctl)=>`<div class="setrow"><div class="lab">${lab}${sub?`<small>${sub}</small>`:''}</div>${ctl}</div>`;
@@ -3898,7 +3931,7 @@ function renderSettings(){
       ${setRow('Default model','Also in the box under each prompt.',`<select data-setselect="model" aria-label="Default model">${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select>`)}
       ${setRow('Show replies','Simple view always shows every reply in the conversation.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['short','Shorten'],['full','Full']],'Reply length'))}
-      ${setRow('Prompts sent to Claude','Standing instructions, the merge note and summary requests.','<button class="btn" data-setprompts>Edit prompts</button>')}
+      ${setRow('Prompts sent to Claude','Standing instructions, merge notes, and what every '+AI+'tool asks Claude.','<button class="btn" data-setprompts>Edit prompts</button>')}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
     h+=`<section class="setsec"><h3>Input</h3>
       ${setRow('Send with', set('sendKey')==='mod'?'Enter adds a new line.':'Shift+Enter adds a new line.', segs('sendKey',[['enter','Enter'],['mod',IS_MAC?'⌘ Enter':'Ctrl+Enter']],'Send with'))}
@@ -3912,6 +3945,14 @@ function renderSettings(){
     const st=spaceIds().reduce((a,id)=>{ const x=spaceStats(DB.spaces[id].tree); a.c+=x.convs; a.p+=x.prompts; return a; },{c:0,p:0});
     h+=`<section class="setsec"><h3>Storage</h3><p class="note">Everything is saved on this computer in data/treechats.db: ${spaceIds().length} space${spaceIds().length===1?'':'s'}, ${st.c} conversation${st.c===1?'':'s'}, ${st.p} prompt${st.p===1?'':'s'}. Use Import / export to move it elsewhere.</p>
       ${setRow('Reset settings','Puts Personalization and System back to their defaults. Your conversations and prompts aren’t touched.','<button class="btn danger" data-setreset>Reset settings</button>')}</section>`;
+  } else if(tab==='prompts'){
+    const custom=Object.keys(PROMPTS).filter(k=>promptText(k)!==PROMPTS[k].def).length;
+    h+=`<section class="setsec"><p class="note">Every piece of text Treechats sends to Claude on your behalf. Words in {braces} are filled in when it\u2019s sent; if you remove one, that material is added at the end instead. Edits apply from the next request.</p></section>`;
+    for(const [g, title, note] of PROMPT_GROUPS){
+      const ks=Object.keys(PROMPTS).filter(k=>PROMPTS[k].group===g); if(!ks.length) continue;
+      h+=`<section class="setsec"><h3>${title}</h3>${note?`<p class="note">${note}</p>`:''}<div class="pes">${ks.map(k=>promptEditor(k,'-set')).join('')}</div></section>`;
+    }
+    h+=`<section class="setsec">${setRow('Reset prompts', custom?`${custom} prompt${custom===1?' is':'s are'} changed from the default.`:'All prompts are the defaults.', `<button class="btn" data-resetprompts ${custom?'':'disabled'}>Reset all prompts</button>`)}</section>`;
   } else if(tab==='bar'){
     const on=quickList(), off=Object.keys(OPS).filter(k=>pinnable(k) && !on.includes(k));
     const row=(k,i,inBar)=>`<li class="qrow ${inBar?'on':''}"><label class="chk"><input type="checkbox" data-qtoggle="${k}" ${inBar?'checked':''}> <span class="${OPS[k].danger?'danger':''}">${esc(OPS[k].label)}</span></label><span class="qhint">${esc(OPS[k].hint)}</span>${opts.opKeys===false?'':`<kbd>${kk(OPS[k].key)}</kbd>`}
@@ -3988,11 +4029,9 @@ setEl.addEventListener('click', e=>{
   const qm=e.target.closest('[data-qmove]'); if(qm){ const k=qm.dataset.qmove, d=+qm.dataset.dir, list=quickList().slice(), i=list.indexOf(k), j=i+d; if(i<0||j<0||j>=list.length) return; [list[i],list[j]]=[list[j],list[i]]; opts.quick=list; afterQuick(); const b=setEl.querySelector(`[data-qmove="${k}"][data-dir="${d}"]`); (b && !b.disabled ? b : setEl.querySelector(`[data-qmove="${k}"]:not(:disabled)`))?.focus({preventScroll:true}); return; }
   if(e.target.closest('[data-qreset]')){ delete opts.quick; afterQuick(); refocus('[data-settab="bar"]'); toast('The quick-access bar is back to its default.'); return; }
   if(e.target.closest('[data-setquick]')){ opts.setTab='bar'; save(); renderSettings(); refocus('[data-settab="bar"]'); return; }
-  if(e.target.closest('[data-setprompts]')){
-    closeSettings(); if(opts.simple){ opts.simple=false; applySimple(); }
-    opts.open.ops=true; save(); renderOpsCard();
-    const card=document.getElementById('opsCard'); setTimeout(()=>card.scrollIntoView({behavior:'smooth', block:'start'}), 30); return;
-  }
+  if(e.target.closest('[data-setprompts]')){ opts.setTab='prompts'; save(); renderSettings(); setBodyEl.scrollTop=0; refocus('[data-settab="prompts"]'); return; }
+  const pr=e.target.closest('[data-reset]'); if(pr){ resetPrompt(pr.dataset.reset); return; }
+  if(e.target.closest('[data-resetprompts]')){ opts.prompts={}; syncPromptFields(); renderSettings(); refocus('[data-settab="prompts"]'); toast('Every prompt is back to its default.'); return; }
   if(e.target.closest('[data-setreset]')){
     for(const k of Object.keys(SET_DEFAULTS)) delete opts[k];
     opts.replies='selected'; opts.model='quick';
@@ -4008,6 +4047,7 @@ setEl.addEventListener('change', e=>{
 });
 setEl.addEventListener('input', e=>{
   const d=e.target.dataset;
+  if(d.prompt!=null){ setPrompt(d.prompt, e.target.value, e.target); return; }
   if(d.tc!=null) setThemeColor(d.tc, normHex(e.target.value), e.target);
   if(d.tname!=null){ const th=themeFor(editingTheme); if(th){ th.name=e.target.value.trim()||'Untitled'; refreshPalCard(editingTheme); } }
 });
@@ -4416,7 +4456,7 @@ function queueBranchName(rid, force){
     if(DB.current!==sid || !S.refs[rid] || !AUTO_BRANCH.test(S.refs[rid].name)) return;
     const tip=S.refs[rid].tip, n=S.nodes[tip]; if(!n || n.kind==='merge' || !n.text) return;
     const p=S.nodes[n.parents[0]], c=convOf(tip);
-    const d=await sampleFn.json(`Name a branch of a conversation, the way a developer names a git branch: 1 to 3 lowercase words joined by hyphens, at most 24 characters, saying what this branch explores. Reply with only JSON: {"name":"token-bucket"}\n\n${p&&p.text?`The prompt it follows:\n${clip(p.text,400)}\n\n`:''}The branch's prompt:\n${clip(n.text,800)}${n.reply?`\n\nThe reply so far begins:\n${clip(n.reply,400)}`:''}\n\nNames already used here: ${[...namesIn(c)].join(', ')||'none'}`, {modelTier:'quick', cache:false});
+    const d=await sampleFn.json(fillPrompt('nameBranch', {branch:`${p&&p.text?`The prompt it follows:\n${clip(p.text,400)}\n\n`:''}The branch's prompt:\n${clip(n.text,800)}${n.reply?`\n\nThe reply so far begins:\n${clip(n.reply,400)}`:''}`, used:[...namesIn(c)].join(', ')||'none'}), {modelTier:'quick', cache:false});
     const raw=d && typeof d.name==='string' ? d.name : '';
     if(!raw || DB.current!==sid || !S.refs[rid] || !AUTO_BRANCH.test(S.refs[rid].name)) return;
     const name=slugName(raw, c); if(!NAME_RE.test(name)) return;
@@ -4432,7 +4472,7 @@ function queueConvTitle(rootId){
     try{
       if(DB.current!==sid || !S.nodes[rootId] || convMeta(k).title) return;
       const n=S.nodes[rootId];
-      const d=await sampleFn.json(`Write a short title for a conversation, at most 6 words, no quotes and no ending punctuation, the way a chat app titles a conversation. Reply with only JSON: {"title":"Rate limiter design"}\n\nFirst message:\n${clip(n.text||'',800)}${n.reply?`\n\nFirst reply begins:\n${clip(n.reply,600)}`:''}`, {modelTier:'quick', cache:false});
+      const d=await sampleFn.json(fillPrompt('nameConv', {conversation:`First message:\n${clip(n.text||'',800)}${n.reply?`\n\nFirst reply begins:\n${clip(n.reply,600)}`:''}`}), {modelTier:'quick', cache:false});
       const t=d && typeof d.title==='string' ? d.title.trim().replace(/^["'“]|["'”.]$/g,'').slice(0,80) : '';
       if(t && DB.current===sid && S.nodes[rootId] && !convMeta(k).title){ S.convs[k].title=t; save(); renderTree(); Motion.run(convListEl, renderConvs); renderBranches(); }
     } finally { titling.delete(tk); }
@@ -4446,7 +4486,7 @@ function queueSpaceName(){
       if(!DB.spaces[sid] || !AUTO_SPACE.test(DB.spaces[sid].name)) return;
       const titles=withTree(DB.spaces[sid].tree, ()=>orderedRoots().slice(0,6).map(r=>convTitle(r)));
       if(!titles.length) return;
-      const d=await sampleFn.json(`Name a workspace that holds these conversations, in 1 to 4 words, no quotes. Reply with only JSON: {"name":"API rate limiting"}\n\nConversations:\n${titles.map(t=>'- '+clip(t,120)).join('\n')}`, {modelTier:'quick', cache:false});
+      const d=await sampleFn.json(fillPrompt('nameSpace', {titles:titles.map(t=>'- '+clip(t,120)).join('\n')}), {modelTier:'quick', cache:false});
       const nm=d && typeof d.name==='string' ? d.name.trim().replace(/^["'“]|["'”.]$/g,'').slice(0,60) : '';
       if(nm && DB.spaces[sid] && AUTO_SPACE.test(DB.spaces[sid].name)){ DB.spaces[sid].name=uniqueSpaceName(nm); save(); renderSpaces(); renderHeader(); }
     } finally { titling.delete(sid); }
