@@ -17,15 +17,19 @@ folder. The first time, it offers to install anything missing (Node.js, and Clau
 from your Claude subscription), signs you in to Claude Code, then opens Treechats in your browser. Close the
 window to stop it.
 
-**From a terminal:** open one in this folder (in GitHub Desktop: **Repository › Open in Command Prompt** on
-Windows, **Open in Terminal** on a Mac), then:
+Each start also pulls the latest version from GitHub when git is installed and you haven't changed files here.
+
+**From a terminal:** open one in this folder, then:
 
 ```
 npm install
 npm start
 ```
 
-Treechats opens at <http://localhost:5178>. Stop it with Ctrl+C.
+Treechats opens at <http://localhost:5178>. Stop it with Ctrl+C. To update: `git pull`, then `npm start` again.
+
+Getting it the first time: `git clone https://github.com/HarvielArcilla/treechats.git`. On Windows, if `git`
+isn't found, install it with `winget install --id Git.Git -e` and open a new terminal.
 
 > On Windows, if PowerShell says running scripts is disabled when you type `npm`, use the Command Prompt
 > instead, or type `npm.cmd` in place of `npm`.

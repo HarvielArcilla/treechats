@@ -2,7 +2,13 @@
 rem Double-click to start Treechats on Windows. It sets up what's missing the first time.
 rem Close this window to stop Treechats.
 setlocal
-cd /d "%~dp0"
+rem Run from a copy, so updating this file with git pull can't disturb the window that's running it.
+if /i not "%~1"=="--run" (
+  copy /y "%~f0" "%TEMP%\treechats-start.cmd" >nul
+  call "%TEMP%\treechats-start.cmd" --run "%~dp0."
+  exit /b
+)
+cd /d "%~2"
 title Treechats
 
 where node >nul 2>nul
@@ -17,6 +23,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
+call :update
 echo.
 echo   Getting Treechats ready...
 call npm install --no-audit --no-fund --loglevel=error
@@ -30,6 +37,17 @@ call :check_replies
 
 call npm start
 pause
+exit /b 0
+
+:update
+rem Get the latest version from GitHub, if git is installed and nothing here was changed by hand.
+if not exist .git exit /b 0
+where git >nul 2>nul
+if errorlevel 1 exit /b 0
+echo.
+echo   Checking for updates...
+git pull --ff-only --quiet
+if errorlevel 1 echo   Couldn't update: you may be offline, or files here were changed. Starting the version you have.
 exit /b 0
 
 :install_node

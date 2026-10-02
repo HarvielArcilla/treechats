@@ -1,7 +1,10 @@
 #!/bin/bash
 # Double-click to start Treechats on a Mac. It sets up what's missing the first time.
 # Close this window (or press Ctrl+C) to stop Treechats.
-cd "$(dirname "$0")" || exit 1
+# Everything is inside main(), which bash reads in full before running, so a git pull that updates this
+# file can't disturb the window that's running it.
+main() {
+cd "$(dirname "$SCRIPT")" || exit 1
 # A Terminal window opened from Finder may not have the PATH your shell sets up, so look in the usual places too.
 export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.volta/bin"
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
@@ -21,6 +24,13 @@ if ! command -v node >/dev/null 2>&1; then
   fi
 fi
 command -v node >/dev/null 2>&1 || { echo "  Node.js still isn't available."; pause_exit 1; }
+
+# Get the latest version from GitHub, if git is installed and nothing here was changed by hand.
+if [ -d .git ] && command -v git >/dev/null 2>&1; then
+  echo
+  echo "  Checking for updates..."
+  git pull --ff-only --quiet || echo "  Couldn't update (offline, or files here were changed). Starting the version you have."
+fi
 
 echo
 echo "  Getting Treechats ready..."
@@ -48,3 +58,7 @@ if ! grep -Eq '^ANTHROPIC_API_KEY=.+' .env; then
 fi
 
 npm start
+}
+SCRIPT="$0"
+main "$@"
+exit
