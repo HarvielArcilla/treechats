@@ -13,7 +13,9 @@ Treechats runs on Windows, macOS and Linux. You need [Node.js](https://nodejs.or
 LTS is a good choice (on a Mac, `brew install node` works too).
 
 **The easy way:** double-click **`start-treechats.cmd`** (Windows) or **`start-treechats.command`** (Mac) in this
-folder. The first run installs what it needs, then Treechats opens in your browser. Close the window to stop it.
+folder. The first time, it offers to install anything missing (Node.js, and Claude Code if you want replies
+from your Claude subscription), signs you in to Claude Code, then opens Treechats in your browser. Close the
+window to stop it.
 
 **From a terminal:** open one in this folder (in GitHub Desktop: **Repository › Open in Command Prompt** on
 Windows, **Open in Terminal** on a Mac), then:
