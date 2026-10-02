@@ -96,7 +96,7 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
           for (const piece of reply.match(/.{1,12}/gs) || []) {
             if (signal.aborted) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
             text += piece; send({ t: 'text', d: piece });
-            await new Promise((r) => setTimeout(r, 8));
+            await new Promise((r) => setTimeout(r, config.fakeDelay));
           }
           send({ t: 'done', text, truncated: false, tier, model: 'fake', usage: null });
           return;

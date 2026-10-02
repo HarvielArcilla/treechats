@@ -610,6 +610,7 @@ ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 .cprompt{margin:0;font-weight:600;font-size:.92rem;overflow-wrap:anywhere}
 .creply{overflow:auto;min-height:0;align-self:start;max-height:100%;padding:10px 12px;border-left:2px solid var(--reply-rule);background:var(--reply-bg);border-radius:0 8px 8px 0;font-size:.88rem;display:grid;align-content:start;gap:6px}
 .creply .rbody{display:grid;grid-template-columns:minmax(0,1fr)}
+.creply>.btn{justify-self:start}
 .ccol footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .cacts{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
 @media (max-width:640px){.cmpbox{height:100%;border-radius:0}.ccols{grid-auto-columns:86vw;padding:12px}}
@@ -823,7 +824,7 @@ const sendKbd = () => opts.sendKey==='mod' ? (IS_MAC?'⌘↵':'Ctrl ↵') : '↵
 const sendNote = () => opts.sendKey==='mod' ? `${IS_MAC?'⌘':'Ctrl'}+Enter sends. Enter adds a new line.` : 'Enter sends. Shift+Enter adds a new line.';
 let S, sel = null, pick = null, composeFor = null, renaming = false, undoStack = [], redoStack = [];
 let opts = {simple:false, summary:true, cow:false, rerootBy:'template', squashBy:'join', replies:'selected', model:'quick', prompts:{}, open:{ops:true}, collapsed:{spaces:false, convs:false}};
-let sampleFn = null, sampleState = 'loading', gen = null; const genNotes = {};
+let sampleFn = null, sampleState = 'loading'; const genNotes = {};
 const TIERS = (window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.tiers) || [['quick','Quick (fastest, lightest)'],['default','Default'],['complex','Complex (most capable)']];
 const openReplies = new Set(), fullReplies = new Set();
 let editingNow = false;
@@ -1133,6 +1134,7 @@ function commit(msg, fn, o={}){
   pushUndo({kind:'tree', sid:DB.current, s:before});
   if((sel==null && prevSel!=null) || (sel!=null && !S.nodes[sel]) || (sel!=null && o.hidden && isHidden(S.nodes[chain(sel)[0]]))) sel = defaultSel();
   setActivePath(sel); syncHead(); if(o.touch!==false) touch(sel); save();
+  reconcileReplies();
   showSelection(prevSel);
   toast(msg, true, o.action);
   if(typeof scanNewBranches==='function') setTimeout(scanNewBranches, 0);
@@ -1143,23 +1145,36 @@ function pushUndo(e){ undoStack.push(e); if(undoStack.length>120) undoStack.shif
 function capture(e){ return e.kind==='store' ? {kind:'store', s:snapshotDB()} : {kind:'tree', sid:e.sid, s:JSON.stringify(DB.spaces[e.sid].tree)}; }
 function restore(e){
   if(e.kind==='store'){
+    const was=DB.spaces;
     Object.assign(DB, JSON.parse(e.s));
+    for(const sid of Object.keys(DB.spaces)) if(was[sid]) keepReplies(was[sid].tree, DB.spaces[sid].tree);
     enterSpace(DB.spaces[DB.current] ? DB.current : spaceIds()[0]);
+    reconcileReplies();
     save(); render(true); Motion.swap(treeEl); return;
   }
+  const was=DB.spaces[e.sid].tree;
   DB.spaces[e.sid].tree=JSON.parse(e.s);
+  keepReplies(was, DB.spaces[e.sid].tree);
+  reconcileReplies();
   if(e.sid!==DB.current){ save(); enterSpace(e.sid); save(); render(true); Motion.swap(treeEl); return; }
   S=DB.spaces[e.sid].tree; fix();
 }
+/* Replies arrive on their own time, outside undo. When undo brings back an earlier copy of a prompt,
+   the reply it got since comes along, so undoing something else never throws a reply away. */
+function keepReplies(from, to){
+  if(!from || !to || from===to) return;
+  for(const [k,n] of Object.entries(to.nodes)){
+    const o=from.nodes[k];
+    if(o && o.reply && !n.reply && o.text===n.text && String(o.parents)===String(n.parents)){ n.reply=o.reply; if(o.model) n.model=o.model; delete n.askTier; }
+  }
+}
 const usable = e => e.kind==='store' || !!DB.spaces[e.sid];
 function undo(){
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return; }
   while(undoStack.length && !usable(undoStack[undoStack.length-1])) undoStack.pop();
   if(!undoStack.length) return;
   const e=undoStack.pop(); redoStack.push(capture(e)); restore(e); toast('Undone');
 }
 function redo(){
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return; }
   while(redoStack.length && !usable(redoStack[redoStack.length-1])) redoStack.pop();
   if(!redoStack.length) return;
   const e=redoStack.pop(); undoStack.push(capture(e)); restore(e); toast('Redone');
@@ -1167,13 +1182,13 @@ function redo(){
 /* changes that span spaces: create, rename, delete, combine, move a conversation */
 function storeCommit(msg, fn, action){
   if(choosing!=null) finishChoosing(true);
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return false; }
   save();
   const before=snapshotDB();
   fn();
   if(snapshotDB()===before) return false;
   pushUndo({kind:'store', s:before});
   enterSpace(DB.spaces[DB.current] ? DB.current : spaceIds()[0]);
+  reconcileReplies();
   save(); render(true); Motion.swap(treeEl);
   toast(msg, true, action);
   return true;
@@ -1182,7 +1197,6 @@ function switchSpace(sid){
   if(choosing!=null) finishChoosing(true);
   closeSide();
   if(!DB.spaces[sid] || sid===DB.current) return;
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return; }
   save(); enterSpace(sid); save();
   render(true); Motion.swap(treeEl);
 }
@@ -1540,13 +1554,12 @@ function copySubtree(id, parents){
 
 function addPrompt(parent, text){
   text=text.trim(); if(!text && !pendingFiles.length){ toast('Write a prompt first.'); return; }
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return; }
   if(parent==null) draftRoot=''; else draft='';
   composeFor=null; renaming=false;
   if(parent==null){
     const files=takePending();
     commit('Started a conversation on main', ()=>{ const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[], text}; if(files) S.nodes[nid].files=files; S.head=newRef('main', nid); sel=nid; });
-    if(sampleState==='ready') generate(sel);
+    wantReplies([sel]);
     return;
   }
   pruneAlso();
@@ -1555,7 +1568,7 @@ function addPrompt(parent, text){
   const one = targets.length===1;
   const here0 = refsAt(parent), rid0 = here0.includes(S.head) ? S.head : here0[0];
   const name0 = rid0 ? refName(rid0) : autoName(convOf(parent));
-  commit(one ? (rid0 ? `Continued on ${name0}` : `Started ${name0} at #${parent}`) : `Replied to ${targets.length} prompts. Claude answers each in turn.`, ()=>{
+  commit(one ? (rid0 ? `Continued on ${name0}` : `Started ${name0} at #${parent}`) : `Replied to ${targets.length} prompts`, ()=>{
     for(const t of targets){
       const here=refsAt(t), rid = t===parent ? rid0 : here[0];
       const name = rid ? refName(rid) : autoName(convOf(t));
@@ -1565,7 +1578,7 @@ function addPrompt(parent, text){
     }
     sel=created[0];
   });
-  if(sampleState==='ready'){ genQueue.push(...created.slice(1)); generate(created[0]); }
+  wantReplies(created);
 }
 function takePending(){ const f=pendingFiles.length ? pendingFiles : null; pendingFiles=[]; return f; }
 const NAME_RE=/^[A-Za-z0-9._\/-]{1,40}$/;
@@ -1650,39 +1663,132 @@ function errCopy(code){
     network:'Couldn\u2019t reach the Treechats server or Claude. Check that Treechats is still running and you\u2019re online.'
   })[code] || (PERMANENT.includes(code) ? 'Replies are turned off. Check your API key or Claude Code sign-in, then restart Treechats.' : 'The reply was interrupted. Try again.');
 }
-async function generate(id){
-  if(!sampleFn || gen || !S.nodes[id] || S.nodes[id].kind==='merge') return;
-  if(sumGen){ toast('Wait for the summary to finish first.'); return; }
-  const ctl=new AbortController();
-  gen={id, ctl, text:'', tier:S.nodes[id].askTier||opts.model}; delete genNotes[id];
-  if(cmpFor!=null) renderCompare();
-  const slot=treeEl.querySelector(`[data-key="r${id}"]`);
-  if(slot){
-    slot.outerHTML=replyHTML(id);
-    const b=treeEl.querySelector('[data-compose="cont"]'); if(b){ b.disabled=true; b.textContent='Waiting for reply…'; }
-  } else animRender([id]);
+/* ---- Replies ----
+   Replies are written side by side, a few at a time; the rest wait their turn. A prompt waits for the
+   replies above it, since they are part of what it sends. Each request remembers its space, so moving
+   around, undoing or switching spaces never interrupts it. */
+const MAX_PAR=3;
+const gens=new Map(), genQueue=[];
+const gkey=(sid,id)=>sid+':'+id;
+const treeOf=sid=>DB.spaces[sid] && DB.spaces[sid].tree;
+const liveGen=id=>gens.get(gkey(DB.current,id));
+const queuedGen=id=>genQueue.some(q=>q.sid===DB.current && q.id===id);
+const replyBusy=id=>!!liveGen(id) || queuedGen(id);
+const busyCount=()=>gens.size+genQueue.length;
+/* ask Claude to answer these prompts in the current space */
+function wantReplies(ids){
+  if(sampleState!=='ready' || !sampleFn) return;
+  const sid=DB.current;
+  for(const id of ids){
+    const n=S.nodes[id]; if(!n || n.kind==='merge' || replyBusy(id)) continue;
+    genQueue.push({id, sid}); delete genNotes[gkey(sid,id)];
+  }
+  pumpReplies(); refreshWaiting();
+}
+const generate=id=>wantReplies([id]);
+/* the prompt above this one that still has a reply or summary on the way, if any */
+function waitingOn(q){
+  const t=treeOf(q.sid); if(!t || !t.nodes[q.id]) return 'gone';
+  for(const x of withTree(t, ()=>path(q.id))){
+    if(x===q.id) continue;
+    if(gens.has(gkey(q.sid,x)) || t.nodes[x].pending || genQueue.some(o=>o!==q && o.sid===q.sid && o.id===x)) return x;
+  }
+  return null;
+}
+function pumpReplies(){
+  for(let i=0; i<genQueue.length && gens.size<MAX_PAR;){
+    const q=genQueue[i], w=waitingOn(q);
+    if(w==='gone'){ genQueue.splice(i,1); continue; }
+    if(w!=null){ i++; continue; }
+    genQueue.splice(i,1); startReply(q.sid, q.id);
+  }
+}
+async function startReply(sid, id){
+  const tree=treeOf(sid), n=tree.nodes[id];
+  const g={id, sid, ctl:new AbortController(), text:'', tier:n.askTier||opts.model, stopped:false};
+  gens.set(gkey(sid,id), g); delete genNotes[gkey(sid,id)];
+  if(sid===DB.current) showLive(id);
   try{
     /* images can only travel with the turn being answered; earlier ones are described by name */
-    const imgs=(S.nodes[id].files||[]).filter(m=>m.kind==='image').map(m=>Files.get(m.id)).filter(r=>r && r.blob).map(r=>r.blob);
+    const imgs=(n.files||[]).filter(m=>m.kind==='image').map(m=>Files.get(m.id)).filter(r=>r && r.blob).map(r=>r.blob);
     const extra = imgs.length && imageLimits ? {images: imgs.slice(0, imageLimits.maxCount)} : {};
-    if(imgs.length && !imageLimits) toast('Images can\u2019t be sent from this view, so Claude only sees their names.');
-    const tier=gen.tier;
-    const r = await sampleFn(turnsFor(id), {...extra, modelTier:tier, cache:false, signal:ctl.signal,
-      onText:({text})=>{ if(gen){ gen.text=text; paintGen(); } }});
-    finishGen(r.text, r.modelTierApplied, r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==tier ? `Your plan served the ${r.modelTierApplied} tier.` : null));
+    if(imgs.length && !imageLimits) toast('Images can’t be sent from this view, so Claude only sees their names.');
+    const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal,
+      onText:({text})=>{ g.text=text; paintGen(g); }});
+    finishGen(g, r.text, r.modelTierApplied, r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null));
   }catch(e){
     const code = e && e.code;
     if(PERMANENT.includes(code)) sampleState='denied';
-    finishGen((e && e.text) || '', null, code==='cancelled' ? ((e && e.text) ? 'Stopped early.' : null) : errCopy(code));
+    finishGen(g, (e && e.text) || '', null, code==='cancelled' ? ((e && e.text) ? 'Stopped early.' : null) : errCopy(code));
   }
+}
+function finishGen(g, text, tier, note){
+  gens.delete(gkey(g.sid,g.id));
+  const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
+  if(n){
+    if(text){ n.reply=text; delete n.stale; if(tier) n.model=tier; else delete n.model; withTree(tree, ()=>touch(g.id)); }
+    if(note) genNotes[gkey(g.sid,g.id)]=note;
+    delete n.askTier;
+    save();
+  }
+  /* stopping a reply also cancels the prompts below it that were waiting for it */
+  if(g.stopped) dropWaiting(g.sid, g.id);
+  pumpReplies();
+  if(g.sid===DB.current){
+    animRender([g.id], editorFor===g.id);
+    if(cmpFor!=null) renderCompare();
+    if(n && n.reply) afterReplyNaming(g.id);
+  }
+  if(!busyCount()) setTimeout(pumpNames, 0);
+}
+function dropWaiting(sid, id){
+  const t=treeOf(sid);
+  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i]; if(q.sid===sid && (q.id===id || (t && t.nodes[q.id] && withTree(t, ()=>path(q.id)).includes(id)))) genQueue.splice(i,1); }
+}
+function stopReply(id){
+  const g=liveGen(id);
+  if(g){ g.stopped=true; g.ctl.abort(); return true; }
+  if(queuedGen(id)){ dropWaiting(DB.current, id); refreshWaiting(); animRender([id]); return true; }
+  return false;
+}
+/* after undo, deleting or moving prompts: forget replies whose prompt is gone */
+function reconcileReplies(){
+  for(const g of [...gens.values()]){ const t=treeOf(g.sid); if(!t || !t.nodes[g.id]){ g.stopped=true; g.ctl.abort(); } }
+  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i], t=treeOf(q.sid); if(!t || !t.nodes[q.id]) genQueue.splice(i,1); }
+  pumpReplies();
+}
+function showLive(id){
+  const slot=treeEl.querySelector(`[data-key="r${id}"]`);
+  if(slot && slot.closest('.tree')) slot.outerHTML=replyHTML(id); else animRender([id]);
+  if(cmpFor!=null) renderCompare();
+}
+/* the selected prompt's reply box and Compare show what's waiting */
+function refreshWaiting(){
+  if(cmpFor!=null) renderCompare();
+  if(sel==null || !S.nodes[sel] || liveGen(sel) || S.nodes[sel].reply) return;
+  const slot=treeEl.querySelector(`[data-key="r${sel}"]`); if(slot) slot.outerHTML=replyHTML(sel);
+}
+/* streamed text is painted at most once a frame, however many replies are coming in */
+const paintDue=new Set(); let paintRaf=0;
+function paintGen(g){
+  paintDue.add(g);
+  if(paintRaf) return;
+  paintRaf=requestAnimationFrame(()=>{
+    paintRaf=0;
+    for(const x of paintDue){
+      if(x.sid!==DB.current || !gens.has(gkey(x.sid,x.id))) continue;
+      const b=treeEl.querySelector(`.reply[data-gen="${x.id}"] .rbody`); if(b) b.innerHTML=md(x.text);
+      const c=document.querySelector(`[data-cgen="${x.id}"]`); if(c) c.innerHTML=md(x.text);
+    }
+    paintDue.clear();
+  });
 }
 /* ---- Claude-written summaries (Reroot, Squash) ----
    The node is created right away and fills in as Claude writes. If Claude isn't available or fails,
    the node falls back to what the template or plain join would have produced. */
 let sumGen=null;
-const genQueue=[];
-const canSummarize = () => sampleState==='ready' && !gen && !sumGen;
-function summaryUnavailable(){ toast(sumGen||gen ? 'Claude is busy with another request, so the plain version was used.' : 'Claude isn\u2019t available here, so the plain version was used.'); }
+const canSummarize = () => sampleState==='ready' && !sumGen;
+function summaryUnavailable(){ toast(sumGen ? 'Claude is busy with another request, so the plain version was used.' : 'Claude isn\u2019t available here, so the plain version was used.'); }
 function transcript(ids){
   const out=[];
   for(const i of ids){ const n=S.nodes[i]; if(!n) continue; if(n.text) out.push('User: '+n.text); if(n.reply) out.push('Claude: '+n.reply); }
@@ -1707,37 +1813,13 @@ async function summarizeInto(id, conversation, fallback){
     failed = e && e.code;
     const n=S.nodes[id]; if(n){ n.text=fallback.text; if(fallback.reply) n.reply=fallback.reply; delete n.pending; }
   }
-  sumGen=null; save(); setTimeout(()=>typeof pumpNames==='function' && pumpNames(), 0);
+  sumGen=null; save(); pumpReplies(); setTimeout(()=>typeof pumpNames==='function' && pumpNames(), 0);
   render(editorFor===id);
   if(failed) toast(failed==='cancelled' ? 'Summary stopped. The plain version was kept.' : 'Claude couldn\u2019t write the summary, so the plain version was kept.');
-}
-function finishGen(text, tier, note){
-  const id=gen.id, stopped=gen.stopped; gen=null;
-  const n=S.nodes[id];
-  if(n){
-    if(text){ n.reply=text; delete n.stale; if(tier) n.model=tier; else delete n.model; touch(id); }
-    if(note) genNotes[id]=note;
-    delete n.askTier;
-    save();
-  }
-  animRender([id], editorFor===id);
-  if(cmpFor!=null) renderCompare();
-  if(n && n.reply) afterReplyNaming(id);
-  /* next reply in a multi-prompt send; Stop clears the rest */
-  if(stopped) genQueue.length=0;
-  while(genQueue.length && !S.nodes[genQueue[0]]) genQueue.shift();
-  if(genQueue.length) setTimeout(()=>{ if(!gen && genQueue.length) generate(genQueue.shift()); }, 0);
-  else setTimeout(pumpNames, 0);
-}
-function paintGen(){
-  const b=treeEl.querySelector('.reply[data-gen] .rbody');
-  if(b) b.innerHTML=md(gen.text);
-  const c=document.querySelector(`[data-cgen="${gen.id}"]`); if(c) c.innerHTML=md(gen.text);
 }
 /* a new reply is a new version: the old one, and anything built on it, stays one ‹ › away */
 function regenerate(id, newText){
   if(sampleState!=='ready'){ toast('To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats.'); return; }
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return; }
   const n=S.nodes[id]; if(!n) return;
   resendFor=null;
   let nid;
@@ -1808,31 +1890,36 @@ const FAN_ASK = (text, reply) => `You are helping someone branch a conversation 
 async function openFan(id){
   const n=S.nodes[id]; if(!n || !n.reply) return;
   resendFor=null;
-  fan={id, status:'loading', options:[], main:0, replies:false, note:''};
+  if(fan && fan.ctl) fan.ctl.abort();
+  const ctl=new AbortController();
+  fan={id, status:'loading', options:[], main:0, replies:opts.fanReplies!==false, note:'', ctl, quick:listOptions(n.reply)};
   animRender([id]);
   let res=null, note='';
-  if(sampleState==='ready' && sampleFn && sampleFn.json && !gen && !sumGen){
+  if(sampleState==='ready' && sampleFn && sampleFn.json){
     try{
-      const d=await sampleFn.json(FAN_ASK(n.text, n.reply), {modelTier:'quick', cache:false});
+      const d=await sampleFn.json(FAN_ASK(n.text, n.reply), {modelTier:'quick', cache:false, signal:ctl.signal});
       const list=Array.isArray(d && d.options) ? d.options.filter(o=>o && typeof o.title==='string' && typeof o.prompt==='string' && o.prompt.trim()).slice(0,10) : null;
       if(list) res={options:list.map(o=>({title:clip(o.title.trim(),48), prompt:o.prompt.trim()})), recommended: Number.isInteger(d.recommended) && d.recommended>=0 && d.recommended<list.length ? d.recommended : null};
     }catch(e){ note='Claude couldn’t read the options, so they come from the lists in the reply.'; }
-  } else if(sampleState==='ready') note='Claude is busy, so the options come from the lists in the reply.';
-  else note='Without Claude here, the options come from the lists in the reply.';
-  if(!fan || fan.id!==id) return;
-  if(!res) res=listOptions(n.reply);
+  } else note='Without Claude here, the options come from the lists in the reply.';
+  if(!fan || fan.ctl!==ctl || fan.status!=='loading') return;
+  fanReady(res || fan.quick, note);
+}
+function fanReady(res, note){
   fan.options=res.options.map((o,i)=>({...o, on:true, rec:i===res.recommended}));
   fan.main = res.recommended ?? 0;
-  fan.status='ready'; fan.note=note;
+  fan.status='ready'; fan.note=note||''; fan.ctl=null;
   paintFan();
+  const b=treeEl.querySelector('[data-fango]'); if(b && !b.disabled) b.focus({preventScroll:true});
 }
+function closeFan(){ if(!fan) return; const id=fan.id; if(fan.ctl) fan.ctl.abort(); fan=null; animRender([id]); }
 function paintFan(){ const el=treeEl.querySelector('.fan'); if(el) el.outerHTML=fanHTML(); else animRender([fan&&fan.id]); }
 function fanHTML(){
   if(!fan) return '';
   const id=fan.id, on=fan.options.filter(o=>o.on && o.prompt.trim()).length;
   const here=refsAt(id), rid0=here.includes(S.head)?S.head:here[0];
   let body;
-  if(fan.status==='loading') body='<p class="thinking">Reading the options in this reply…</p>';
+  if(fan.status==='loading') body=`<p class="thinking">Claude is reading the options in this reply…</p>${fan.quick.options.length>=2?`<p class="note"><button class="rmore" data-fskip>Use the ${fan.quick.options.length} options listed in the reply instead</button></p>`:''}`;
   else {
     body = fan.options.length ? `<ol class="fopts">${fan.options.map((o,i)=>`<li class="fopt ${o.on?'':'off'}">
         <input type="checkbox" data-fon="${i}" ${o.on?'checked':''} aria-label="Make a branch for ${esc(o.title)}">
@@ -1850,10 +1937,11 @@ function fanHTML(){
     <div class="fanhead"><b>Fan out #${id} into branches</b><button class="rmore" data-fcancel>Cancel</button></div>
     ${body}
     ${fan.status==='ready' ? `<p class="note">${mainOpt&&mainOpt.on?`The mainline, <b>${esc(mainOpt.title)}</b>, ${where}.`:'Pick a mainline.'} Each other option gets its own branch named after it.</p>
-    ${canReply?`<label class="chk"><input type="checkbox" data-freplies ${fan.replies?'checked':''}> <span>Get Claude’s reply for each now${on?` (${on} request${on===1?'':'s'}, one after another)`:''}</span></label>`:''}
-    <div class="bar"><button class="btn primary" data-fango ${on?'':'disabled'}>Create ${on} branch${on===1?'':'es'}</button><button class="btn" data-fadd>+ Add option</button></div>` : ''}
+    ${canReply?`<label class="chk"><input type="checkbox" data-freplies ${fan.replies?'checked':''}> <span>Get Claude’s reply on each branch${on>1?` and compare them side by side`:''}</span></label>`:''}
+    <div class="bar"><button class="btn primary" data-fango ${on?'':'disabled'}>${fanGoLabel(on)} <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-fadd>+ Add option</button></div>` : ''}
   </div>`;
 }
+const fanGoLabel = on => `Create ${on} branch${on===1?'':'es'}`;
 function slugName(title, conv){
   let b=title.toLowerCase().replace(/^(option|approach)\s+\w+:\s*/,'').replace(/[^a-z0-9._\/-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32).replace(/-+$/,'') || 'option';
   const used=namesIn(conv); if(!used.has(b)) return b;
@@ -1863,7 +1951,6 @@ function fanCreate(){
   const f=fan; if(!f) return;
   const id=f.id, list=f.options.map((o,i)=>({...o, i})).filter(o=>o.on && o.prompt.trim());
   if(!list.length){ toast('Tick at least one option.'); return; }
-  if(gen && f.replies){ toast('Wait for the current reply to finish, or stop it.'); return; }
   const main=list.find(o=>o.i===f.main) || list[0], ordered=[main, ...list.filter(o=>o!==main)];
   const conv=convOf(id), here=refsAt(id), rid0=here.includes(S.head)?S.head:here[0];
   const made=[];
@@ -1877,7 +1964,8 @@ function fanCreate(){
     }
     sel=made[0];
   }, {action: list.length>1 ? {label:'Compare', fn:()=>openCompare(id)} : undefined});
-  if(f.replies && sampleState==='ready'){ genQueue.push(...made.slice(1)); generate(made[0]); }
+  opts.fanReplies=f.replies; save();
+  if(f.replies && sampleState==='ready'){ wantReplies(made); if(made.length>1) openCompare(id); }
 }
 
 /* ---- Compare ----
@@ -1889,19 +1977,19 @@ function openCompare(id){
   if(cmpKids(id).length<2){ toast('Compare needs a prompt with two or more follow-ups.'); return; }
   cmpFor=id; cmpReturn=document.activeElement; closeMenu && menuEl && closeMenu();
   renderCompare(); cmpEl().hidden=false; document.body.style.overflow='hidden';
-  const f=cmpEl().querySelector('.ccol button, [data-cmpclose]'); if(f) f.focus({preventScroll:true});
+  const f=cmpEl().querySelector('[data-cmpclose]'); if(f) f.focus({preventScroll:true});
 }
 function closeCompare(){ cmpFor=null; cmpEl().hidden=true; document.body.style.overflow=''; if(cmpReturn && cmpReturn.focus && document.contains(cmpReturn)) cmpReturn.focus({preventScroll:true}); }
 function renderCompare(){
   const el=cmpEl(); if(cmpFor==null || !S.nodes[cmpFor]){ if(!el.hidden) closeCompare(); return; }
   const id=cmpFor, ks=cmpKids(id);
   if(ks.length<2){ closeCompare(); return; }
-  const p=S.nodes[id], missing=ks.filter(k=>!k.reply && !(gen && gen.id===k.id)).length;
+  const p=S.nodes[id], missing=ks.filter(k=>!k.reply && !replyBusy(k.id)).length, running=ks.filter(k=>replyBusy(k.id)).length;
   const cols=ks.map(k=>{
-    const names=refsThrough(k.id).map(refName), main=onMain(k.id), below=desc(k.id).size, live=gen && gen.id===k.id;
-    const reply = live ? `<div class="rbody" data-cgen="${k.id}">${gen.text?md(gen.text):'<p class="thinking">Writing…</p>'}</div>`
-      : k.reply ? `<div class="rbody">${md(k.reply)}</div>`
-      : `<p class="note">${genQueue.includes(k.id)?'Waiting its turn for a reply…':'No reply yet.'}</p>${sampleState==='ready'&&!genQueue.includes(k.id)?`<button class="btn sm" data-cget="${k.id}" ${gen?'disabled':''}>Get reply</button>`:''}`;
+    const names=refsThrough(k.id).map(refName), main=onMain(k.id), below=desc(k.id).size, live=liveGen(k.id), note=genNotes[gkey(DB.current,k.id)];
+    const reply = live ? `<div class="rbody" data-cgen="${k.id}">${live.text?md(live.text):'<p class="thinking">Writing…</p>'}</div><button class="btn xs" data-cstop="${k.id}">Stop</button>`
+      : queuedGen(k.id) ? `<p class="note thinking">Waiting its turn…</p><button class="btn xs" data-cstop="${k.id}">Cancel</button>`
+      : (k.reply ? `<div class="rbody">${md(k.reply)}</div>` : '<p class="note">No reply yet.</p>')+(note?`<p class="gnote">${esc(note)}</p>`:'')+(!k.reply && sampleState==='ready'?`<button class="btn sm" data-cget="${k.id}">Get reply</button>`:'');
     return `<article class="ccol ${main?'main':''}" style="--lane:var(--l${main?0:1+(k.id%3)})">
       <header><span class="nid">#${k.id}</span>${names.slice(0,3).map(nm=>`<span class="ref ${nm==='main'?'head':''}">${esc(nm)}</span>`).join('')}${k.skip?'<span class="tag skiptag">left out</span>':''}</header>
       <p class="cprompt">${esc(k.text)}</p>
@@ -1911,7 +1999,7 @@ function renderCompare(){
     </article>`;
   }).join('');
   el.querySelector('.cmpbox').innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="cmpTitle">Compare ${ks.length} follow-ups</h2><p class="note">to #${id}: ${esc(clip(p.text||'',140))}</p></div>
-    <div class="bar">${missing>1&&sampleState==='ready'?`<button class="btn" data-cgetall ${gen?'disabled':''}>Get ${missing} missing replies</button>`:''}<button class="btn" data-cmpclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+    <div class="bar">${missing>1&&sampleState==='ready'?`<button class="btn" data-cgetall>Get ${missing} missing replies</button>`:''}${running>1?`<button class="btn" data-cstopall>Stop ${running} replies</button>`:''}<button class="btn" data-cmpclose>Done <kbd class="inv">Esc</kbd></button></div></div>
     <div class="ccols">${cols}</div>`;
 }
 
@@ -2125,8 +2213,8 @@ function variantsHTML(forId){
     <ol class="vrows">${v.rows.map((r,i)=>`<li class="vrow"><textarea data-vtext="${i}" rows="2" aria-label="Variant ${i+1}" placeholder="${i?'Another wording, or the same prompt for another model':'Your prompt'}">${esc(r.text)}</textarea>
       <div class="vside"><select data-vtier="${i}" aria-label="Model for variant ${i+1}">${TIERS.map(([t,l])=>`<option value="${t}" ${r.tier===t?'selected':''}>${l.replace(/ \(.*\)/,'')}</option>`).join('')}</select>${v.rows.length>1?`<button class="fx" data-vdel="${i}" aria-label="Remove variant ${i+1}">×</button>`:''}</div></li>`).join('')}</ol>
     ${v.suggesting?'<p class="thinking note">Claude is suggesting wordings…</p>':''}
-    <div class="bar"><button class="btn primary" data-vsend ${n&&!gen?'':'disabled'}>Send ${n} variant${n===1?'':'s'}</button><button class="btn" data-vadd>+ Add variant</button>${sampleState==='ready'?`<button class="btn" data-vsuggest ${v.suggesting||!v.rows[0].text.trim()?'disabled':''} title="One quick request: Claude rewrites the first variant a few ways">Suggest wordings</button>`:''}<button class="btn" data-vcancel>Cancel</button></div>
-    <p class="note">The first ${rid0?`continues <b>${esc(refName(rid0))}</b>`:'starts a branch'}; the others get their own. ${sampleState==='ready'?'Replies come one after another, ready for Compare.':''}</p></div>`;
+    <div class="bar"><button class="btn primary" data-vsend ${n?'':'disabled'}>Send ${n} variant${n===1?'':'s'}</button><button class="btn" data-vadd>+ Add variant</button>${sampleState==='ready'?`<button class="btn" data-vsuggest ${v.suggesting||!v.rows[0].text.trim()?'disabled':''} title="One quick request: Claude rewrites the first variant a few ways">Suggest wordings</button>`:''}<button class="btn" data-vcancel>Cancel</button></div>
+    <p class="note">The first ${rid0?`continues <b>${esc(refName(rid0))}</b>`:'starts a branch'}; the others get their own. ${sampleState==='ready'&&n>1?'Claude answers each, and they open side by side in Compare.':''}</p></div>`;
 }
 function openVariants(id){
   if(id==null || !S.nodes[id] || S.nodes[id].kind==='merge') return;
@@ -2152,7 +2240,6 @@ async function suggestWordings(){
 function sendVariants(){
   const v=variants, parent=sel; if(!v || parent==null) return;
   const rows=v.rows.filter(r=>r.text.trim()); if(!rows.length){ toast('Write at least one variant.'); return; }
-  if(gen){ toast('Wait for the current reply to finish, or stop it.'); return; }
   const same=rows.every(r=>r.text.trim()===rows[0].text.trim());
   const files=takePending(), conv=convOf(parent), here=refsAt(parent), rid0=here.includes(S.head)?S.head:here[0], made=[];
   variants=null; draft='';
@@ -2165,7 +2252,7 @@ function sendVariants(){
     });
     sel=made[0];
   }, {action: rows.length>1 ? {label:'Compare', fn:()=>openCompare(parent)} : undefined});
-  if(sampleState==='ready'){ genQueue.push(...made.slice(1)); generate(made[0]); }
+  if(sampleState==='ready'){ wantReplies(made); if(made.length>1) openCompare(parent); }
 }
 function composerHTML(forId){
   if(forId!=='root' && variants) return variantsHTML(forId);
@@ -2191,7 +2278,8 @@ function composerHTML(forId){
     ${also}
     <textarea id="contText" placeholder="Your next prompt" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
     ${fileChips(pendingFiles, true)}
-    <div class="bar"><button class="btn primary" data-compose="cont" ${gen?'disabled':''}>${gen?'Waiting for reply…':(alsoTargets.size?`Send to ${alsoTargets.size+1} <kbd class="inv">${sendKbd()}</kbd>`:`Continue <kbd class="inv">${sendKbd()}</kbd>`)}</button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
+    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:'Continue'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
+    ${replyBusy(forId)?'<p class="note">You can send now. Claude answers it as soon as the reply above is done.</p>':''}
     ${sampleState==='off'?'<p class="note">To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats. Prompts still get added.</p>':''}</div>`;
 }
 function modelPicker(id='modelSel'){
@@ -2247,7 +2335,7 @@ function rowHTML(id, pathSet){
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !S.fold[id];
   const fold = foldable ? `<button class="rtog fold" data-fold="${id}" title="Fold away the prompts below this one">fold</button>` : (pick||isM ? '' : '<span class="rtog fold ph" aria-hidden="true">fold</span>');
   const star = isM || pick ? '' : `<button class="star ${n.star?'on':''}" data-star="${id}" aria-pressed="${!!n.star}" aria-label="${n.star?'Unstar':'Star'} #${id}" title="${n.star?'Starred. Click to unstar.':'Star this prompt'}">${n.star?'★':'☆'}</button>`;
-  const tog = n.reply && !(gen && gen.id===id) ? `<button class="rtog" data-rtog="${id}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} Claude\u2019s reply">${shown?'▾':'▸'} reply</button>` : '';
+  const tog = n.reply && !liveGen(id) ? `<button class="rtog" data-rtog="${id}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} Claude\u2019s reply">${shown?'▾':'▸'} reply</button>` : '';
   const txt = isM ? `<span class="txt">Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b></span>` : `<span class="txt">${n.pending && !n.text ? '<em class="thinking">Claude is summarizing…</em>' : esc(n.text)}</span>`;
   const txtF = n.files && n.files.length ? txt.replace('<span class="txt">','<span class="txt">'+fileChips(n.files)) : txt;
   let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${tog}${fold}${star}</span></div>`;
@@ -2260,7 +2348,7 @@ function replyShown(id, pathSet){
   const n=S.nodes[id];
   if(opts.simple && n.kind!=='merge' && n.reply && pathSet.has(id) && !openReplies.has(-id)) return true;
   if(n.kind==='merge') return false;
-  if(gen && gen.id===id) return true;
+  if(liveGen(id)) return true;
   if(!n.reply) return id===sel;
   if(openReplies.has(id)) return true;
   if(openReplies.has(-id)) return false;
@@ -2270,9 +2358,9 @@ function replyFoot(id){
   const vs=versions(id), i=vs.indexOf(id);
   const sw = vs.length>1 ? `<span class="ver" aria-label="Reply version"><button data-ver="${id}" data-dir="-1" ${i===0?'disabled':''} aria-label="Previous version">‹</button><span>${i+1} / ${vs.length}</span><button data-ver="${id}" data-dir="1" ${i===vs.length-1?'disabled':''} aria-label="Next version">›</button></span>` : '';
   const nOpt = id===sel && S.nodes[id].reply && !(fan && fan.id===id) ? listOptions(S.nodes[id].reply).options.length : 0;
-  const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !(gen && gen.id===id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">⑂ Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
-  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply ? `<button class="rmore" data-regen="${id}" ${gen?'disabled':''}>↻ Regenerate</button><button class="rmore" data-editresend="${id}" ${gen?'disabled':''}>Edit &amp; resend</button>` : '')+fo;
-  const st = S.nodes[id].stale && S.nodes[id].reply && !(gen && gen.id===id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
+  const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">⑂ Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
+  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button><button class="rmore" data-editresend="${id}">Edit &amp; resend</button>` : '')+fo;
+  const st = S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
   return sw||rg||st ? `<div class="rfoot">${sw}${rg}${st}</div>` : '';
 }
 /* Edit & resend, as in Claude: the edited prompt becomes a new version beside the original, which keeps its reply */
@@ -2287,13 +2375,18 @@ function resendHTML(id){
 }
 function replyHTML(id){
   const n=S.nodes[id];
-  const note = genNotes[id] ? `<p class="gnote">${esc(genNotes[id])}</p>` : '';
-  if(gen && gen.id===id) return `<div class="reply live" data-gen data-key="r${id}"><div class="rhead"><span class="who">Claude · ${esc(gen.tier||opts.model)}</span><button class="rmore" data-stop>Stop</button></div><div class="rbody">${gen.text?md(gen.text):'<p class="thinking">Thinking…</p>'}</div>${replyFoot(id)}</div>`;
+  const gn=genNotes[gkey(DB.current,id)], note = gn ? `<p class="gnote">${esc(gn)}</p>` : '';
+  const g=liveGen(id);
+  if(g) return `<div class="reply live" data-gen="${id}" data-key="r${id}"><div class="rhead"><span class="who">Claude · ${esc(g.tier||opts.model)}</span><button class="rmore" data-stop="${id}" title="Stop this reply${id===sel?' (Esc)':''}">Stop</button></div><div class="rbody">${g.text?md(g.text):'<p class="thinking">Thinking…</p>'}</div>${replyFoot(id)}</div>`;
+  if(!n.reply && queuedGen(id)){
+    const w=waitingOn(genQueue.find(q=>q.sid===DB.current && q.id===id));
+    return `<div class="reply empty" data-key="r${id}"><div class="rhead"><span class="who">Claude</span><button class="rmore" data-stop="${id}">Cancel</button></div><p class="thinking">${w!=null&&w!=='gone'?`Waiting for the reply to #${w} first…`:'Waiting its turn…'}</p></div>`;
+  }
   if(!n.reply){
     const msg = sampleState==='ready' ? 'No reply yet.' : sampleState==='loading' ? 'Connecting to Claude…'
       : sampleState==='denied' ? 'Replies are turned off. Check your API key or Claude Code sign-in, then restart Treechats.'
       : 'To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats.';
-    const btn = sampleState==='ready' && id===sel ? `<button class="btn primary sm" data-genreply="${id}" ${gen?'disabled':''}>Get reply</button>` : '';
+    const btn = sampleState==='ready' && id===sel ? `<button class="btn primary sm" data-genreply="${id}">Get reply</button>` : '';
     return `<div class="reply empty" data-key="r${id}"><span class="who">Claude</span><p>${msg}</p>${note}${btn}${replyFoot(id)}</div>`;
   }
   const full = id===sel || fullReplies.has(id);
@@ -2353,7 +2446,9 @@ function renderTree(){
     h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a space in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
   }
   if(offN && shown.length) h+=`<p class="offnote" data-key="offnote">${offN} more conversation${offN===1?'':'s'} in this space ${offN===1?'is':'are'} hidden.<button class="linkbtn" data-showall>Show all</button></p>`;
+  const fk=focusKey();
   treeEl.innerHTML=h;
+  restoreFocus(fk);
   const ns=all();
   const headTxt = S.head && S.refs[S.head] ? `HEAD → ${refName(S.head)} @ #${S.refs[S.head].tip}` : (sel!=null ? `HEAD detached at #${sel}` : 'no HEAD');
   document.getElementById('stats').textContent=`${headTxt} · ${Object.keys(S.refs).length} branches · ${ns.length} prompts · ${ns.filter(n=>n.parents.length>1).length} merges`;
@@ -2523,6 +2618,24 @@ function renderSpaceFiles(){
 }
 function render(forceEditor){ renderSpaces(); renderSpaceFiles(); renderHeader(); Motion.run(convListEl, renderConvs); renderTree(); renderEditor(forceEditor); renderCtx(); renderBranches(); renderNotes(); refreshRunButtons(); document.getElementById('optSummary').checked=opts.summary; document.getElementById('optCow').checked=opts.cow; }
 
+/* which field has focus, so a redraw can put focus and the caret back in the same place */
+const FOCUS_ATTRS=['vtext','ftitle','fprompt'];
+function focusKey(){
+  const a=document.activeElement;
+  if(!a || !treeEl.contains(a) || !/^(TEXTAREA|INPUT)$/.test(a.tagName)) return null;
+  let q=a.id ? '#'+a.id : null;
+  if(!q){ const at=FOCUS_ATTRS.find(x=>a.dataset[x]!=null); if(at) q=`[data-${at}="${a.dataset[at]}"]`; }
+  return q && {q, s:a.selectionStart, e:a.selectionEnd, v:a.value, top:a.scrollTop};
+}
+function restoreFocus(k){
+  if(!k) return;
+  const el=treeEl.querySelector(k.q); if(!el) return;
+  if(k.q==='#resendText') el.value=k.v;
+  el.focus({preventScroll:true});
+  const n=el.value.length;
+  try{ el.setSelectionRange(Math.min(k.s,n), Math.min(k.e,n)); }catch(e){}
+  el.scrollTop=k.top;
+}
 /* keep what's typed in the input box across a redraw */
 function keepDraft(fn){ const t=document.getElementById('contText'), v=t?t.value:null; fn(); const t2=document.getElementById('contText'); if(t2 && v!=null) t2.value=v; }
 function select(id){
@@ -3075,7 +3188,8 @@ treeEl.addEventListener('click', e=>{
     const vd=e.target.closest('[data-vdel]'); if(vd){ variants.rows.splice(+vd.dataset.vdel,1); paintVariants(); return; }
   }
   if(fan){
-    if(e.target.closest('[data-fcancel]')){ const id=fan.id; fan=null; animRender([id]); return; }
+    if(e.target.closest('[data-fcancel]')){ closeFan(); return; }
+    if(e.target.closest('[data-fskip]')){ if(fan.ctl) fan.ctl.abort(); fanReady(fan.quick, ''); return; }
     if(e.target.closest('[data-fango]')){ fanCreate(); return; }
     if(e.target.closest('[data-fadd]')){ fan.options.push({title:'New option', prompt:'', on:true}); paintFan(); const t=treeEl.querySelectorAll('[data-ftitle]'); const last=t[t.length-1]; if(last){ last.focus(); last.select(); } return; }
     const fd=e.target.closest('[data-fdel]'); if(fd){ const i=+fd.dataset.fdel; fan.options.splice(i,1); if(fan.main===i) fan.main=0; else if(fan.main>i) fan.main--; paintFan(); return; }
@@ -3093,7 +3207,7 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-showall]')){ showAll(); return; }
   const co=e.target.closest('[data-co]'); if(co && !pick){ checkout(co.dataset.co); return; }
   if(e.target.closest('[data-renamehead]')){ renaming=true; animRender([sel]); return; }
-  if(e.target.closest('[data-stop]')){ if(gen){ gen.stopped=true; gen.ctl.abort(); } return; }
+  const sp=e.target.closest('[data-stop]'); if(sp){ stopReply(+sp.dataset.stop); return; }
   const ua2=e.target.closest('[data-unalso]'); if(ua2){ alsoTargets.delete(+ua2.dataset.unalso); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsoclear]')){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
@@ -3140,6 +3254,7 @@ treeEl.addEventListener('keydown', e=>{
   if(e.target.id==='composeText' && send){ e.preventDefault(); addPrompt(null, e.target.value); }
   if(e.target.id==='contText' && send){ e.preventDefault(); addPrompt(sel, e.target.value); }
   if(e.target.dataset && e.target.dataset.vtext!=null && send){ e.preventDefault(); sendVariants(); }
+  if(fan && fan.status==='ready' && e.key==='Enter' && (e.metaKey||e.ctrlKey) && e.target.closest && e.target.closest('.fan')){ e.preventDefault(); fanCreate(); }
   if(e.target.id==='resendText' && send){ e.preventDefault(); const v=e.target.value.trim(); if(v) regenerate(resendFor, v); }
   if(e.target.id==='resendText' && e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); resendFor=null; animRender([sel]); }
   if(e.target.id==='branchName' && e.key==='Enter'){ e.preventDefault(); renaming=false; renameRef(S.head, e.target.value); animRender([sel]); }
@@ -3199,8 +3314,8 @@ async function addFiles(list, target){
 treeEl.addEventListener('input', e=>{
   if(e.target.id==='contText') draft=e.target.value; else if(e.target.id==='composeText') draftRoot=e.target.value;
   if(variants && e.target.dataset.vtext!=null){ const i=+e.target.dataset.vtext, r=variants.rows[i], was=!!r.text.trim(); r.text=e.target.value; if(i===0) draft=r.text;
-    if(was!==!!r.text.trim()){ const n=variants.rows.filter(x=>x.text.trim()).length, b=treeEl.querySelector('[data-vsend]'); if(b){ b.disabled=!n||!!gen; b.textContent=`Send ${n} variant${n===1?'':'s'}`; } const sg=treeEl.querySelector('[data-vsuggest]'); if(sg && i===0) sg.disabled=variants.suggesting||!r.text.trim(); } }
-  if(fan){ const d=e.target.dataset; if(d.ftitle!=null) fan.options[+d.ftitle].title=e.target.value; if(d.fprompt!=null){ const o=fan.options[+d.fprompt], was=!!o.prompt.trim(); o.prompt=e.target.value; if(was!==!!o.prompt.trim()){ const b=treeEl.querySelector('[data-fango]'), n=fan.options.filter(x=>x.on&&x.prompt.trim()).length; if(b){ b.disabled=!n; b.textContent=`Create ${n} branch${n===1?'':'es'}`; } } } }
+    if(was!==!!r.text.trim()){ const n=variants.rows.filter(x=>x.text.trim()).length, b=treeEl.querySelector('[data-vsend]'); if(b){ b.disabled=!n; b.textContent=`Send ${n} variant${n===1?'':'s'}`; } const sg=treeEl.querySelector('[data-vsuggest]'); if(sg && i===0) sg.disabled=variants.suggesting||!r.text.trim(); } }
+  if(fan){ const d=e.target.dataset; if(d.ftitle!=null) fan.options[+d.ftitle].title=e.target.value; if(d.fprompt!=null){ const o=fan.options[+d.fprompt], was=!!o.prompt.trim(); o.prompt=e.target.value; if(was!==!!o.prompt.trim()){ const b=treeEl.querySelector('[data-fango]'), n=fan.options.filter(x=>x.on&&x.prompt.trim()).length; if(b){ b.disabled=!n; b.firstChild.textContent=fanGoLabel(n)+' '; } } } }
 });
 treeEl.addEventListener('paste', e=>{
   if(!e.target.matches || !e.target.matches('#contText, #composeText')) return;
@@ -3304,13 +3419,14 @@ document.addEventListener('keydown', e=>{
   if(!setEl.hidden){ if(e.key==='Escape'){ e.preventDefault(); closeSettings(); } else if(e.key==='Tab') trapTab(e); return; }
   const typing = /^(TEXTAREA|INPUT|SELECT)$/.test(e.target.tagName);
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='z' && !typing){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
-  if(e.key==='Escape' && gen){ gen.stopped=true; gen.ctl.abort(); return; }
-  if(e.key==='Escape' && sumGen){ sumGen.ctl.abort(); return; }
+  /* Esc stops the reply you're looking at, unless you're typing or something else is open to close first */
+  if(e.key==='Escape' && !typing && !pick && composeFor==null && !renaming && !variants && !fan && choosing==null && !pickingRows && !shellEl.matches('.open-spaces,.open-convs') && sel!=null && replyBusy(sel)){ stopReply(sel); return; }
+  if(e.key==='Escape' && sumGen && !typing){ sumGen.ctl.abort(); return; }
   if(e.key==='Escape' && choosing!=null){ finishChoosing(false); return; }
   if(e.key==='Escape' && pickingRows){ setPickingRows(false); return; }
   if(e.key==='Escape' && shellEl.matches('.open-spaces,.open-convs')){ closeDrawers(); return; }
   if(e.key==='Escape' && variants){ variants=null; animRender([sel]); return; }
-  if(e.key==='Escape' && fan){ const id=fan.id; fan=null; animRender([id]); return; }
+  if(e.key==='Escape' && fan){ closeFan(); return; }
   if(e.key==='Escape'){ if(pick||composeFor!=null||renaming){ const src=pick&&pick.src; pick=null; composeFor=null; renaming=false; animRender([src, sel]); } else if(typing) e.target.blur(); else if(sel!=null) deselect(); return; }
   if(!typing && opts.opKeys!==false && e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && /^Key[A-Z]$/.test(e.code)){
     if(e.repeat || pick || sel==null) return;
@@ -3538,7 +3654,9 @@ cmpEl().addEventListener('click', e=>{
   const m=c('[data-cmain]'); if(m){ promote(+m.dataset.cmain); renderCompare(); return; }
   const pr=c('[data-cprune]'); if(pr){ run('prune', +pr.dataset.cprune); renderCompare(); return; }
   const g=c('[data-cget]'); if(g){ generate(+g.dataset.cget); return; }
-  if(c('[data-cgetall]')){ const miss=cmpKids(cmpFor).filter(k=>!k.reply).map(k=>k.id); if(!miss.length || gen) return; genQueue.push(...miss.slice(1)); generate(miss[0]); renderCompare(); return; }
+  if(c('[data-cgetall]')){ wantReplies(cmpKids(cmpFor).filter(k=>!k.reply).map(k=>k.id)); return; }
+  const cs=c('[data-cstop]'); if(cs){ stopReply(+cs.dataset.cstop); renderCompare(); return; }
+  if(c('[data-cstopall]')){ for(const k of cmpKids(cmpFor)) stopReply(k.id); renderCompare(); return; }
 });
 palEl().addEventListener('click', e=>{ if(e.target===palEl()){ closePalette(); return; } const o=e.target.closest('[data-pal]'); if(o) runPalette(+o.dataset.pal); });
 palEl().addEventListener('mousemove', e=>{ const o=e.target.closest('[data-pal]'); if(o && +o.dataset.pal!==palIdx){ palIdx=+o.dataset.pal; for(const x of palEl().querySelectorAll('.palo')) x.classList.toggle('on', +x.dataset.pal===palIdx); } });
@@ -3898,7 +4016,7 @@ function noteExistingRefs(){ for(const rid of Object.keys(S.refs||{})) seenRefs.
 const numberedBranches = () => Object.keys(S.refs).filter(rid=>AUTO_BRANCH.test(S.refs[rid].name) && S.nodes[S.refs[rid].tip] && S.nodes[S.refs[rid].tip].kind!=='merge');
 function queueName(job){ nameJobs.push(job); pumpNames(); }
 async function pumpNames(){
-  if(naming || gen || sumGen || sampleState!=='ready' || !sampleFn || !sampleFn.json || !nameJobs.length) return;
+  if(naming || busyCount() || sumGen || sampleState!=='ready' || !sampleFn || !sampleFn.json || !nameJobs.length) return;
   naming=true; const job=nameJobs.shift();
   try{ await job(); }catch(e){}
   naming=false; setTimeout(pumpNames, 0);

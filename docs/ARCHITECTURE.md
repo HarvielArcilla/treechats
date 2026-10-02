@@ -21,7 +21,7 @@ server/config.ts        .env settings
 | `GET /api/config` | Which provider is active and ready, model labels for each tier, limits |
 | `GET /api/state`, `PUT /api/state` | Load and save the app state (one JSON document) |
 | `GET /api/snapshots`, `GET /api/snapshots/:id` | Earlier saved states |
-| `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}` |
+| `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |
 
 ## Why the app is still one file
 

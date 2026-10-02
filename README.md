@@ -81,7 +81,8 @@ npm test        # tests
 npm run check   # type check
 ```
 
-Set `TREECHATS_FAKE=1` to get canned replies without calling Claude. Every push runs the type check, the build
+Set `TREECHATS_FAKE=1` to get canned replies without calling Claude (and `TREECHATS_FAKE_DELAY=60` to slow them down
+enough to watch them stream). Every push runs the type check, the build
 and the tests on Windows, macOS and Linux with Node 22 and 24 (`.github/workflows/ci.yml`); the tests start the
 real server and drive a stand-in `claude` CLI, including stopping a reply mid-way.
 

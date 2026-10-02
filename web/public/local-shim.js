@@ -88,8 +88,10 @@
         }
       }
     } catch (e) {
-      if (e && e.code) throw e;
-      throw fail(e && e.name === 'AbortError' ? 'cancelled' : 'network', text, e && e.message);
+      /* a stopped request throws an AbortError, whose numeric code isn't one of ours */
+      if (e && e.name === 'AbortError') throw fail('cancelled', text, '');
+      if (e && typeof e.code === 'string') throw e;
+      throw fail('network', text, e && e.message);
     }
     if (!done) throw fail('network', text, 'The reply ended early.');
     return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage };

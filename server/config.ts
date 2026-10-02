@@ -36,6 +36,8 @@ export const config = {
   open: process.env.TREECHATS_OPEN !== '0',
   /* TREECHATS_FAKE=1 answers with canned text instead of calling Claude: for tests and offline work */
   fake: process.env.TREECHATS_FAKE === '1',
+  /* milliseconds between pieces of a test reply, to watch streaming */
+  fakeDelay: num(process.env.TREECHATS_FAKE_DELAY, 8),
 };
 
 /* "claude-haiku-4-5-20251001" → "Haiku 4.5", for labels in the app */
