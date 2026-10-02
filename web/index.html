@@ -3259,7 +3259,23 @@ opsCardEl.addEventListener('click', e=>{
 });
 const asideEl=document.querySelector('aside');
 asideEl.addEventListener('toggle', e=>{ const d=e.target, k=d.dataset && d.dataset.openkey; if(k && (opts.open[k] ?? null)!==d.open){ opts.open[k]=d.open; save(); } }, true);
-function placeAside(){}
+/* The right column sticks under the top bar and scrolls on its own. Its height has to fit between where it
+   starts and the bottom of the window, which changes only until it reaches the top bar, so this does almost
+   no work while scrolling. */
+let asideFrame=0, asideMax=-1;
+function placeAside(){
+  if(asideFrame) return;
+  asideFrame=requestAnimationFrame(()=>{
+    asideFrame=0;
+    const a=document.querySelector('aside'); if(!a) return;
+    if(getComputedStyle(a).position!=='sticky'){ if(asideMax!==-1){ a.style.maxHeight=''; asideMax=-1; } return; }
+    const top=Math.max(a.getBoundingClientRect().top, 66), mh=Math.max(200, Math.floor(innerHeight-top-12));
+    if(mh!==asideMax){ asideMax=mh; a.style.maxHeight=mh+'px'; }
+  });
+}
+window.addEventListener('scroll', placeAside, {passive:true});
+window.addEventListener('resize', placeAside);
+if(typeof ResizeObserver!=='undefined') new ResizeObserver(placeAside).observe(document.querySelector('.app') || document.body);
 document.getElementById('editorCard').addEventListener('click', e=>{
   const g=e.target.closest('[data-gotoop]'); if(!g) return;
   const all_=opsCardEl.querySelector('details.cardd'), d=opsCardEl.querySelector(`[data-openkey="op-${g.dataset.gotoop}"]`);
