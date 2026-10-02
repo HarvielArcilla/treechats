@@ -31,6 +31,8 @@ Treechats is a context editor: deciding what Claude sees on each turn, cheaply, 
 the context is right. Done so far: edit Claude's replies (marked "edited by you"), copy context as a prompt,
 distill a branch into a brief.
 
+Also done: the branch map (a git-style graph of the conversation in the panel, full size with M).
+
 Next, roughly in order of value for the effort:
 - "Written before this changed" marker: record what context each reply was written with, flag replies whose
   context has since changed

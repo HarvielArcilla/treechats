@@ -742,11 +742,26 @@ ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 .implist small{color:var(--muted);font-size:.76rem}
 .imperr{color:var(--danger)}
 .impfoot{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
-/* overview map */
+/* branch map */
 .ovmap{margin-top:auto;flex:none;position:sticky;bottom:-16px;background:var(--panel);padding:8px 2px 14px;border-top:1px solid var(--line);display:grid;gap:6px}
 .ovmap[hidden]{display:none}
 .ovhead{display:flex;justify-content:space-between;align-items:center;font:500 .7rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-#ovSvg{display:block;margin:0 auto;cursor:pointer;touch-action:none;max-width:100%}
+#ovSvg{display:block;margin:0 auto;cursor:pointer;max-width:100%}
+#ovSvg .mrow:hover{fill:var(--accent-soft)}
+.mapbox{width:min(980px,100%)}
+.mapbody{overflow:auto;padding:12px 18px 18px;min-height:0}
+.mapgraph{position:relative}
+.mapgraph > svg{position:absolute;left:0;top:0;pointer-events:none}
+.maprows{display:grid}
+.maprow{display:flex;align-items:center;gap:8px;min-width:0;border:0;border-radius:6px;background:none;color:var(--fg);font:inherit;font-size:.86rem;text-align:left;cursor:pointer;padding-right:8px}
+.maprow:hover,.maprow:focus-visible{background:var(--accent-soft);outline:none}
+.maprow.sel{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.maprow.off{color:var(--muted)}
+.maprow .mid{font:.72rem var(--mono);color:var(--muted);flex:none}
+.maprow .mtxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.maprow .mtags{display:flex;gap:4px;flex:none}
+.maprow.merge .mtxt{font-size:.8rem;color:var(--muted)}
+.maplegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.76rem;color:var(--muted);padding:0 18px 12px}
 /* conversations off screen skip layout and painting until you scroll to them */
 section.conv{content-visibility:auto;contain-intrinsic-size:auto 900px}
 
@@ -786,7 +801,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="filters" id="convFilters" role="group" aria-label="Show only"><button class="seg" data-filter="star" aria-pressed="false">★ Starred</button><button class="seg" data-filter="note" aria-pressed="false">Notes</button><button class="seg" data-filter="skip" aria-pressed="false">Left out</button></div>
   <div class="cvtools" id="cvTools"></div>
   <ul class="convlist" id="convList"></ul>
-  <div class="ovmap" id="ovMap" hidden><div class="ovhead"><span>Overview</span><button class="pclose" data-maphide aria-label="Hide the overview map" title="Hide the overview map">×</button></div><svg id="ovSvg" role="img" aria-label="Overview of this page. Click or drag to scroll."></svg></div>
+  <div class="ovmap" id="ovMap" hidden><div class="ovhead"><span>Branch map</span><span style="display:flex;gap:2px"><button class="pclose" data-mapopen aria-label="Open the full branch map" title="Open the full map (M)">⤢</button><button class="pclose" data-maphide aria-label="Hide the branch map" title="Hide the branch map">×</button></span></div><svg id="ovSvg" role="img" aria-label="Branches of this conversation. Click a dot to go to that prompt."></svg></div>
 </nav>
 <div class="scrim" id="scrim" hidden></div>
 <div class="main">
@@ -798,6 +813,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘ Z)" aria-label="Undo"><span class="ico" aria-hidden="true">↶</span><span class="lbl">Undo</span></button>
   <button class="btn" id="redoBtn" title="Redo (Ctrl/⌘ Shift Z)" aria-label="Redo"><span class="ico" aria-hidden="true">↷</span><span class="lbl">Redo</span></button>
   <button class="btn switchbtn" id="simpleBtn" role="switch" aria-checked="false" title="One conversation as a plain chat, without the tree and tools"><span class="track" aria-hidden="true"><span class="knob"></span></span><span class="lbl">Simple view</span></button>
+  <button class="btn" id="mapBtn" aria-haspopup="dialog" aria-label="Branch map" title="Branch map (M)"><span class="ico" aria-hidden="true">⑂</span><span class="lbl">Map</span></button>
   <button class="btn" id="paletteBtn" aria-haspopup="dialog" aria-label="Commands" title="Commands"><span class="lbl">Commands</span><kbd class="tbk" id="palKbd">⌘K</kbd><span class="ico" aria-hidden="true">⌘</span></button>
   <button class="btn" id="settingsBtn" aria-haspopup="dialog" aria-label="Settings" title="Settings"><span class="lbl">Settings</span><span class="ico" aria-hidden="true">⚙</span></button>
   <button class="btn primary" id="newBtn" aria-label="New conversation">+<span class="lbl"> New conversation</span></button>
@@ -855,6 +871,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
     <div class="impfoot"><label class="model"><span>Into</span><select id="impSpace"></select></label><button class="btn primary" data-impgo disabled>Import</button></div>
   </div>
 </div>
+<div class="setwrap" id="mapView" hidden><div class="cmpbox mapbox" role="dialog" aria-modal="true" aria-labelledby="mapTitle"></div></div>
 <div class="setwrap" id="compare" hidden><div class="cmpbox" role="dialog" aria-modal="true" aria-labelledby="cmpTitle"></div></div>
 <div class="setwrap palwrap" id="palette" hidden>
   <div class="palbox" role="dialog" aria-modal="true" aria-label="Commands">
@@ -2250,7 +2267,8 @@ function paletteCommands(q){
   add('App', 'Show all conversations', ()=>showAll());
   add('App', 'Import chats', ()=>openImport());
   for(const [f,l] of [['star','starred prompts'],['note','prompts with notes'],['skip','left-out prompts']]) add('Filter', `Show ${l}`, ()=>setFilter(f, true));
-  add('App', opts.map===false ? 'Show the overview map' : 'Hide the overview map', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
+  add('App', 'Open the branch map', ()=>openMapView(), 'M');
+  add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
   add('Settings', 'Open settings', ()=>openSettings());
   add('Settings', 'Keyboard shortcuts', ()=>openSettings('keys'));
@@ -3698,6 +3716,7 @@ document.addEventListener('keydown', e=>{
   if((e.metaKey||e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='k'){ e.preventDefault(); if(palEl().hidden) openPalette(); else closePalette(); return; }
   if(!palEl().hidden){ if(e.key==='Escape') closePalette(); return; }
   if(!impEl().hidden){ if(e.key==='Escape'){ e.preventDefault(); closeImport(); } else if(e.key==='Tab') trapTab(e, impEl()); return; }
+  if(!mapEl().hidden){ if(e.key==='Escape' || (e.key.toLowerCase()==='m' && !e.metaKey && !e.ctrlKey && !e.altKey)){ e.preventDefault(); closeMapView(); } else if(e.key==='Tab') trapTab(e, mapEl()); return; }
   if(!cmpEl().hidden){ if(e.key==='Escape'){ e.preventDefault(); closeCompare(); } else if(e.key==='Tab') trapTab(e, cmpEl()); return; }
   if(!setEl.hidden){ if(e.key==='Escape'){ e.preventDefault(); closeSettings(); } else if(e.key==='Tab') trapTab(e); return; }
   const typing = /^(TEXTAREA|INPUT|SELECT)$/.test(e.target.tagName);
@@ -3719,6 +3738,7 @@ document.addEventListener('keydown', e=>{
     return;
   }
   if(typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(e.key==='m' || e.key==='M'){ e.preventDefault(); openMapView(); return; }
   if(e.key==='/'){ e.preventDefault(); if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, narrow()?60:0); return; }
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
     const rows=[...treeEl.querySelectorAll('.row')]; if(!rows.length) return;
@@ -3871,7 +3891,7 @@ function renderSettings(){
       ${setRow('Font','System uses your device’s own font.',segs('font',Object.entries(FONTS).map(([k,v])=>[k,v[0]]),'Font'))}
       ${setRow('Density','Compact fits more prompts on screen.',segs('density',[['comfortable','Comfortable'],['compact','Compact']],'Density'))}
       ${setRow('Motion','Reduced turns off animations.',segs('motion',[['system','System'],['reduced','Reduced']],'Motion'))}
-      ${setRow('Overview map','A small picture of the page under the conversation list, on wide screens.',segs('map',[['true','Show'],['false','Hide']],'Overview map'))}</section>`;
+      ${setRow('Branch map in the panel','A small graph of the conversation\u2019s branches under the conversation list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
       <p class="note">${AI}marks tools where Claude does the work, such as Distill or Fan out. Each use sends a request.</p>
@@ -4240,56 +4260,137 @@ impEl().addEventListener('click', e=>{
 impEl().addEventListener('change', e=>{ const i=e.target.dataset && e.target.dataset.impc; if(i!=null){ e.target.checked?impChecked.add(+i):impChecked.delete(+i); renderImportPreview(); } });
 document.addEventListener('click', e=>{ if(e.target.closest && e.target.closest('[data-openimport]')) openImport(); });
 
-/* ---- Overview map ----
-   A small picture of the whole page in the conversations panel: each prompt is a bar in its branch's color.
-   Click or drag on it to scroll. Drawn from the laid-out rows, so it matches what's on screen. */
+/* ---- Branch map ----
+   The conversation as a graph, the way `git log --graph` draws history: one row per prompt, oldest at the top, a
+   column per branch line, curves where a branch forks off and dashed lines where one is merged back. Lane colors
+   match the tree. A small one sits in the conversations panel; the full one (M, or Map in the top bar) lists every
+   prompt beside its dot. Clicking either goes to that prompt. */
+function mapLayout(rootId){
+  const rows=[], forks=[], lines=[], merges=[], pos=new Map(), active=new Set(); let cols=1;
+  (function lay(id, col, lane){
+    const i=rows.length; rows.push({id, col, lane}); pos.set(id, i); cols=Math.max(cols, col+1);
+    const ks=vKids(id), straight=ks.find(k=>trunk.has(k.id)) || ks[0], side=ks.filter(k=>k!==straight);
+    if(straight) active.add(col);
+    const used=new Set([lane]);
+    for(const k of side){
+      let l=laneFor(k.alt ?? k.id, lane); for(let t=0; used.has(l) && t<3; t++) l=l%3+1; used.add(l);
+      let c=col+1; while(active.has(c)) c++;
+      forks.push({from:id, to:k.id, lane:l, plane:lane});
+      lay(k.id, c, l);
+    }
+    if(straight){ active.delete(col); lines.push({from:id, to:straight.id, lane}); lay(straight.id, col, lane); }
+  })(rootId, 0, 0);
+  for(const r of rows) for(const k of vSec(r.id)) if(pos.has(k.id)) merges.push({from:r.id, to:k.id});
+  /* each merge line runs down a lane of its own to the right of the branches, so it never crosses a prompt;
+     merges whose spans don't overlap share a lane */
+  const rails=[];
+  for(const m of merges.sort((a,b)=>pos.get(a.from)-pos.get(b.from))){
+    const a=pos.get(m.from), b=pos.get(m.to);
+    let k=rails.findIndex(end=>end<a); if(k<0){ k=rails.length; rails.push(b); } else rails[k]=b;
+    m.rail=cols+k;
+  }
+  return {rows, forks, lines, merges, pos, cols:cols+rails.length};
+}
+/* the lines and dots; x/y place a column and a row */
+function mapGraphSVG(L, x, y, r, pathSet){
+  const st=l=>`style="stroke:var(--l${l})"`, P=L.pos, col=id=>L.rows[P.get(id)].col;
+  let g='';
+  for(const e of L.lines) g+=`<line x1="${x(col(e.from))}" y1="${y(P.get(e.from))}" x2="${x(col(e.to))}" y2="${y(P.get(e.to))}" ${st(e.lane)} stroke-width="${r*.7}" opacity="${pathSet.has(e.to)?1:.55}"/>`;
+  for(const e of L.forks){
+    const x0=x(col(e.from)), y0=y(P.get(e.from)), x1=x(col(e.to)), y1=y(P.get(e.to)), bend=Math.min(y1-y0, (y(1)-y(0))*1.2);
+    if(y1-y0>bend) g+=`<line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1-bend}" ${st(e.plane)} stroke-width="${r*.7}" opacity=".55"/>`;
+    g+=`<path d="M${x0} ${y1-bend} C${x0} ${y1-bend*.35} ${x1} ${y1-bend*.65} ${x1} ${y1}" fill="none" ${st(e.lane)} stroke-width="${r*.7}" opacity="${pathSet.has(e.to)?1:.55}"/>`;
+  }
+  for(const e of L.merges){
+    const x0=x(col(e.from)), y0=y(P.get(e.from)), x1=x(col(e.to)), y1=y(P.get(e.to)), xr=x(e.rail), d=Math.min((y1-y0)/2, (y(1)-y(0))*.9);
+    g+=`<path d="M${x0} ${y0} C${xr} ${y0} ${xr} ${y0} ${xr} ${y0+d} L${xr} ${y1-d} C${xr} ${y1} ${xr} ${y1} ${x1} ${y1}" fill="none" style="stroke:var(--merge)" stroke-width="${r*.6}" stroke-dasharray="${r} ${r*.8}" opacity=".85"/>`;
+  }
+  for(const row of L.rows){
+    const n=S.nodes[row.id], cx=x(row.col), cy=y(P.get(row.id)), on=pathSet.has(row.id);
+    if(n.kind==='merge') g+=`<rect x="${cx-r}" y="${cy-r}" width="${r*2}" height="${r*2}" transform="rotate(45 ${cx} ${cy})" style="fill:var(--merge)"/>`;
+    else g+=`<circle cx="${cx}" cy="${cy}" r="${r}" style="fill:${n.skip?'var(--surface)':`var(--l${row.lane})`};stroke:var(--l${row.lane})" stroke-width="${n.skip?r*.5:0}" opacity="${on?1:.6}"/>`;
+    if(row.id===sel) g+=`<circle cx="${cx}" cy="${cy}" r="${r*1.9}" fill="none" style="stroke:var(--accent)" stroke-width="${Math.max(1.2,r*.55)}"/>`;
+  }
+  return g;
+}
+const mapRoot = () => { const k=lastConvKey(); const r=k!=null ? vRoots().find(x=>convKey(x)===k) : null; return r || orderedRoots()[0] || null; };
 const ovEl=()=>document.getElementById('ovMap'), ovSvg=()=>document.getElementById('ovSvg');
-let ovGeo=null, mapTimer=null;
-function scheduleMap(){ clearTimeout(mapTimer); mapTimer=setTimeout(drawMap, 320); }
+let ovRows=null, mapTimer=null;
+function scheduleMap(){ clearTimeout(mapTimer); mapTimer=setTimeout(drawMap, 120); if(!mapEl().hidden) renderMapView(); }
 function drawMap(){
   const el=ovEl(); if(!el) return;
-  const T=treeEl.getBoundingClientRect(), H=treeEl.scrollHeight, W=treeEl.clientWidth;
-  const show = opts.map!==false && !narrow() && H > innerHeight*1.15 && W>0;
-  el.hidden=!show; if(!show){ ovGeo=null; return; }
-  const boxW=Math.max(120, el.clientWidth || 220), maxH=Math.max(120, Math.min(260, innerHeight*.34));
-  const sy=Math.min(maxH/H, boxW/W*1.6), sx=boxW/W, sc=sy, w=boxW, h=H*sy, top0=T.top;
-  const cs=getComputedStyle(document.documentElement), v=k=>cs.getPropertyValue(k).trim();
-  let out=`<rect x="0" y="0" width="${w}" height="${h}" fill="${v('--bg')}" rx="3"/>`;
-  for(const c of treeEl.querySelectorAll('section.conv')){ const r=c.getBoundingClientRect(); out+=`<rect x="${(r.left-T.left)*sx}" y="${(r.top-top0)*sc}" width="${r.width*sx}" height="${r.height*sc}" fill="${v('--surface')}" stroke="${v('--line')}" stroke-width=".6" rx="2"/>`; }
-  for(const rp of treeEl.querySelectorAll('.reply')){ const r=rp.getBoundingClientRect(); out+=`<rect x="${(r.left-T.left)*sx}" y="${(r.top-top0)*sc}" width="${r.width*sx}" height="${Math.max(1,r.height*sc)}" fill="${v('--reply-rule')}" opacity=".22"/>`; }
-  for(const row of treeEl.querySelectorAll('.row[data-id]')){
-    const r=row.getBoundingClientRect(), dot=row.querySelector('.dot'), id=+row.dataset.id, n=S.nodes[id];
-    const col = row.classList.contains('sel') ? v('--accent') : (dot ? getComputedStyle(dot).borderTopColor : v('--muted'));
-    const y=(r.top-top0)*sc, hh=Math.max(1.6, r.height*sc*.6);
-    out+=`<rect x="${(r.left-T.left)*sx}" y="${y+(r.height*sc-hh)/2}" width="${Math.max(3,r.width*sx*.9)}" height="${hh}" fill="${col}" opacity="${row.classList.contains('sel')?1:n&&n.skip?.3:.7}" rx="1"/>`;
-    if(n && n.star) out+=`<circle cx="${(r.right-T.left)*sx-2}" cy="${y+r.height*sc/2}" r="${Math.max(1.6,hh*.9)}" fill="${v('--merge')}"/>`;
-  }
-  out+=`<rect id="ovView" x="0" y="0" width="${w}" height="10" fill="${v('--accent')}" fill-opacity=".1" stroke="${v('--accent')}" stroke-width="1" rx="2"/>`;
-  const svg=ovSvg(); svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.setAttribute('width', w); svg.setAttribute('height', h); svg.innerHTML=out;
-  ovGeo={sc, docTop: top0+scrollY, h};
-  paintMapView();
+  const root=composeFor==='root' ? null : mapRoot();
+  const L=root ? mapLayout(root.id) : null;
+  const show = opts.map!==false && !!L && L.rows.length>1;
+  el.hidden=!show; ovRows=null; if(!show) return;
+  const w=Math.max(140, el.clientWidth || 220), pad=7;
+  const colW=Math.min(13, (w-pad*2)/Math.max(1, L.cols)), rowH=Math.max(1.5, Math.min(11, 260/L.rows.length));
+  const r=Math.max(1.4, Math.min(3.4, rowH*.32, colW*.3)), h=L.rows.length*rowH+pad*2;
+  const gx=c=>pad+colW*c+colW/2, gy=i=>pad+i*rowH+rowH/2, pathSet=new Set(sel!=null && S.nodes[sel] ? path(sel) : []);
+  const hit=L.rows.map((row,i)=>`<rect class="mrow" x="0" y="${pad+i*rowH}" width="${w}" height="${rowH}" fill="transparent" rx="2"><title>#${row.id} ${esc(clip(plainText(S.nodes[row.id].kind==='merge' ? 'Merged '+(S.nodes[row.id].from||'') : S.nodes[row.id].text), 90))}${refsAt(row.id).length?' · '+refsAt(row.id).map(refName).join(', '):''}</title></rect>`).join('');
+  const svg=ovSvg(); svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.setAttribute('width', w); svg.setAttribute('height', h);
+  svg.innerHTML=hit+mapGraphSVG(L, gx, gy, r, pathSet);
+  ovRows={rows:L.rows, pad, rowH};
 }
-function paintMapView(){
-  if(!ovGeo) return; const r=document.getElementById('ovView'); if(!r) return;
-  const y=(scrollY-ovGeo.docTop)*ovGeo.sc, hh=innerHeight*ovGeo.sc;
-  r.setAttribute('y', Math.max(0, Math.min(ovGeo.h-2, y))); r.setAttribute('height', Math.max(4, Math.min(hh, ovGeo.h - Math.max(0,y))));
-}
-let mapFrame=0;
-window.addEventListener('scroll', ()=>{ if(!mapFrame) mapFrame=requestAnimationFrame(()=>{ mapFrame=0; paintMapView(); }); }, {passive:true});
+ovSvg().addEventListener('click', e=>{
+  if(!ovRows) return;
+  const b=ovSvg().getBoundingClientRect(), vb=ovSvg().viewBox.baseVal, yy=(e.clientY-b.top)*(vb.height/b.height);
+  const i=Math.floor((yy-ovRows.pad)/ovRows.rowH), row=ovRows.rows[Math.max(0, Math.min(ovRows.rows.length-1, i))];
+  if(row) goFromMap(row.id);
+});
+document.getElementById('ovMap').addEventListener('click', e=>{
+  if(e.target.closest('[data-maphide]')){ opts.map=false; save(); drawMap(); toast('Branch map hidden from the panel. Open the full map with M or Map, or bring it back from Settings.'); }
+  if(e.target.closest('[data-mapopen]')) openMapView();
+});
 window.addEventListener('resize', scheduleMap);
-if(typeof ResizeObserver!=='undefined') new ResizeObserver(scheduleMap).observe(treeEl);
-(()=>{
-  let dragging=false;
-  const go=e=>{ if(!ovGeo) return; const b=ovSvg().getBoundingClientRect(), y=(e.clientY-b.top)/ovGeo.sc; window.scrollTo({top: Math.max(0, ovGeo.docTop + y - innerHeight/2), behavior: dragging || Motion.reduced() ? 'auto' : 'smooth'}); };
-  const svg=document.getElementById('ovSvg');
-  svg.addEventListener('pointerdown', e=>{ go(e); dragging=true; svg.setPointerCapture && svg.setPointerCapture(e.pointerId); });
-  svg.addEventListener('pointermove', e=>{ if(dragging) go(e); });
-  svg.addEventListener('pointerup', ()=>{ dragging=false; });
-  svg.addEventListener('pointercancel', ()=>{ dragging=false; });
-  document.getElementById('ovMap').addEventListener('click', e=>{ if(e.target.closest('[data-maphide]')){ opts.map=false; save(); drawMap(); toast('Overview map hidden. Bring it back from Settings or Commands.'); } });
-})();
+function goFromMap(id){
+  const n=S.nodes[id]; if(!n) return;
+  if(!mapEl().hidden) closeMapView(true);
+  closeDrawers();
+  if(opts.simple) simpleTip=null;
+  select(n.kind==='merge' ? n.parents[0] : id);
+}
 
-for(const name of ['render','renderTree','renderConvs','renderCtx','renderBranches','renderEditor','renderNotes','renderCompare','paletteCommands','treeMarkdown','pathMarkdown','drawMap']){
+/* the full map */
+const mapEl=()=>document.getElementById('mapView');
+let mapReturn=null;
+function openMapView(){
+  if(!mapRoot()){ toast('Start a conversation first. The map shows its branches.'); return; }
+  mapReturn=document.activeElement; closeMenu && menuEl && closeMenu();
+  mapEl().hidden=false; document.body.style.overflow='hidden';
+  renderMapView();
+  const cur=mapEl().querySelector('.maprow.sel') || mapEl().querySelector('.maprow');
+  if(cur){ cur.focus({preventScroll:true}); cur.scrollIntoView({block:'center'}); }
+}
+function closeMapView(keepFocus){ mapEl().hidden=true; document.body.style.overflow=''; if(!keepFocus && mapReturn && mapReturn.focus && document.contains(mapReturn)) mapReturn.focus({preventScroll:true}); }
+function renderMapView(){
+  const box=mapEl().querySelector('.mapbox'), root=mapRoot(); if(!root){ closeMapView(); return; }
+  const L=mapLayout(root.id), rowH=30, colW=18, pad=4, r=4.6, gw=pad*2+colW*L.cols+6;
+  const gx=c=>pad+colW*c+colW/2, gy=i=>i*rowH+rowH/2, pathSet=new Set(sel!=null && S.nodes[sel] ? path(sel) : []);
+  const nTips=Object.values(S.refs).filter(x=>S.nodes[x.tip] && chain(x.tip)[0]===root.id).length;
+  const rows=L.rows.map(row=>{
+    const n=S.nodes[row.id], refs=refsAt(row.id);
+    const pills=refs.map(rid=>`<span class="ref ${S.head===rid?'head':''}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</span>`).join('');
+    const tags=(n.star?'<span class="tag">★</span>':'')+(n.skip?'<span class="tag skiptag">left out</span>':'')+(n.reply?'':n.kind==='merge'?'':'<span class="tag">no reply</span>');
+    const txt = n.kind==='merge' ? `Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b>` : esc(clip(plainText(n.text)||'(empty)', 160));
+    return `<button class="maprow ${row.id===sel?'sel':''} ${pathSet.has(row.id)?'':'off'} ${n.kind==='merge'?'merge':''}" data-mapgo="${row.id}" style="height:${rowH}px;padding-left:${gw}px" title="${esc(clip(plainText(n.text||''), 400))}"><span class="mid">#${row.id}</span><span class="mtxt">${txt}</span><span class="mtags">${tags}${pills}</span></button>`;
+  }).join('');
+  box.innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="mapTitle">Branch map</h2><p class="note">${esc(clip(convTitle(root),120))} · ${L.rows.filter(x=>S.nodes[x.id].kind!=='merge').length} prompts · ${nTips} branch${nTips===1?'':'es'}</p></div><div class="bar"><button class="btn" data-mapclose>Close <kbd class="inv">Esc</kbd></button></div></div>
+    <div class="mapbody"><div class="mapgraph"><svg width="${gw}" height="${L.rows.length*rowH}" aria-hidden="true">${mapGraphSVG(L, gx, gy, r, pathSet)}</svg><div class="maprows">${rows}</div></div></div>`;
+}
+mapEl().addEventListener('click', e=>{
+  if(e.target===mapEl() || e.target.closest('[data-mapclose]')){ closeMapView(); return; }
+  const g=e.target.closest('[data-mapgo]'); if(g) goFromMap(+g.dataset.mapgo);
+});
+mapEl().addEventListener('keydown', e=>{
+  if(e.key!=='ArrowDown' && e.key!=='ArrowUp') return;
+  const rows=[...mapEl().querySelectorAll('.maprow')], i=rows.indexOf(document.activeElement);
+  const t=rows[Math.max(0, Math.min(rows.length-1, (i<0?0:i)+(e.key==='ArrowDown'?1:-1)))];
+  if(t){ e.preventDefault(); t.focus(); t.scrollIntoView({block:'nearest'}); }
+});
+document.getElementById('mapBtn').addEventListener('click', ()=>openMapView());
+
+for(const name of ['render','renderTree','renderConvs','renderCtx','renderBranches','renderEditor','renderNotes','renderCompare','paletteCommands','treeMarkdown','pathMarkdown','drawMap','renderMapView']){
   const f=window[name]; if(typeof f==='function') window[name]=function(...a){ return withGraph(()=>f.apply(this,a)); };
 }
 
