@@ -8,7 +8,9 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "prestart": "node scripts/ensure-deps.mjs",
     "start": "vite build && tsx --disable-warning=ExperimentalWarning server/start.ts --open",
+    "predev": "node scripts/ensure-deps.mjs",
     "dev": "concurrently -k -n server,web -c blue,green \"tsx watch --disable-warning=ExperimentalWarning server/start.ts\" \"vite\"",
     "build": "vite build",
     "check": "tsc --noEmit",
