@@ -30,6 +30,11 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - The tree stored as rows (spaces, turns, branches) instead of one document; attachments in the database
 - Turns made of content blocks (text, tool calls and results, thinking, images), provider-neutral
 - Attribution and history for every change; permissions per space (read, suggest, write)
+- Context fingerprint on every reply: a hash chain over exactly what was sent (each turn's hash covers the turn
+  and the previous hash), recorded when the reply is written and never sent to the model. Powers a small, neutral
+  "context changed at #4" marker that can be turned off (informs, never blocks), opt-in checks for agents ("only if
+  the context is still ab12…"), cache awareness (where two requests' prefixes diverge) and reproducibility.
+  Identity stays numeric (#12) and branch names; no git-style content addressing
 - MCP writes without the page open; a small CLI over the same operations
 
 ## Phase 3: reuse and agents in full
@@ -41,8 +46,6 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - Import Claude Code sessions as trees (read-only import; writing sessions back is not a public interface)
 
 ## Later
-- "Written before this changed" markers: each reply records the context it was written with; flagged when that
-  context changes
 - Cost: start one fan-out request first so the others read the shared start from the prompt cache (confirm cache
   timing first); warn when a conversation is too short for the model to cache
 - Per-turn send modes (full, prompt only, summary, left out); reversible summaries

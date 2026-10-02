@@ -21,6 +21,16 @@ that control. Agents are a second kind of user of the same controls, working und
 7. **Parity.** Anything you can do to a conversation, an agent can do through MCP, with the same code and the same
    result. View conveniences (folding, Simple view, the map, themes) are for people only; notes and stars are for
    both (notes make a good scratchpad for an agent).
+8. **Markers are for operators, never for the model.** An operator works on the tree: you in the UI, or an agent
+   through MCP (an orchestrator is an operator over its subagents). The model is whatever receives the context: a
+   reply in your chat, or a subagent answering. Operators see every marker (edited, left out, who added it, which
+   model replied, context changed); the model sees only the content, never markers or explanations of edits. A
+   subagent whose reply was corrected simply sees the corrected reply. Text Treechats does send on your behalf
+   (standing instructions, merge notes) is content, visible and editable in Settings › Prompts.
+9. **Informs, never enforces.** Disjoint context is allowed and often deliberate: fixing an early turn while keeping
+   good replies below it, leaving out a tangent later replies mention, splicing lines of thought together.
+   Treechats shows what changed and where, but never blocks a send, regenerates on its own, or nags. Markers are
+   small and neutral (muted text, no warning colors), can be turned off, and checks for agents are opt-in.
 
 ## Agents
 
