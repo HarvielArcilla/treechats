@@ -144,3 +144,48 @@ test('Claude Code mode: a missing CLI is reported, not a crash', async () => {
   const evs = await events(await post(base, { input: 'hi' }));
   assert.equal(evs.at(-1).code, 'cli_missing');
 });
+
+test('MCP: Claude Code can list, search and read the context of a saved conversation', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { base } = await startServer({ TREECHATS_FAKE: '1' });
+  /* a conversation with a branch merged back in, a left-out prompt and standing instructions */
+  const tree = {
+    nextId: 7, nextRef: 3, head: 'r1', active: {}, convs: {}, files: [], views: [], fold: {},
+    nodes: {
+      1: { id: 1, parents: [], text: 'Plan a trip', reply: 'Where to?' },
+      2: { id: 2, parents: [1], text: 'Lisbon', reply: 'Great choice.' },
+      3: { id: 3, parents: [1], text: 'What about food?', reply: 'Try pastel de nata.' },
+      4: { id: 4, parents: [2], text: 'Skip this one', reply: 'Skipped.', skip: true },
+      5: { id: 5, kind: 'merge', parents: [4, 3], text: '', from: 'food', into: 'main' },
+      6: { id: 6, parents: [5], text: 'Make an itinerary', reply: 'Day 1…', note: 'keep it short' },
+    },
+    refs: { r1: { name: 'main', tip: 6 }, r2: { name: 'food', tip: 3 } },
+  };
+  const state = { db: { spaces: { s1: { id: 's1', name: 'Travel', tree, sel: 6 } }, order: ['s1'], current: 's1', nextSpace: 2 }, opts: { prompts: { instructions: 'Be brief.' } } };
+  const put = await fetch(base + '/api/state', { method: 'PUT', headers: { origin: base }, body: JSON.stringify(state) });
+  assert.equal(put.status, 204);
+
+  const client = new Client({ name: 'test', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
+  const names = (await client.listTools()).tools.map((t) => t.name).sort();
+  assert.deepEqual(names, ['get_context', 'get_prompt', 'list_conversations', 'list_spaces', 'search']);
+  const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+
+  const full = (await call('get_context', { branch: 'main' })).content[0].text, ctx = full.slice(full.indexOf('<conversation>'));
+  const order = ['Be brief.', 'Plan a trip', 'Where to?', 'Lisbon', 'parallel thread', 'What about food?', 'pastel de nata', 'Make an itinerary', 'Day 1'];
+  let at = -1;
+  for (const s of order) { const i = ctx.indexOf(s); assert.ok(i > at, `"${s}" in order in:\n${ctx}`); at = i; }
+  assert.ok(!ctx.includes('Skip this one'), 'left-out prompts are not included');
+  assert.ok(!ctx.includes('keep it short'), 'notes are never sent');
+
+  assert.match((await call('list_conversations', {})).content[0].text, /main → #6 \(checked out\)/);
+  assert.match((await call('search', { query: 'nata' })).content[0].text, /#3 \(reply\)/);
+  assert.match((await call('get_prompt', { prompt: 6 })).content[0].text, /keep it short/);
+  assert.equal((await call('get_context', { prompt: 99 })).isError, true);
+  await client.close();
+
+  /* other websites can't reach it */
+  const r = await fetch(base + '/mcp', { method: 'POST', headers: { origin: 'https://example.com', 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(r.status, 403);
+});

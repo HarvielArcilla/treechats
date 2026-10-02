@@ -8,6 +8,8 @@ import { openBrowser } from './proc.ts';
 import { provider, streamReply, type SampleRequest } from './claude.ts';
 import { cliStatus } from './cli.ts';
 import { getValue, putValue, snapshot, snapshots } from './store.ts';
+import { handleMcp } from './mcp.ts';
+import { loadState } from './context.ts';
 
 const app = new Hono();
 const STATE_KEY = 'treechats-v1';
@@ -25,7 +27,7 @@ const okOrigin = (origin: string) => {
 app.use('*', async (c, next) => {
   const host = (c.req.header('host') || '').replace(/:\d+$/, '');
   if (!localHosts.has(host)) return c.text('Treechats only answers requests from this computer.', 403);
-  if (c.req.path.startsWith('/api/')) {
+  if (c.req.path.startsWith('/api/') || c.req.path === '/mcp') {
     const origin = c.req.header('origin');
     const site = c.req.header('sec-fetch-site');
     if (origin ? !okOrigin(origin) : site && site !== 'same-origin' && site !== 'none') return c.json({ code: 'forbidden', message: 'Requests must come from the Treechats page.' }, 403);
@@ -81,6 +83,9 @@ app.post('/api/sample', async (c) => {
   });
 });
 
+/* MCP: lets Claude Code and other MCP clients read your spaces, conversations and context (see server/mcp.ts) */
+app.all('/mcp', (c) => handleMcp(c.req.raw, () => loadState()));
+
 /* the page itself: the built app in dist/ (npm start builds it first) */
 const dist = resolve(root, 'dist');
 app.use('/*', serveStatic({ root: './dist' }));
@@ -96,6 +101,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: '127.0.0.1
   if (config.fake) console.log('  Test mode: replies are canned (TREECHATS_FAKE=1).\n');
   else if (provider() === 'claude-code') console.log('  Replies come from your Claude Code CLI and whatever it is signed in with.\n  To use an API key instead, add ANTHROPIC_API_KEY to .env and restart.\n');
   else console.log('  Replies use your API key (ANTHROPIC_API_KEY).\n');
+  console.log(`  For Claude Code: claude mcp add --transport http --scope user treechats ${url}/mcp\n`);
   console.log('  Press Ctrl+C to stop.\n');
   if (config.open && process.argv.includes('--open')) openBrowser(url);
 });

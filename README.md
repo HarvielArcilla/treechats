@@ -57,6 +57,19 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
 > shared with other people, they should use their own API keys: Anthropic doesn't allow third-party apps to
 > offer claude.ai sign-in without approval.
 
+## Use it from Claude Code (MCP)
+
+Treechats serves an MCP server at `/mcp`, so Claude Code can read your conversations while you work. Add it once:
+
+```
+claude mcp add --transport http --scope user treechats http://localhost:5178/mcp
+```
+
+Then, in Claude Code, ask for things like "get the context of the main branch of my rate limiter conversation from
+treechats". It can list spaces and conversations, search them, and pull the context of a branch or prompt: the
+same text as **Copy as a prompt** in the app. It only reads, and Treechats must be running. Attached files appear
+by name only, since their contents are kept in the browser.
+
 ## Your data
 
 - Conversations, spaces and settings: `data/treechats.db` (SQLite). A snapshot is kept every 10 minutes

@@ -428,6 +428,7 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .fname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dropzone{border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;font-size:.82rem;color:var(--muted)}
 .dropping,.composer.dropping{outline:2px dashed var(--accent);outline-offset:4px;border-radius:8px}
+.edtag{font:.7rem var(--mono);color:var(--merge);border:1px solid currentColor;border-radius:9px;padding:0 6px;margin-left:8px;white-space:nowrap}
 .codewrap{border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .codehead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 6px 3px 12px;background:var(--code-bg);border-bottom:1px solid var(--line);font:.72rem var(--mono);color:var(--muted)}
 .codecopy{border:1px solid transparent;background:none;color:var(--muted);border-radius:5px;font:inherit;padding:2px 8px;cursor:pointer}
@@ -909,6 +910,8 @@ const PROMPTS = {
   seam:{label:'Merge note', def:SEAM, help:'Sent just before the turns a merge brings in.'},
   summarize:{label:'Summary request', def:'Summarize the conversation below so the summary can stand in for it as context when the discussion continues. Keep decisions, key facts, names, code identifiers and open questions. Write a brief recap in plain prose, under 150 words, with no preamble.\n\n{conversation}',
     help:'What Claude is asked when it writes a summary for Reroot or Squash. {conversation} becomes the turns being summarized.'},
+  distill:{label:'Distill request', def:'Distill the conversation below into a brief that can start a fresh conversation with the same understanding. Write Markdown with these sections, leaving out any that would be empty: Goal, Decisions (each with its reason), Key facts and names (exact identifiers, values, file paths), Constraints, Open questions, Next step. Be specific and concise. No preamble.\n\n{conversation}',
+    help:'What Claude is asked when you distill a conversation into a brief. {conversation} becomes the context up to the prompt you picked.'},
   reroot:{label:'Reroot summary', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
@@ -1805,7 +1808,7 @@ function finishGen(g, text, tier, note){
   gens.delete(gkey(g.sid,g.id));
   const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
   if(n){
-    if(text){ n.reply=text; delete n.stale; if(tier) n.model=tier; else delete n.model; withTree(tree, ()=>touch(g.id)); }
+    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; withTree(tree, ()=>touch(g.id)); }
     if(note) genNotes[gkey(g.sid,g.id)]=note;
     delete n.askTier;
     save();
@@ -2088,6 +2091,77 @@ function renderCompare(){
     <div class="ccols">${cols}</div>`;
 }
 
+/* ---- Distill ----
+   Claude writes a brief of everything up to a prompt (goal, decisions, facts, open questions) that you can edit,
+   then use to start a fresh conversation, keep as a space file, keep as a note, or copy. It never changes the tree
+   by itself. */
+let distill=null;
+async function openDistill(id){
+  if(id==null || !S.nodes[id]){ toast('Select a prompt first. The brief covers its conversation up to it.'); return; }
+  if(sampleState!=='ready'){ toast('Distill needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
+  if(distill && distill.ctl) distill.ctl.abort();
+  closeCompare && cmpFor!=null && closeCompare();
+  const ctl=new AbortController(), d={id, status:'loading', text:'', ctl};
+  distill=d; fan=null;
+  if(sel!==id) select(id); else animRender([id]);
+  const el=treeEl.querySelector('.distill'); if(el) el.scrollIntoView({block:'nearest', behavior: Motion.reduced()?'auto':'smooth'});
+  const convo=turnsFor(id, true).map(t=>`${t.role==='user'?'User':'Claude'}: ${t.content}`).join('\n\n');
+  const tpl=promptText('distill'), input = tpl.includes('{conversation}') ? tpl.split('{conversation}').join(convo) : tpl+'\n\n'+convo;
+  try{
+    const r=await sampleFn(input, {modelTier:opts.model, cache:false, signal:ctl.signal, onText:({text})=>{ if(distill===d){ d.text=text; const b=treeEl.querySelector('.distill .rbody'); if(b) b.innerHTML=md(text); } }});
+    if(distill!==d) return;
+    d.text=r.text.trim(); d.status='ready';
+  }catch(e){
+    if(distill!==d) return;
+    d.status = e && e.code==='cancelled' ? 'ready' : 'error'; d.err=errCopy(e && e.code); if(e && e.text) d.text=e.text;
+  }
+  d.ctl=null; paintDistill();
+  const t=document.getElementById('distillText'); if(t) t.focus({preventScroll:true});
+}
+function paintDistill(){ const el=treeEl.querySelector('.distill'); if(el && distill) el.outerHTML=distillHTML(); else if(distill) animRender([distill.id]); }
+function closeDistill(){ if(!distill) return; const id=distill.id; if(distill.ctl) distill.ctl.abort(); distill=null; animRender([id]); }
+function distillHTML(){
+  const d=distill, id=d.id, n=d.text.trim() ? 1 : 0;
+  const head=`<div class="fanhead"><b>Brief of the context up to #${id}</b><span class="note">${d.status==='loading'?'Claude is writing it…':'Edit it before you use it.'}</span><button class="rmore" data-dcancel>${d.status==='loading'?'Stop':'Close'}</button></div>`;
+  const body = d.status==='loading'
+    ? `<div class="rbody">${d.text?md(d.text):'<p class="thinking">Reading the conversation…</p>'}</div>`
+    : `${d.status==='error'?`<p class="gnote">${esc(d.err||'Claude couldn’t write the brief.')}</p>`:''}<textarea id="distillText" rows="${Math.min(22, Math.max(6, d.text.split('\n').length+1))}" aria-label="Brief">${esc(d.text)}</textarea>
+      <div class="bar"><button class="btn primary" data-dgo="new" ${n?'':'disabled'} title="A new conversation whose first prompt starts with this brief">Start a new conversation with it</button><button class="btn" data-dgo="file" ${n?'':'disabled'} title="Sent with every conversation in this space">Add to space files</button><button class="btn" data-dgo="note" ${n?'':'disabled'} title="Kept on #${id}, never sent to Claude">Save as note</button><button class="btn" data-dgo="copy" ${n?'':'disabled'}>Copy</button><button class="btn" data-dgo="again">Write again</button></div>`;
+  return `<div class="fan distill" data-key="ds${id}">${head}${body}</div>`;
+}
+async function useDistill(how){
+  const d=distill; if(!d) return;
+  const t=document.getElementById('distillText'); if(t) d.text=t.value;
+  const text=d.text.trim(); if(!text && how!=='again') return;
+  if(how==='again'){ openDistill(d.id); return; }
+  if(how==='copy'){ copyText(text); return; }
+  const id=d.id, title=convTitle(S.nodes[convOf(id)]);
+  if(how==='note'){ distill=null; commit(`Saved the brief as a note on #${id}`, ()=>{ const n=S.nodes[id]; n.note=(n.note&&n.note.trim()?n.note.trim()+'\n\n':'')+text; }); renderNotes(); return; }
+  if(how==='file'){
+    const name=`brief-${slugName(title, convOf(id)).slice(0,32)}.md`;
+    distill=null; animRender([id]);
+    await addFiles([new File([text], name, {type:'text/markdown'})], 'space');
+    return;
+  }
+  if(how==='new'){
+    distill=null; draftRoot=`${text}\n\n---\n\n`; composeFor='root'; pick=null;
+    render(true); Motion.swap(treeEl); window.scrollTo({top:0});
+    const ct=document.getElementById('composeText'); if(ct){ ct.focus({preventScroll:true}); ct.setSelectionRange(ct.value.length, ct.value.length); ct.scrollTop=ct.scrollHeight; }
+    toast('The brief is in a new conversation. Write your question under it and send.');
+  }
+}
+/* ---- Copy context as a prompt ----
+   Exactly what the next request from a prompt would send (standing instructions, space files, merge notes, every
+   turn and reply, minus what's left out), as one block to paste into Claude anywhere and ask your question after. */
+function contextPrompt(id){
+  const turns=turnsFor(id, true);
+  const body=turns.map(t=>`<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
+  return `Here is an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`;
+}
+function copyContextPrompt(id){
+  if(id==null || !S.nodes[id]){ toast('Select a prompt first. The context runs from the start of its conversation to it.'); return; }
+  copyText(contextPrompt(id), true).then(ok=>{ if(ok) toast(`Copied the context up to #${id} as a prompt, about ${tokens(turnsFor(id,true)).toLocaleString()} tokens. Paste it and add your question.`); });
+}
 /* ---- Markdown export ---- */
 function turnMd(id, withIds){
   const n=S.nodes[id]; if(!n) return '';
@@ -2160,6 +2234,9 @@ function paletteCommands(q){
     for(const [k,o] of Object.entries(OPS)){ if(k==='cont' || !available(k,sel)) continue; if(k==='regen' && sampleState!=='ready') continue; add(g, opLabel(k,sel).replace('…',''), ()=>run(k, sel), opts.opKeys===false?'':kk(o.key)); }
     add(g, S.fold[sel] ? 'Show the prompts below' : 'Hide the prompts below', ()=>toggleFold(sel));
     if(n.kind!=='merge') add(g, n.star ? 'Unstar' : 'Star', ()=>toggleStar(sel));
+    add(g, 'Copy context as a prompt', ()=>copyContextPrompt(sel));
+    if(sampleState==='ready' && n.kind!=='merge') add(g, 'Distill the context into a brief', ()=>openDistill(sel));
+    if(n.reply) add(g, 'Edit Claude’s reply', ()=>openReplyEdit(sel));
     add(g, 'Copy this path as Markdown', ()=>copyText(pathMarkdown(sel)));
     add(g, 'Copy this path as messages JSON', ()=>copyText(JSON.stringify(turnsFor(sel,true),null,2)));
     add(g, 'Deselect', ()=>deselect());
@@ -2432,6 +2509,7 @@ function rowHTML(id, pathSet){
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
+  if(distill && distill.id===id) h+=distillHTML();
   return h;
 }
 /* which replies are open; Simple view is one thread, so it shows every reply in it */
@@ -2456,9 +2534,27 @@ function replyFoot(id){
   const sw = vs.length>1 ? `<span class="ver" aria-label="Reply version"><button data-ver="${id}" data-dir="-1" ${i===0?'disabled':''} aria-label="Previous version">‹</button><span>${i+1} / ${vs.length}</span><button data-ver="${id}" data-dir="1" ${i===vs.length-1?'disabled':''} aria-label="Next version">›</button></span>` : '';
   const nOpt = id===sel && S.nodes[id].reply && !(fan && fan.id===id) ? listOptions(S.nodes[id].reply).options.length : 0;
   const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">⑂ Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
-  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button><button class="rmore" data-editresend="${id}">Edit &amp; resend</button>` : '')+fo;
+  const ds = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(distill && distill.id===id) ? `<button class="rmore" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">✦ Distill</button>` : '';
+  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button><button class="rmore" data-editresend="${id}">Edit &amp; resend</button>` : '')+fo+ds;
   const st = S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
   return sw||rg||st ? `<div class="rfoot">${sw}${rg}${st}</div>` : '';
+}
+/* Editing a reply: fix what Claude said, so everything below builds on the corrected version. Undo brings the original back. */
+let replyEditFor=null;
+function replyEditHTML(id){
+  const n=S.nodes[id];
+  return `<div class="reply resend" data-key="r${id}"><span class="who">Edit Claude’s reply</span>
+    <textarea id="replyEditText" rows="${Math.min(18, Math.max(4, (n.reply||'').split('\n').length+1))}" aria-label="Claude’s reply">${esc(n.reply||'')}</textarea>
+    <div class="bar"><button class="btn primary" data-replyedit="save">Save <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-replyedit="cancel">Cancel</button></div>
+    <p class="note">Prompts below this one will see your version. It’s marked as edited, and Undo brings back the original.</p></div>`;
+}
+function openReplyEdit(id){ replyEditFor=id; resendFor=null; if(sel!==id) select(id); else animRender([id]); const t=document.getElementById('replyEditText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length,t.value.length); } }
+function saveReplyEdit(){
+  const id=replyEditFor, t=document.getElementById('replyEditText'); replyEditFor=null;
+  const n=S.nodes[id]; if(!n || !t){ animRender([id]); return; }
+  const v=t.value;
+  if(v===(n.reply||'')){ animRender([id]); return; }
+  commit(`Edited Claude’s reply to #${id}. Prompts below see your version.`, ()=>{ if(v.trim()){ n.reply=v; n.replyEdited=true; } else { delete n.reply; delete n.replyEdited; } });
 }
 /* Edit & resend, as in Claude: the edited prompt becomes a new version beside the original, which keeps its reply */
 let resendFor=null;
@@ -2490,7 +2586,9 @@ function replyHTML(id){
   const long = n.reply.length>320 || n.reply.includes('```');
   const more = id!==sel&&long ? `<button class="rmore" data-rfull="${id}">${full?'Shorten':'Show all'}</button>` : '';
   if(resendFor===id) return resendHTML(id);
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span><span class="racts">${more}<button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
+  if(replyEditFor===id) return replyEditHTML(id);
+  const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -2752,7 +2850,7 @@ function renderCtx(){
     <p class="note">What the next request would send, oldest first. Each prompt is followed by Claude’s reply to it.${nSkip?` ${nSkip} left-out prompt${nSkip===1?' is':'s are'} shown faded and not sent.`:''}</p>
     <ol class="ctx">${items}</ol>
     ${merged?'<p class="note">At a merge, the branch merged into comes first. Then the merge note, then the turns unique to the merged branch.</p>':''}
-    <div class="bar"><button class="btn" id="copyMd">Copy as Markdown</button><button class="btn" id="copyCtx">Copy as messages JSON</button></div>`);
+    <div class="bar"><button class="btn" id="copyPrompt" title="One block to paste into Claude anywhere, then ask your question">Copy as a prompt</button><button class="btn" id="distillCtx" ${sampleState==='ready'?'':'disabled'} title="Claude writes a short brief of this context that you can reuse">Distill…</button><button class="btn" id="copyMd">Copy as Markdown</button><button class="btn" id="copyCtx">Copy as messages JSON</button></div>`);
   if(changed) Motion.fade(card);
 }
 function renderSpaceFiles(){
@@ -2776,7 +2874,7 @@ function focusKey(){
 function restoreFocus(k){
   if(!k) return;
   const el=treeEl.querySelector(k.q); if(!el) return;
-  if(k.q==='#resendText') el.value=k.v;
+  if(k.q==='#resendText' || k.q==='#replyEditText' || k.q==='#distillText') el.value=k.v;
   el.focus({preventScroll:true});
   const n=el.value.length;
   try{ el.setSelectionRange(Math.min(k.s,n), Math.min(k.e,n)); }catch(e){}
@@ -2788,6 +2886,8 @@ function select(id){
   if(S.nodes[id] && isHidden(S.nodes[chain(id)[0]])){ openConv(convKeyOf(id)); return; }
   if(id!==sel) alsoTargets.delete(id);
   if(id!==resendFor) resendFor=null;
+  if(id!==replyEditFor) replyEditFor=null;
+  if(distill && distill.id!==id){ if(distill.ctl) distill.ctl.abort(); distill=null; }
   if(fan && fan.id!==id) fan=null;
   if(variants && id!==sel) variants=null;
   if(S.nodes[id]) for(const x of path(id)) if(x!==id && S.fold[x]) delete S.fold[x];
@@ -3129,6 +3229,8 @@ function convMenu(anchor, rootId, full){
     {label:'Focus on this one', run:()=>{ if(visMode()==='focus' && convKeyOf(sel)===k) return; const r=S.nodes[rootId]; sel=convMeta(k).sel!=null && S.nodes[convMeta(k).sel] ? convMeta(k).sel : convTip(r); lastConv=k; setVisMode('focus'); }},
     {label:'Clone', run:()=>duplicateConversation(rootId, DB.current)},
     {label:'Copy as Markdown', run:()=>copyText(treeMarkdown(rootId))},
+    {label:'Copy context as a prompt', run:()=>copyContextPrompt(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
+    {label:'Distill into a brief…', disabled: sampleState!=='ready', run:()=>openDistill(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
     {label:'Move along with others…', disabled: orderedRoots().length<2, run:()=>{ selecting=true; checked.clear(); checked.add(k); if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } morphTools(renderConvs); }},
     {sep:true},
     {heading: linked>0 ? `Move, with ${linked} linked by a merge` : 'Move to space'},
@@ -3341,12 +3443,18 @@ treeEl.addEventListener('click', e=>{
   const fo=e.target.closest('[data-fold]'); if(fo){ toggleFold(+fo.dataset.fold); return; }
   const uf=e.target.closest('[data-unfold]'); if(uf){ toggleFold(+uf.dataset.unfold); return; }
   const fb=e.target.closest('[data-fan]'); if(fb){ openFan(+fb.dataset.fan); return; }
+  const dsb=e.target.closest('[data-distill]'); if(dsb){ openDistill(+dsb.dataset.distill); return; }
   if(variants){
     if(e.target.closest('[data-vcancel]')){ const keep=variants.rows[0].text; variants=null; draft=keep; animRender([sel]); return; }
     if(e.target.closest('[data-vsend]')){ sendVariants(); return; }
     if(e.target.closest('[data-vadd]')){ variants.rows.push({text:'', tier:opts.model}); paintVariants(); const t=treeEl.querySelectorAll('[data-vtext]'); t[t.length-1].focus(); return; }
     if(e.target.closest('[data-vsuggest]')){ suggestWordings(); return; }
     const vd=e.target.closest('[data-vdel]'); if(vd){ variants.rows.splice(+vd.dataset.vdel,1); paintVariants(); return; }
+  }
+  if(distill && e.target.closest('.distill')){
+    if(e.target.closest('[data-dcancel]')){ closeDistill(); return; }
+    const dg=e.target.closest('[data-dgo]'); if(dg){ useDistill(dg.dataset.dgo); return; }
+    return;
   }
   if(fan){
     if(e.target.closest('[data-fcancel]')){ closeFan(); return; }
@@ -3359,6 +3467,8 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-attach]')){ openPicker('prompt'); return; }
   const ua=e.target.closest('[data-unattach]'); if(ua){ pendingFiles.splice(+ua.dataset.unattach,1); const t=document.getElementById('contText')||document.getElementById('composeText'), keep=t?t.value:''; renderTree(); const t2=document.getElementById('contText')||document.getElementById('composeText'); if(t2) t2.value=keep; return; }
   const cr=e.target.closest('[data-copyreply]'); if(cr){ copyText(S.nodes[+cr.dataset.copyreply].reply||''); return; }
+  const ere=e.target.closest('[data-editreply]'); if(ere){ openReplyEdit(+ere.dataset.editreply); return; }
+  const rea=e.target.closest('[data-replyedit]'); if(rea){ if(rea.dataset.replyedit==='save') saveReplyEdit(); else { const id=replyEditFor; replyEditFor=null; animRender([id]); } return; }
   const er=e.target.closest('[data-editresend]'); if(er){ resendFor=+er.dataset.editresend; animRender([sel]); const t=document.getElementById('resendText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length,t.value.length); } return; }
   const rs=e.target.closest('[data-resend]');
   if(rs){ if(rs.dataset.resend==='go'){ const v=document.getElementById('resendText').value.trim(); if(!v){ toast('Write a prompt first.'); return; } regenerate(resendFor, v); } else { resendFor=null; animRender([sel]); } return; }
@@ -3420,6 +3530,8 @@ treeEl.addEventListener('keydown', e=>{
   if(e.target.dataset && e.target.dataset.vtext!=null && send){ e.preventDefault(); sendVariants(); }
   if(fan && fan.status==='ready' && e.key==='Enter' && (e.metaKey||e.ctrlKey) && e.target.closest && e.target.closest('.fan')){ e.preventDefault(); fanCreate(); }
   if(e.target.id==='resendText' && send){ e.preventDefault(); const v=e.target.value.trim(); if(v) regenerate(resendFor, v); }
+  if(e.target.id==='replyEditText' && e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); saveReplyEdit(); }
+  if(e.target.id==='replyEditText' && e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); const id=replyEditFor; replyEditFor=null; animRender([id]); }
   if(e.target.id==='resendText' && e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); resendFor=null; animRender([sel]); }
   if(e.target.id==='branchName' && e.key==='Enter'){ e.preventDefault(); renaming=false; renameRef(S.head, e.target.value); animRender([sel]); }
   if(e.target.classList.contains('row') && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); e.target.click(); }
@@ -3429,6 +3541,8 @@ document.getElementById('ctxCard').addEventListener('click', e=>{
   const g=e.target.closest('[data-sel]'); if(g){ select(+g.dataset.sel); return; }
   if(e.target.id==='copyCtx') copyText(JSON.stringify(turnsFor(sel, true),null,2));
   if(e.target.id==='copyMd') copyText(pathMarkdown(sel));
+  if(e.target.id==='copyPrompt') copyContextPrompt(sel);
+  if(e.target.id==='distillCtx') openDistill(sel);
 });
 const editorCard=document.getElementById('editorCard');
 const isEditField = el => el.id==='edit' || el.id==='editReply' || el.id==='editNote';
@@ -3446,7 +3560,7 @@ editorCard.addEventListener('input', e=>{
   const n=S.nodes[sel];
   if(e.target.id==='edit'){ n.text=e.target.value; if(n.reply) n.stale=true; }
   else if(e.target.id==='editNote'){ if(e.target.value.trim()) n.note=e.target.value; else delete n.note; }
-  else { if(e.target.value) n.reply=e.target.value; else delete n.reply; delete n.stale; }
+  else { if(e.target.value){ n.reply=e.target.value; n.replyEdited=true; } else { delete n.reply; delete n.replyEdited; } delete n.stale; }
   save(); renderTree(); renderCtx(); if(e.target.id==='editNote') renderNotes();
   const st=document.getElementById('edStatus');
   if(st){ st.textContent='Saved'; st.classList.add('saved'); clearTimeout(savedTimer); savedTimer=setTimeout(()=>{ st.textContent='Saves as you type'; st.classList.remove('saved'); }, 1400); }
@@ -3476,6 +3590,7 @@ async function addFiles(list, target){
   renderTree(); const t2=document.getElementById('contText')||document.getElementById('composeText'); if(t2){ t2.value=keep; t2.focus({preventScroll:true}); }
 }
 treeEl.addEventListener('input', e=>{
+  if(e.target.id==='distillText' && distill){ distill.text=e.target.value; const has=!!e.target.value.trim(); for(const b of treeEl.querySelectorAll('[data-dgo]')) if(b.dataset.dgo!=='again') b.disabled=!has; }
   if(e.target.id==='contText') draft=e.target.value; else if(e.target.id==='composeText') draftRoot=e.target.value;
   if(variants && e.target.dataset.vtext!=null){ const i=+e.target.dataset.vtext, r=variants.rows[i], was=!!r.text.trim(); r.text=e.target.value; if(i===0) draft=r.text;
     if(was!==!!r.text.trim()){ const n=variants.rows.filter(x=>x.text.trim()).length, b=treeEl.querySelector('[data-vsend]'); if(b){ b.disabled=!n; b.textContent=`Send ${n} variant${n===1?'':'s'}`; } const sg=treeEl.querySelector('[data-vsuggest]'); if(sg && i===0) sg.disabled=variants.suggesting||!r.text.trim(); } }
@@ -3591,6 +3706,7 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Escape' && shellEl.matches('.open-spaces,.open-convs')){ closeDrawers(); return; }
   if(e.key==='Escape' && variants){ variants=null; animRender([sel]); return; }
   if(e.key==='Escape' && fan){ closeFan(); return; }
+  if(e.key==='Escape' && distill && !typing){ closeDistill(); return; }
   if(e.key==='Escape'){ if(pick||composeFor!=null||renaming){ const src=pick&&pick.src; pick=null; composeFor=null; renaming=false; animRender([src, sel]); } else if(typing) e.target.blur(); else if(sel!=null && !opts.simple) deselect(); return; }
   if(!typing && opts.opKeys!==false && e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && /^Key[A-Z]$/.test(e.code)){
     if(e.repeat || pick || sel==null) return;

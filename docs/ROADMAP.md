@@ -19,8 +19,35 @@
 - Extended thinking, and showing it
 
 ## 4. Editors and coding tools
-- MCP server: let Claude Code and other tools read a conversation tree, branch it, and add prompts
+- MCP server, read-only (done): Claude Code can list spaces and conversations, search, and pull the context of
+  a branch or prompt
+- MCP writes: add a prompt, save a brief, start a conversation from a Claude Code session. Needs the page to pick
+  up changes made on the server
+- Space and attached files on the server, so MCP context includes their contents (today: names only)
 - Editor panel (VS Code webview)
+
+## 5. Context editing
+Treechats is a context editor: deciding what Claude sees on each turn, cheaply, instead of restarting chats until
+the context is right. Done so far: edit Claude's replies (marked "edited by you"), copy context as a prompt,
+distill a branch into a brief.
+
+Next, roughly in order of value for the effort:
+- "Written before this changed" marker: record what context each reply was written with, flag replies whose
+  context has since changed
+- Replay: re-run the prompts below a point against the edited context, as new versions, with a preview of how
+  many requests it takes
+- Context blocks: reusable pieces (brief, style guide, key files, instructions) switched on per conversation
+- Per-turn send modes: full, prompt only, summary, left out
+- Reversible summaries: send a summary for a stretch while keeping the originals
+- Cost awareness: show which part of the context will come from the prompt cache and what an edit will re-send
+  at full price (editing early turns breaks the cache from that point on)
+
+Harder, later: keep only a selected part of a reply; send the same prompt with and without some context (A/B);
+write edited Claude Code sessions back for `--resume` (the session format isn't a public interface).
+
+UI to decide when these land: tools that only move text (copy, leave out, send modes) belong inline on prompts
+and replies; tools that ask Claude to rewrite context (distill, summaries, replay) may want a dedicated view
+where you can review and edit Claude's output before it enters the tree.
 
 ## Ideas waiting their turn
 - "Written before this changed" marker after editing an earlier prompt
