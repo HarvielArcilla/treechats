@@ -99,5 +99,5 @@ enough to watch them stream). Every push runs the type check, the build
 and the tests on Windows, macOS and Linux with Node 22 and 24 (`.github/workflows/ci.yml`); the tests start the
 real server and drive a stand-in `claude` CLI, including stopping a reply mid-way.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together and [docs/ROADMAP.md](docs/ROADMAP.md)
+See [docs/VISION.md](docs/VISION.md) for where it's going, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together and [docs/ROADMAP.md](docs/ROADMAP.md)
 for what's next.
