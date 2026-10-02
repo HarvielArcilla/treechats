@@ -1,7 +1,7 @@
 # Roadmap
 
-The direction is in [VISION.md](VISION.md). Work is ordered to test the riskiest idea cheaply first, keep shipping
-context tools for people, and build the server-side foundation once the agent interface has been tried for real.
+The direction is in [VISION.md](VISION.md). Work is ordered to test the riskiest idea cheaply first (subagents), then build the server-side
+foundation once the agent interface has been tried on a real task, then everything that builds on it.
 
 ## Done
 - Runs locally with your API key or Claude Code (subscription); saved to SQLite with snapshots; Windows, macOS, Linux
@@ -24,14 +24,7 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
   keep their single definition in the page for now; if the page isn't open, the tools say so
 - Try it on a real task, then decide what the agent interface should be before building more of it
 
-## Phase 2: precise context for people
-- "Written before this changed" markers: each reply records the context it was written with; flagged when that
-  context changes
-- Replay below a point against the edited context, as new versions, with a preview of how many requests it takes
-- Cost fixes: start one fan-out request first so the others read the shared start from the prompt cache (confirm
-  cache timing first); warn when a conversation is too short for the model to cache
-
-## Phase 3: foundation
+## Phase 2: foundation
 - Each operation defined once in TypeScript and run on the server; the page becomes a client (removes the
   duplicate context building and the page-relay shortcut)
 - The tree stored as rows (spaces, turns, branches) instead of one document; attachments in the database
@@ -39,13 +32,19 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - Attribution and history for every change; permissions per space (read, suggest, write)
 - MCP writes without the page open; a small CLI over the same operations
 
-## Phase 4: reuse and agents in full
+## Phase 3: reuse and agents in full
 - Context blocks switched on per conversation, with instructions per conversation as one kind of block
 - Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; pin,
-  replay and `compare`/`judge`; history per run with undo; a Runs view of agent runs
+  `compare`/`judge`; history per run with undo; a Runs view of agent runs
+- Replay: re-run the prompts below a point against edited context, as new versions, with a preview of how many
+  requests it takes (for agents steering subagents, and for people)
 - Import Claude Code sessions as trees (read-only import; writing sessions back is not a public interface)
 
 ## Later
+- "Written before this changed" markers: each reply records the context it was written with; flagged when that
+  context changes
+- Cost: start one fan-out request first so the others read the shared start from the prompt cache (confirm cache
+  timing first); warn when a conversation is too short for the model to cache
 - Per-turn send modes (full, prompt only, summary, left out); reversible summaries
 - Request settings per branch: system prompt, temperature, thinking, max tokens; real token counts and cost
 - Recipes (saved pipelines of tools), sweeps across models or contexts, re-running saved contexts as evals
