@@ -408,8 +408,6 @@ label.model select{border:1px solid var(--line);border-radius:6px;background:var
 .nodechip{font:500 .8rem var(--mono);color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 6px;margin-left:2px}
 .edstatus{font:.72rem var(--mono);color:var(--muted)}
 .edstatus.saved{color:var(--l1)}
-#editorCard{transition:border-color .18s, box-shadow .18s}
-#editorCard.editing{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .row.editing{box-shadow:0 0 0 3px var(--accent-soft)}
 .tag.editing{color:var(--accent);background:var(--accent-soft)}
 .stale{font-size:.76rem;color:var(--merge)}
@@ -500,6 +498,35 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .mergebox .mbody{padding:0 14px 14px;display:grid;gap:12px}
 .mergebox .mbody .note{margin:0}
 .mergebox .seamq{margin:0;padding:6px 10px;border-left:3px solid var(--merge);color:var(--muted);font-size:.85rem;white-space:pre-wrap}
+.smallbox{width:min(680px,100%);height:auto;max-height:calc(100vh - 32px)}
+.sfbody{padding:14px 18px 18px;overflow:auto;display:grid;gap:10px;min-height:0}
+#ioText{width:100%;min-height:260px;font:.78rem/1.45 var(--mono);resize:vertical}
+/* the inspector */
+.ctxrow{display:flex;align-items:baseline;gap:6px;min-width:0}
+ol.ctx li{grid-template-columns:auto auto minmax(0,1fr) auto}
+ol.ctx .cmk{font:.68rem var(--mono);color:var(--muted);white-space:nowrap}
+ol.ctx .ctog{border:0;background:none;color:var(--muted);font:.72rem var(--mono);cursor:pointer;padding:0 4px;border-radius:4px;visibility:hidden}
+ol.ctx li:hover .ctog,ol.ctx li:focus-within .ctog,ol.ctx li.skipped .ctog{visibility:visible}
+ol.ctx .ctog:hover{color:var(--fg);background:var(--bg)}
+@media (hover:none){ol.ctx .ctog{visibility:visible}}
+ol.ctx li.files .cid{color:var(--l1)}
+.insp{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.insp h3{margin:0;font:600 .8rem var(--display)}
+.insp textarea{width:100%;resize:vertical}
+/* editing a prompt where it is */
+.pedit{display:grid;gap:8px;width:100%;cursor:auto}
+.pedit textarea{width:100%;font:inherit;resize:vertical;min-height:3.2em}
+.pedit .bar{display:flex;flex-wrap:wrap;gap:6px}
+.row .pact{border:0;background:none;color:var(--muted);font:.72rem var(--mono);cursor:pointer;padding:1px 4px;border-radius:4px;visibility:hidden}
+.row.sel .pact,.row:hover .pact,.row:focus-within .pact{visibility:visible}
+.row .pact:hover{color:var(--fg)}
+@media (hover:none){.row .pact{visibility:hidden}.row.sel .pact{visibility:visible}}
+.shell.simple ul.thread .row .tags > .pact{display:inline}
+.shell.simple ul.thread .row.editing{width:min(85%,640px)}
+.shell.simple ul.thread .rfoot .ver{display:none}
+.mapbr{margin:0 0 12px;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.mapbr > summary{cursor:pointer;font:600 .82rem var(--display);padding:2px 0}
+.mapbr .branches{margin:6px 0 2px}
 .fork{display:inline-flex;align-items:center;gap:2px;font:.74rem var(--mono);color:var(--muted);white-space:nowrap}
 .fork button{border:0;background:none;color:inherit;cursor:pointer;padding:0 4px;font-size:1rem;line-height:1}
 .fork button:hover:not(:disabled){color:var(--fg)}
@@ -844,25 +871,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="app">
     <main class="treeBox" id="tree" aria-label="Conversation tree"></main>
     <aside>
-      <section class="card" id="editorCard"></section>
       <section class="card" id="ctxCard"></section>
-      <section class="card" id="branchCard"></section>
-      <section class="card" id="notesCard"></section>
-      <section class="card" id="filesCard"></section>
-      <section class="card" id="opsCard"></section>
-      <section class="card">
-        <details id="io" class="cardd" data-openkey="card-io">
-          <summary><h2>Import / export</h2></summary>
-          <div class="cardbody">
-            <textarea id="ioText" spellcheck="false" aria-label="Tree as JSON"></textarea>
-            <div class="bar">
-              <button class="btn" id="copyJson">Copy this space as JSON</button>
-              <button class="btn" id="loadJson">Import pasted JSON as a new space</button>
-              <button class="btn" data-openimport>Import chats from Claude, ChatGPT or text…</button>
-            </div>
-          </div>
-        </details>
-      </section>
     </aside>
   </div>
 </div>
@@ -881,6 +890,13 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
     <div class="impfoot"><label class="model"><span>Into</span><select id="impSpace"></select></label><button class="btn primary" data-impgo disabled>Import</button></div>
   </div>
 </div>
+<div class="setwrap" id="spaceFiles" hidden><div class="cmpbox smallbox" role="dialog" aria-modal="true" aria-labelledby="sfTitle">
+  <div class="sethead"><div class="cmptitle"><h2 id="sfTitle">Space files</h2><p class="note" id="sfSpace"></p></div><div class="bar"><button class="btn" data-panelclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+  <div class="sfbody" id="filesCard"></div></div></div>
+<div class="setwrap" id="ioView" hidden><div class="cmpbox smallbox" role="dialog" aria-modal="true" aria-labelledby="ioTitle">
+  <div class="sethead"><div class="cmptitle"><h2 id="ioTitle">Import / export</h2><p class="note">A space as JSON, to back it up or move it to another Treechats.</p></div><div class="bar"><button class="btn" data-panelclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+  <div class="sfbody"><textarea id="ioText" spellcheck="false" aria-label="Space as JSON"></textarea>
+    <div class="bar"><button class="btn" id="copyJson">Copy this space as JSON</button><button class="btn" id="loadJson">Import pasted JSON as a new space</button><button class="btn" data-openimport>Import chats from Claude, ChatGPT or text…</button></div></div></div></div>
 <div class="setwrap" id="mapView" hidden><div class="cmpbox mapbox" role="dialog" aria-modal="true" aria-labelledby="mapTitle"></div></div>
 <div class="setwrap" id="compare" hidden><div class="cmpbox" role="dialog" aria-modal="true" aria-labelledby="cmpTitle"></div></div>
 <div class="setwrap palwrap" id="palette" hidden>
@@ -1525,22 +1541,21 @@ function promptEditor(k, suffix=''){
 const OP_PROMPTS = {every:['instructions'], reroot:['reroot','summarize'], squash:['summarize'], merge:['seam']};
 const radio=(name, val, cur, label)=>`<label class="chk"><input type="radio" name="${name}" value="${val}" ${cur===val?'checked':''}> <span>${label}</span></label>`;
 function renderOpsCard(){
-  const card=document.getElementById('opsCard');
+  const card=document.getElementById('opsCard'); if(!card) return;
   const extra={
     reroot:`<label class="chk"><input type="checkbox" id="optSummary" ${opts.summary?'checked':''}> <span>Add a summary root that stands in for the cut context</span></label>
       <label class="chk"><input type="checkbox" id="optCow" ${opts.cow?'checked':''}> <span>Reroot a copy and leave the original in place</span></label>
       <fieldset class="optset"><legend>The summary is written by</legend>${radio('rerootBy','template',opts.rerootBy,'The template below')}${radio('rerootBy','claude',opts.rerootBy,'Claude, from the turns that were cut')}</fieldset>
-      ${promptEditor('reroot')}${promptEditor('summarize','-reroot')}`,
-    squash:`<fieldset class="optset"><legend>Squashed turns become</legend>${radio('squashBy','join',opts.squashBy,'The prompts and replies joined together')}${radio('squashBy','claude',opts.squashBy,'A summary Claude writes of them')}</fieldset>${promptEditor('summarize','-squash')}`,
-    merge:promptEditor('seam')
+      <p class="note">Its prompts are in <button class="linkbtn" data-setprompts style="color:var(--accent)">Prompts</button>.</p>`,
+    squash:`<fieldset class="optset"><legend>Squashed turns become</legend>${radio('squashBy','join',opts.squashBy,'The prompts and replies joined together')}${radio('squashBy','claude',opts.squashBy,'A summary Claude writes of them')}</fieldset><p class="note">Its prompt is in <button class="linkbtn" data-setprompts style="color:var(--accent)">Prompts</button>.</p>`,
+    merge:`<p class="note">The merge note is in <button class="linkbtn" data-setprompts style="color:var(--accent)">Prompts</button>.</p>`
   };
   const q=new Set(quickList());
   const ctl=key=> OPS[key] && pinnable(key) ? `<div class="opctl"><button class="btn xs" data-runop="${key}">Run</button></div>` : '';
   const entry=(key,label,k,body,danger)=>`<details class="opd" data-openkey="op-${key}" ${opts.open['op-'+key]?'open':''}><summary><span class="opname ${danger?'danger':''}">${label}</span><span class="tag custom" data-custom-for="${key}" hidden>custom</span>${q.has(key)?'<span class="tag pin" title="In the quick-access bar">bar</span>':''}${k?`<kbd>${k}</kbd>`:''}</summary><div class="opbody">${ctl(key)}${body}</div></details>`;
-  card.innerHTML=`<details class="cardd" data-openkey="ops" ${opts.open.ops!==false?'open':''}><summary><h2>Operations &amp; prompts</h2></summary>
-    <p class="note">Open one to see what it does or run it on the selected prompt. Anything sent to Claude on your behalf is editable here and can be reset to its default. Choose which operations sit above the input box in <button class="linkbtn" data-openquick style="color:var(--accent)">Settings › Quick access</button>.</p>
+  card.innerHTML=`<div>
+    <p class="note">What each operation does, and how some of them behave. Open one to read it or run it on the selected prompt. Choose which sit above the input box in <button class="linkbtn" data-openquick style="color:var(--accent)">Quick access</button>.</p>
     <div class="oplist">
-      ${entry('every','Every request','',`<p class="dd">Applies to every reply Claude writes in this app.</p>${promptEditor('instructions')}`)}
       ${Object.entries(OPS).map(([k,o])=>entry(k,o.label,opts.opKeys===false?'':kk(o.key),`<p class="dd">${o.detail}${o.pick?' <em>Tap a target after choosing it.</em>':''}</p>${extra[k]||''}`,o.danger)).join('')}
     </div>
     <p class="note">Reply to several prompts at once with <b>Reply to several…</b> above the input box, or Ctrl/⌘- or Shift-click prompts. Keyboard shortcuts are listed in Settings. Click a selected prompt again to deselect it.</p></details>`;
@@ -1555,10 +1570,10 @@ function refreshRunButtons(){
 }
 function refreshCustomBadges(){
   const card=document.getElementById('opsCard');
-  for(const [op,ks] of Object.entries(OP_PROMPTS)){ const b=card.querySelector(`[data-custom-for="${op}"]`); if(b) b.hidden=!ks.some(k=>promptText(k)!==PROMPTS[k].def); }
-  for(const pe of [...card.querySelectorAll('[data-pe]'), ...setEl.querySelectorAll('[data-pe]')]){ const k=pe.dataset.pe, custom=promptText(k)!==PROMPTS[k].def; pe.querySelector('.tag.custom').hidden=!custom; pe.querySelector('[data-reset]').disabled=!custom; }
+  if(card) for(const [op,ks] of Object.entries(OP_PROMPTS)){ const b=card.querySelector(`[data-custom-for="${op}"]`); if(b) b.hidden=!ks.some(k=>promptText(k)!==PROMPTS[k].def); }
+  for(const pe of setEl.querySelectorAll('[data-pe]')){ const k=pe.dataset.pe, custom=promptText(k)!==PROMPTS[k].def; pe.querySelector('.tag.custom').hidden=!custom; pe.querySelector('[data-reset]').disabled=!custom; }
 }
-/* every place a prompt can be edited (the Operations card and Settings › Prompts) shows the same text */
+/* every field for a prompt shows the same text */
 function setPrompt(k, v, from){
   opts.prompts[k] = v===PROMPTS[k].def ? null : v;
   for(const t of document.querySelectorAll(`[data-prompt="${k}"]`)) if(t!==from) t.value=v;
@@ -2401,13 +2416,8 @@ function meterHTML(turns, compact){
 }
 
 /* ---- Notes ---- */
-function renderNotes(){
-  const card=document.getElementById('notesCard'); if(!card) return;
-  const ns=all().filter(n=>n.note && n.note.trim());
-  setCard(card,'notes',`<h2>Notes <small>${ns.length}</small></h2>
-    ${ns.length ? `<ul class="notelist">${ns.map(n=>`<li><button data-sel="${n.id}"><span class="nid">#${n.id}</span><span class="nt">${esc(clip(n.note.replace(/\s+/g,' '),140))}</span><span class="np">${esc(clip(n.text||'',60))}</span></button></li>`).join('')}</ul>`
-      : '<p class="note">Add a note to any prompt in the Edit card. Notes show under the prompt and here, and are never sent to Claude.</p>'}`);
-}
+/* notes show under their prompt; the Notes filter in the conversation list finds them all */
+function renderNotes(){}
 
 /* ---- Command palette ---- */
 const palEl=()=>document.getElementById('palette');
@@ -2443,6 +2453,8 @@ function paletteCommands(q){
   add('App', 'Import chats', ()=>openImport());
   for(const [f,l] of [['star','starred prompts'],['note','prompts with notes'],['skip','left-out prompts']]) add('Filter', `Show ${l}`, ()=>setFilter(f, true));
   add('App', 'Open the branch map', ()=>openMapView(), 'M');
+  add('Space', 'Space files', ()=>openSpaceFiles());
+  add('Space', 'Import / export JSON', ()=>openIo());
   add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
   add('Settings', 'Open settings', ()=>openSettings());
@@ -2669,7 +2681,7 @@ function opsHTML(id){
   const isM=S.nodes[id].kind==='merge', q=new Set(quickList());
   const btns = quickList().map(k=>[k,OPS[k]]).filter(([k,o])=>(isM||k==='unmerge'||o.hide) ? available(k,id) : true).map(([k,o])=>
     `<button class="btn ${o.danger?'danger':''}" data-act="${k}" data-hint="${esc(k==='skip'&&S.nodes[id].skip?'Send this prompt to Claude again.':o.hint)}" ${available(k,id)?'':'disabled title="Already the start of a conversation"'}>${opLabel(k,id)}${opts.opKeys===false?'':` <kbd>${kk(o.key)}</kbd>`}</button>`).join('');
-  return `<div class="ops" data-key="o${id}"><div class="bar">${btns}<button class="btn more" data-opsmore aria-haspopup="menu" title="Other operations, and choosing what sits in this bar">More ▾</button></div><p class="hint" id="hint">Hover an operation for a quick summary. Full descriptions are under Operations.</p>${renaming && S.head ? renameFormHTML() : composerHTML(id)}</div>`;
+  return `<div class="ops" data-key="o${id}"><div class="bar">${btns}<button class="btn more" data-opsmore aria-haspopup="menu" title="Other operations, and choosing what sits in this bar">More ▾</button></div><p class="hint" id="hint">Hover an operation for a quick summary. Full descriptions are in Settings › Operations.</p>${renaming && S.head ? renameFormHTML() : composerHTML(id)}</div>`;
 }
 /* ✦ marks tools where Claude does the work (each use sends a request), as opposed to ones that only move text.
    Replies themselves aren't marked. */
@@ -2685,7 +2697,8 @@ function rowHTML(id, pathSet){
   if(n.skip) cls.push('skipped');
   if(pick && pick.op==='also'){ if(id===pick.src) cls.push('src'); else if(n.kind==='merge') cls.push('dim'); else if(!alsoTargets.has(id)) cls.push('target'); }
   else if(pick){ if(id===pick.src) cls.push('src'); else cls.push(validTarget(pick.op,pick.src,id)?'target':'dim'); }
-  else if(id===sel){ cls.push('sel'); if(editingNow) cls.push('editing'); }
+  else if(id===sel) cls.push('sel');
+  if(promptEditFor===id && !pick) cls.push('editing');
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
@@ -2701,8 +2714,11 @@ function rowHTML(id, pathSet){
   const txt = isM ? `<span class="txt">Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b></span>`
     : rich ? `<div class="txt rbody ptext">${md(n.text)}</div>`
     : `<span class="txt">${n.pending && !n.text ? '<em class="thinking">Claude is summarizing…</em>' : esc(RICH_RE.test(n.text||'') ? plainText(n.text) : n.text)}</span>`;
-  const txtF = n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
-  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${tog}${fold}${star}</span></div>`;
+  const editingHere = promptEditFor===id && !isM && !pick;
+  const txtE = editingHere ? `<div class="txt pedit" data-key="pe${id}"><textarea id="promptEditText" rows="${Math.min(14, Math.max(2, (n.text||'').split('\n').length+1))}" aria-label="Edit prompt #${id}">${esc(n.text||'')}</textarea>
+    <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Claude answers the edited prompt. The original and its reply stay as the other version.">Send as new version <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-pedit="save" title="Change the prompt where it is. Its reply and everything below stay as they are.">Save in place</button>`}<button class="btn" data-pedit="cancel">Cancel</button></div></div>` : null;
+  const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
+  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${!isM && !pick && !editingHere ? `<button class="pact" data-promptedit="${id}" title="Edit this prompt">✎ edit</button>` : ''}${tog}${fold}${star}</span></div>`;
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
@@ -2732,12 +2748,31 @@ function replyFoot(id){
   const nOpt = id===sel && S.nodes[id].reply && !(fan && fan.id===id) ? listOptions(S.nodes[id].reply).options.length : 0;
   const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
   const ds = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(distill && distill.id===id) ? `<button class="rmore" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">✦ Distill</button>` : '';
-  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button><button class="rmore" data-editresend="${id}">Edit &amp; resend</button>` : '')+fo+ds;
+  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button>` : '')+fo+ds;
   const st = S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
   return sw||rg||st ? `<div class="rfoot">${sw}${rg}${st}</div>` : '';
 }
 /* Editing a reply: fix what Claude said, so everything below builds on the corrected version. Undo brings the original back. */
-let replyEditFor=null;
+let replyEditFor=null, promptEditFor=null;
+/* Editing a prompt where it is. "Send" (the only choice in Simple view, as in any chat) makes a new version that
+   Claude answers, keeping the original and its reply one ‹ › away. "Save in place" just changes the text. */
+function openPromptEdit(id){
+  if(!S.nodes[id] || S.nodes[id].kind==='merge') return;
+  if(sel!==id) select(id);
+  promptEditFor=id; replyEditFor=null; resendFor=null;
+  animRender([id]);
+  const t=document.getElementById('promptEditText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length, t.value.length); }
+}
+function finishPromptEdit(how){
+  const id=promptEditFor, t=document.getElementById('promptEditText');
+  const n=S.nodes[id]; promptEditFor=null;
+  if(!n || !t || how==='cancel'){ animRender([id]); return; }
+  const v=t.value;
+  if(!v.trim()){ promptEditFor=id; toast('Write a prompt first.'); return; }
+  if(how==='resend' && sampleState==='ready'){ regenerate(id, v); return; }
+  if(v===n.text){ animRender([id]); return; }
+  commit(`Edited #${id} in place. Its reply and the prompts below stay as they were.`, ()=>{ n.text=v; if(n.reply) n.stale=true; });
+}
 function replyEditHTML(id){
   const n=S.nodes[id];
   return `<div class="reply resend" data-key="r${id}"><span class="who">Edit Claude’s reply</span>
@@ -2785,7 +2820,7 @@ function replyHTML(id){
   if(resendFor===id) return resendHTML(id);
   if(replyEditFor===id) return replyEditHTML(id);
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}${opts.simple && sampleState==='ready' && !liveGen(id) ? `<button class="rmore" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>` : ''}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -2831,11 +2866,12 @@ function threadTip(id){
 }
 const composeParent = () => opts.simple && !pick && simpleTip!=null && S.nodes[simpleTip] ? simpleTip : sel;
 function forkHTML(id){
-  const n=S.nodes[id], p=n.parents[0]; if(p==null || n.kind==='merge') return '';
-  const sib=vKids(p).filter(k=>k.kind!=='merge'); if(sib.length<2) return '';
+  const n=S.nodes[id], p=n.parents[0]; if(n.kind==='merge') return '';
+  /* a first prompt has no siblings, only its own versions */
+  const sib = p==null ? versions(id).map(x=>S.nodes[x]) : primaryKids(p).filter(k=>k.kind!=='merge'); if(sib.length<2) return '';
   const i=sib.findIndex(k=>k.id===id); if(i<0) return '';
   const go=j=>sib[j] ? `data-forkgo="${sib[j].id}"` : 'disabled';
-  return `<span class="fork" title="This conversation branches here"><button ${go(i-1)} aria-label="Previous branch">‹</button><span>${i+1} / ${sib.length}</span><button ${go(i+1)} aria-label="Next branch">›</button></span>`;
+  return `<span class="fork" title="Other versions and branches from here"><button ${go(i-1)} aria-label="Previous branch">‹</button><span>${i+1} / ${sib.length}</span><button ${go(i+1)} aria-label="Next branch">›</button></span>`;
 }
 function simpleHTML(){
   const rs=orderedRoots();
@@ -2911,40 +2947,7 @@ function setCard(card, key, html){
   card.innerHTML=`<details class="cardd" data-openkey="card-${key}" ${open?'open':''}><summary>${headHTML}</summary><div class="cardbody">${body.innerHTML}</div></details>`;
 }
 let editorFor = undefined, editBefore = null, savedTimer;
-function renderEditor(force){
-  const changed = editorFor!==sel;
-  if(!force && !changed) return;
-  editorFor=sel;
-  const card=document.getElementById('editorCard');
-  card.classList.remove('editing');
-  if(sel==null||!S.nodes[sel]){ setCard(card,'editor','<h2>Edit</h2><p class="note">Nothing selected. Click a prompt in the tree to edit it here, and click it again to deselect.</p>'); return; }
-  const n=S.nodes[sel], d=chain(sel).length-1, vs=versions(sel), fu=kids(sel).length;
-  if(n.kind==='merge'){
-    setCard(card,'editor',`<div class="edhead"><h2>Merge point <span class="nodechip">#${sel}</span></h2></div>
-      <p class="note">Brings <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b>. Anything you continue from here sees both branches.</p>
-      <p class="flabel">Merge note, sent just before the merged branch\u2019s turns</p>
-      <blockquote class="seamq">${esc(n.seam||promptText('seam'))}</blockquote>
-      <p class="note">Change it under Operations › Merge into. <button class="rmore" data-gotoop="merge">Open</button></p>
-      <p class="meta">merges #${n.parents[1]} into #${n.parents[0]} · ${fu} follow-up${fu===1?'':'s'}</p>`);
-    if(changed) Motion.fade(card);
-    return;
-  }
-  setCard(card,'editor',`<div class="edhead"><h2>Editing <span class="nodechip">#${sel}</span></h2><span class="edstatus" id="edStatus">Saves as you type</span></div>
-    <p class="note">These fields edit the highlighted prompt in the tree and the reply under it.</p>
-    <label class="flabel" for="edit">Your prompt</label>
-    <textarea id="edit" rows="4">${esc(n.text)}</textarea>
-    <label class="flabel" for="editReply">Claude’s reply${vs.length>1?` · version ${vs.indexOf(sel)+1} of ${vs.length}`:''}</label>
-    <textarea id="editReply" rows="6" placeholder="No reply yet. You can type a stand-in reply to test with.">${esc(n.reply||'')}</textarea>
-    <label class="flabel" for="editNote">Your note <span class="flhint">never sent to Claude</span></label>
-    <textarea id="editNote" rows="2" placeholder="Decisions, reminders, what to try next…">${esc(n.note||'')}</textarea>
-    <label class="chk"><input type="checkbox" id="edSkip" ${n.skip?'checked':''}> <span>Leave out of context: keep it here, but don’t send it from the prompts below</span></label>
-    ${n.files && n.files.length ? `<p class="flabel">Attached files</p><ul class="flist">${n.files.map((m,i)=>`<li><span class="fkind">${m.kind==='image'?'IMG':'TXT'}</span><span class="fname" title="${esc(m.name)}">${esc(m.name)}</span><span class="meta">${fmtSize(m.size)}</span><button class="btn xs danger" data-rmnodefile="${i}">Remove</button></li>`).join('')}</ul>` : ''}
-    ${n.stale && n.reply ? '<p class="note stalenote">You edited the prompt after this reply was written. Regenerate for a reply that matches it.</p>' : ''}
-    <p class="meta">depth ${d} · ${fu} follow-up${fu===1?'':'s'} · ${n.parents.length?'parent '+n.parents.map(p=>'#'+p).join(', '):'conversation start'}</p>
-    ${n.kind==='summary'?'<p class="note">This is a summary root made by a reroot. Rewrite it into a proper recap of the context you cut.</p>':''}
-    <p class="note">${S.head?`On branch <b>${esc(refName(S.head))}</b>. Continue moves it forward.`:`Detached at #${sel}. Continue here starts a new branch.`}</p>`);
-  if(changed) Motion.fade(card);
-}
+function renderEditor(){ editorFor=sel; }
 function renderSpaces(){
   const ul=document.getElementById('spaceList');
   ul.innerHTML=spaceIds().map(id=>{
@@ -3010,54 +3013,77 @@ function renderConvs(){
   if(renamingConv!=null){ const inp=document.getElementById('cvname-'+renamingConv); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
   if(renamingView!=null){ const inp=document.getElementById('vname-'+renamingView); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
 }
-function renderBranches(){
-  const card=document.getElementById('branchCard');
-  const byConv=new Map();
-  const only = null;
-  let hiddenBranches=0;
-  for(const [rid,r] of Object.entries(S.refs)){ if(!S.nodes[r.tip]) continue; if(isHidden(S.nodes[chain(r.tip)[0]])){ hiddenBranches++; continue; } if(only!=null && convKeyOf(r.tip)!==only) continue; const c=convOf(r.tip); if(!byConv.has(c)) byConv.set(c,[]); byConv.get(c).push(rid); }
-  const convs=[...byConv.keys()].sort((a,b)=>a-b);
-  const total=Object.keys(S.refs).length;
-  const listed=convs.reduce((a,c)=>a+byConv.get(c).length,0);
-  setCard(card,'branches',`<h2>Branches <small>${listed}</small></h2>
-    ${convs.map(c=>{
-      const rids=byConv.get(c).sort((a,b)=>(refName(b)==='main')-(refName(a)==='main') || refName(a).localeCompare(refName(b)));
-      return `${convs.length>1?`<p class="bconv">${esc(clip(convTitle(S.nodes[c]),40))}</p>`:''}<ul class="branches">${rids.map(rid=>`<li class="${S.head===rid?'cur':''}">
-      <button class="coBtn" data-co="${rid}" aria-label="Check out ${esc(refName(rid))}" aria-pressed="${S.head===rid}"></button>
-      <input id="br-${rid}" value="${esc(refName(rid))}" data-rename="${rid}" aria-label="Branch name" spellcheck="false" autocomplete="off">
-      <span class="meta">#${S.refs[rid].tip}</span>
-      <button class="btn danger" data-delbr="${rid}" ${rids.length<2?'disabled title="A conversation keeps at least one branch"':''} aria-label="Delete branch ${esc(refName(rid))}">Delete</button></li>`).join('')}</ul>`;
-    }).join('')}
-    <p class="note">Tap a prompt to check it out, or tap a circle to jump to a branch tip. When several branches share a prompt, tap a branch chip on the row or pick one above the Continue box. Edit any name to rename it.</p>${hiddenBranches?`<p class="note">${hiddenBranches} branch${hiddenBranches===1?' is':'es are'} in hidden conversations.</p>`:''}`);
+/* branches are managed in the map, where you can see them */
+function renderBranches(){ if(typeof mapEl==='function' && !mapEl().hidden) renderMapView(); }
+function branchesHTML(rootId){
+  const rids=Object.keys(S.refs).filter(rid=>S.nodes[S.refs[rid].tip] && chain(S.refs[rid].tip)[0]===rootId)
+    .sort((a,b)=>(refName(b)==='main')-(refName(a)==='main') || refName(a).localeCompare(refName(b)));
+  return `<details class="mapbr" data-openkey="mapbr" ${opts.open.mapbr?'open':''}><summary>Branches · ${rids.length}</summary><ul class="branches">${rids.map(rid=>`<li class="${S.head===rid?'cur':''}">
+    <button class="coBtn" data-co="${rid}" aria-label="Check out ${esc(refName(rid))}" aria-pressed="${S.head===rid}" title="${S.head===rid?'Checked out':'Check out'}"></button>
+    <input id="br-${rid}" value="${esc(refName(rid))}" data-rename="${rid}" aria-label="Branch name" spellcheck="false" autocomplete="off">
+    <span class="meta">#${S.refs[rid].tip}</span>
+    <button class="btn xs danger" data-delbr="${rid}" ${rids.length<2?'disabled title="A conversation keeps at least one branch"':''} aria-label="Delete branch ${esc(refName(rid))}">Delete</button></li>`).join('')}</ul>
+    <p class="note">Edit a name to rename it. Deleting a branch keeps its prompts.</p></details>`;
 }
 let ctxFor;
+/* ---- The inspector ----
+   The right column has one job: what Claude sees from the selected prompt, and how to shape it. Every turn that
+   would be sent is listed with its size and quiet markers; each can be left out or brought back in place. Below
+   that sits what's specific to the prompt itself: your note, who added it, which model replied, its files.
+   Editing happens where you read: on the prompt and the reply in the conversation. */
 function renderCtx(){
-  const card=document.getElementById('ctxCard');
+  const card=document.getElementById('ctxCard'); if(!card) return;
   const changed = ctxFor!==sel; ctxFor=sel;
-  if(sel==null||!S.nodes[sel]){ setCard(card,'ctx','<h2>Context path</h2><p class="note">Nothing selected. Select a prompt to see what Claude would be sent from there.</p>'); return; }
-  const ents=contextEntries(sel), msgs=turnsFor(sel,true), merged=ents.some(e=>e.seam), instr=promptText('instructions').trim();
-  const items=(instr?`<li class="seam instr"><span class="cid">✎</span><span class="ct">${esc(instr)}</span></li>`:'')+ents.map(e=>{
-    if(e.seam) return `<li class="seam" data-sel="${e.merge}"><span class="cid">⑂</span><span class="ct">${esc(e.text)}</span></li>`;
-    const n=S.nodes[e.id]; if(n.kind==='merge') return '';
-    return `<li data-sel="${e.id}" class="${e.id===sel?'cur':''} ${n.skip&&e.id!==sel?'skipped':''}" ${n.skip&&e.id!==sel?'title="Left out: not sent"':''}><span class="cid">#${e.id}</span><span class="ct">${esc(n.text)}${n.reply?`<span class="cr">${esc(n.reply.replace(/```[\s\S]*?```/g,'[code]').replace(/\s+/g,' '))}</span>`:''}</span></li>`;
-  }).join('');
+  /* a note being typed survives redraws (a reply landing elsewhere redraws everything) */
+  const a=document.activeElement, keepNote = a && a.id==='editNote' && card.contains(a) ? {s:a.selectionStart, e:a.selectionEnd} : null;
+  if(sel==null||!S.nodes[sel]){ setCard(card,'ctx','<h2>Context</h2><p class="note">Select a prompt to see exactly what Claude would be sent from there, and to shape it.</p>'); return; }
+  const n=S.nodes[sel];
+  if(n.kind==='merge'){
+    setCard(card,'ctx',`<h2>Merge point <small>#${sel}</small></h2>
+      <p class="note">Brings <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b>. Anything you continue from here sees both branches: the one merged into first, then this note, then the turns only the merged branch has.</p>
+      <blockquote class="seamq">${esc(n.seam||promptText('seam'))}</blockquote>
+      <div class="bar"><button class="btn" data-gotoprompts>Change the merge note</button></div>`);
+    if(changed) Motion.fade(card);
+    return;
+  }
+  const ents=contextEntries(sel), msgs=turnsFor(sel,true), merged=ents.some(e=>e.seam), instr=promptText('instructions').trim(), fs=S.files||[];
+  const tok=t=>Math.ceil(t.length/4);
+  const items=(instr?`<li class="seam instr" data-gotoprompts title="Standing instructions, sent first. Change them in Settings › Prompts."><span class="cid">✎</span><span class="ct">${esc(instr)}</span><span></span></li>`:'')
+    +(fs.length?`<li class="files" data-openspacefiles title="Sent with every request in this space"><span class="cid">⎘</span><span class="ct">${fs.length} space file${fs.length===1?'':'s'}: ${esc(fs.map(f=>f.name).join(', '))}</span><span></span></li>`:'')
+    +ents.map(e=>{
+      if(e.seam) return `<li class="seam" data-sel="${e.merge}"><span class="cid">⑂</span><span class="ct">${esc(e.text)}</span><span></span></li>`;
+      const m=S.nodes[e.id]; if(m.kind==='merge') return '';
+      const out = m.skip && e.id!==sel;
+      const marks=[m.by?`⚙ ${esc(m.by)}`:'', m.replyEdited?'edited':'', `${tok((m.text||'')+(m.reply||'')).toLocaleString()} tok`].filter(Boolean).join(' · ');
+      const toggle = e.id===sel ? '' : `<button class="ctog" data-ctxskip="${e.id}" title="${out?'Send it again from here on':'Stop sending it from the prompts below. Nothing is deleted.'}">${out?'include':'leave out'}</button>`;
+      return `<li data-sel="${e.id}" class="${e.id===sel?'cur':''} ${out?'skipped':''}" ${out?'title="Left out: not sent"':''}><span class="cid">#${e.id}</span><span class="ct">${esc(plainText(m.text)||'')}${m.reply?`<span class="cr">${esc(plainText(m.reply))}</span>`:''}<span class="cmk">${marks}</span></span>${toggle}</li>`;
+    }).join('');
   const nSkip=ents.filter(e=>!e.seam && e.id!==sel && S.nodes[e.id].skip).length;
-  setCard(card,'ctx',`<h2>Context path <small>${msgs.length} messages · ~${tokens(msgs)} tok</small></h2>
+  const vs=versions(sel), kidsN=kids(sel).length;
+  const facts=[n.by?`added by ${esc(n.by)}`:'', n.model?`replied by ${esc(n.model)}`:'', n.replyEdited?`reply edited${n.editedBy?' by '+esc(n.editedBy):''}`:'', vs.length>1?`version ${vs.indexOf(sel)+1} of ${vs.length}`:'', `${kidsN} follow-up${kidsN===1?'':'s'}`, S.head && refsAt(sel).includes(S.head)?`on branch ${esc(refName(S.head))}`:''].filter(Boolean).join(' · ');
+  setCard(card,'ctx',`<h2>Context <small>from #${sel} · ${msgs.length} messages · ~${tokens(msgs).toLocaleString()} tok</small></h2>
     ${meterHTML(msgs)}
-    <p class="note">What the next request would send, oldest first. Each prompt is followed by Claude’s reply to it.${nSkip?` ${nSkip} left-out prompt${nSkip===1?' is':'s are'} shown faded and not sent.`:''}</p>
+    <p class="note">Exactly what the next request from #${sel} sends, oldest first.${nSkip?` ${nSkip} left out and not sent.`:''} Leave a turn out from its row.</p>
     <ol class="ctx">${items}</ol>
-    ${merged?'<p class="note">At a merge, the branch merged into comes first. Then the merge note, then the turns unique to the merged branch.</p>':''}
-    <div class="bar"><button class="btn" id="copyPrompt" title="One block to paste into Claude anywhere, then ask your question">Copy as a prompt</button><button class="btn" id="distillCtx" ${sampleState==='ready'?'':'disabled'} title="Claude writes a short brief of this context that you can reuse">${AI}Distill…</button><button class="btn" id="copyMd">Copy as Markdown</button><button class="btn" id="copyCtx">Copy as messages JSON</button></div>`);
+    ${merged?'<p class="note">At a merge: the branch merged into comes first, then the merge note, then the turns only the merged branch has.</p>':''}
+    <div class="bar"><button class="btn" id="copyPrompt" title="One block to paste into Claude anywhere, then ask your question">Copy as a prompt</button><button class="btn" id="distillCtx" ${sampleState==='ready'?'':'disabled'} title="Claude writes a short brief of this context that you can reuse">${AI}Distill…</button><button class="btn" id="copyMd">Copy as Markdown</button><button class="btn" id="copyCtx">Copy as JSON</button></div>
+    <div class="insp"><h3>#${sel}</h3>
+      <label class="flabel" for="editNote">Your note <span class="flhint">never sent to Claude</span></label>
+      <textarea id="editNote" rows="2" placeholder="Decisions, reminders, what to try next…">${esc(n.note||'')}</textarea>
+      ${n.files && n.files.length ? `<p class="flabel">Attached files</p><ul class="flist">${n.files.map((m,i)=>`<li><span class="fkind">${m.kind==='image'?'IMG':'TXT'}</span><span class="fname" title="${esc(m.name)}">${esc(m.name)}</span><span class="meta">${fmtSize(m.size)}</span><button class="btn xs danger" data-rmnodefile="${i}">Remove</button></li>`).join('')}</ul>` : ''}
+      ${n.kind==='summary'?'<p class="note">A summary root made by a reroot. Edit it into a proper recap of the context you cut.</p>':''}
+      <p class="meta">${facts}</p></div>`);
+  if(keepNote){ const t=document.getElementById('editNote'); if(t){ t.focus({preventScroll:true}); try{ t.setSelectionRange(keepNote.s, keepNote.e); }catch(e){} } }
   if(changed) Motion.fade(card);
 }
 function renderSpaceFiles(){
   const card=document.getElementById('filesCard'), fs=S.files||[];
-  setCard(card,'files',`<h2>Space files <small>${fs.length}</small></h2>
-    <p class="note">Shared with every request in this space, like project knowledge in Claude. Text and code files only.</p>
+  document.getElementById('sfSpace').textContent='in '+DB.spaces[DB.current].name;
+  card.innerHTML=`<p class="note">Sent with every request in this space, like project knowledge in Claude. Text and code files only.</p>
     ${fs.length ? `<ul class="flist">${fs.map((m,i)=>`<li><span class="fkind">TXT</span><span class="fname" title="${esc(m.name)}">${esc(m.name)}</span><span class="meta">${fmtSize(m.size)}</span><button class="btn xs danger" data-rmspacefile="${i}">Remove</button></li>`).join('')}</ul>` : ''}
-    <div class="dropzone" data-dropspace>Drop files here, or <button class="linkbtn" data-attachspace style="color:var(--accent)">choose files</button></div>`);
+    <div class="dropzone" data-dropspace>Drop files here, or <button class="linkbtn" data-attachspace style="color:var(--accent)">choose files</button></div>`;
 }
-function render(forceEditor){ renderSpaces(); renderSpaceFiles(); renderHeader(); Motion.run(convListEl, renderConvs); renderTree(); renderEditor(forceEditor); renderCtx(); renderBranches(); renderNotes(); refreshRunButtons(); document.getElementById('optSummary').checked=opts.summary; document.getElementById('optCow').checked=opts.cow; }
+function render(forceEditor){ renderSpaces(); renderSpaceFiles(); renderHeader(); Motion.run(convListEl, renderConvs); renderTree(); renderEditor(forceEditor); renderCtx(); renderBranches(); renderNotes(); refreshRunButtons(); }
 
 /* which field has focus, so a redraw can put focus and the caret back in the same place */
 const FOCUS_ATTRS=['vtext','ftitle','fprompt'];
@@ -3071,7 +3097,7 @@ function focusKey(){
 function restoreFocus(k){
   if(!k) return;
   const el=treeEl.querySelector(k.q); if(!el) return;
-  if(k.q==='#resendText' || k.q==='#replyEditText' || k.q==='#distillText') el.value=k.v;
+  if(k.q==='#resendText' || k.q==='#replyEditText' || k.q==='#distillText' || k.q==='#promptEditText') el.value=k.v;
   el.focus({preventScroll:true});
   const n=el.value.length;
   try{ el.setSelectionRange(Math.min(k.s,n), Math.min(k.e,n)); }catch(e){}
@@ -3084,6 +3110,7 @@ function select(id){
   if(id!==sel) alsoTargets.delete(id);
   if(id!==resendFor) resendFor=null;
   if(id!==replyEditFor) replyEditFor=null;
+  if(id!==promptEditFor) promptEditFor=null;
   if(distill && distill.id!==id){ if(distill.ctl) distill.ctl.abort(); distill=null; }
   if(fan && fan.id!==id) fan=null;
   if(variants && id!==sel) variants=null;
@@ -3410,6 +3437,8 @@ function spaceMenu(anchor, sid){
   const others=spaceIds().filter(x=>x!==sid);
   openMenu(anchor, [
     {label:'Rename', run:()=>{ renamingSpace=sid; if(narrow()) openDrawer('spaces'); else if(opts.collapsed.spaces){ opts.collapsed.spaces=false; applyLayout(); save(); } renderSpaces(); }},
+    {label:'Space files…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openSpaceFiles(); }},
+    {label:'Import / export JSON…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openIo(); }},
     {heading:'Combine into'},
     ...(others.length ? others.map(o=>({label:DB.spaces[o].name, run:()=>combineSpaces(sid, o)})) : [{label:'No other spaces yet', disabled:true}]),
     {sep:true},
@@ -3625,14 +3654,16 @@ document.addEventListener('click', async e=>{
 async function copyText(text, quiet){
   try{ await navigator.clipboard.writeText(text); if(!quiet) toast('Copied to the clipboard'); return true; }
   catch(e){
-    const io=document.getElementById('io'), t=document.getElementById('ioText');
-    if(io.open){ t.value=text; t.select(); } else { ioPending=text; io.open=true; }
-    toast('Copy blocked here. The text is selected in Import / export.');
+    openIo(text);
+    toast('Copy blocked here. The text is selected below: copy it with Ctrl/⌘ C.');
   }
 }
 
 /* events */
 treeEl.addEventListener('click', e=>{
+  const pe=e.target.closest('[data-pedit]'); if(pe){ finishPromptEdit(pe.dataset.pedit); return; }
+  if(e.target.closest('.pedit')) return; /* typing in the prompt editor doesn't select anything */
+  const pb=e.target.closest('[data-promptedit]'); if(pb){ openPromptEdit(+pb.dataset.promptedit); return; }
   const act=e.target.closest('[data-act]'); if(act){ run(act.dataset.act, sel); return; }
   const om=e.target.closest('[data-opsmore]'); if(om){ opsMoreMenu(om, sel); return; }
   const vs=e.target.closest('[data-variants]'); if(vs){ openVariants(sel); return; }
@@ -3697,7 +3728,7 @@ treeEl.addEventListener('click', e=>{
     return; }
   const g=e.target.closest('[data-sel]'); if(g){ select(+g.dataset.sel); return; }
   if(e.target.closest('.ptext a')) return;
-  const fg=e.target.closest('[data-forkgo]'); if(fg){ const k=+fg.dataset.forkgo, rid=refsThrough(k)[0]; simpleTip=null; select(rid ? S.refs[rid].tip : leafOf(k)); return; }
+  const fg=e.target.closest('[data-forkgo]'); if(fg){ const k=+fg.dataset.forkgo, kn=S.nodes[k]; if(kn && kn.alt!=null) S.active[kn.alt]=k; const rid=refsThrough(k)[0]; simpleTip=null; select(rid ? S.refs[rid].tip : leafOf(k)); return; }
   if(String(window.getSelection ? getSelection() : '') && e.target.closest('.row')) return;
   const row=e.target.closest('.row'); if(!row) return;
   const id=+row.dataset.id;
@@ -3727,47 +3758,37 @@ treeEl.addEventListener('keydown', e=>{
   if(e.target.dataset && e.target.dataset.vtext!=null && send){ e.preventDefault(); sendVariants(); }
   if(fan && fan.status==='ready' && e.key==='Enter' && (e.metaKey||e.ctrlKey) && e.target.closest && e.target.closest('.fan')){ e.preventDefault(); fanCreate(); }
   if(e.target.id==='resendText' && send){ e.preventDefault(); const v=e.target.value.trim(); if(v) regenerate(resendFor, v); }
+  if(e.target.id==='promptEditText' && e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); finishPromptEdit('resend'); }
+  if(e.target.id==='promptEditText' && e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); finishPromptEdit('cancel'); }
   if(e.target.id==='replyEditText' && e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); saveReplyEdit(); }
   if(e.target.id==='replyEditText' && e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); const id=replyEditFor; replyEditFor=null; animRender([id]); }
   if(e.target.id==='resendText' && e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); resendFor=null; animRender([sel]); }
   if(e.target.id==='branchName' && e.key==='Enter'){ e.preventDefault(); renaming=false; renameRef(S.head, e.target.value); animRender([sel]); }
   if(e.target.classList.contains('row') && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); e.target.click(); }
 });
-document.getElementById('notesCard').addEventListener('click', e=>{ const g=e.target.closest('[data-sel]'); if(g) select(+g.dataset.sel); });
-document.getElementById('ctxCard').addEventListener('click', e=>{
+const ctxCardEl=document.getElementById('ctxCard');
+ctxCardEl.addEventListener('click', e=>{
+  const sk=e.target.closest('[data-ctxskip]'); if(sk){ e.stopPropagation(); run('skip', +sk.dataset.ctxskip); return; }
+  if(e.target.closest('[data-gotoprompts]')){ openSettings('prompts'); return; }
+  if(e.target.closest('[data-openspacefiles]')){ openSpaceFiles(); return; }
+  const rf=e.target.closest('[data-rmnodefile]'); if(rf && S.nodes[sel]){ const i=+rf.dataset.rmnodefile, m=S.nodes[sel].files[i]; commit(`Removed ${m.name} from #${sel}`, ()=>{ S.nodes[sel].files.splice(i,1); if(!S.nodes[sel].files.length) delete S.nodes[sel].files; }, {touch:false}); return; }
   const g=e.target.closest('[data-sel]'); if(g){ select(+g.dataset.sel); return; }
   if(e.target.id==='copyCtx') copyText(JSON.stringify(turnsFor(sel, true),null,2));
   if(e.target.id==='copyMd') copyText(pathMarkdown(sel));
   if(e.target.id==='copyPrompt') copyContextPrompt(sel);
   if(e.target.id==='distillCtx') openDistill(sel);
 });
-const editorCard=document.getElementById('editorCard');
-const isEditField = el => el.id==='edit' || el.id==='editReply' || el.id==='editNote';
-function setEditing(on){
-  editingNow=on; editorCard.classList.toggle('editing', on);
-  const row=treeEl.querySelector('.row.sel'); if(!row) return;
-  row.classList.toggle('editing', on);
-  const tags=row.querySelector('.tags'), tag=tags && tags.querySelector('.tag.editing');
-  if(on && tags && !tag) tags.insertAdjacentHTML('afterbegin','<span class="tag editing">editing</span>');
-  if(!on && tag) tag.remove();
-}
-editorCard.addEventListener('focusin', e=>{ if(isEditField(e.target)){ editBefore=JSON.stringify(S); setEditing(true); } });
-editorCard.addEventListener('input', e=>{
-  if(!isEditField(e.target) || !S.nodes[sel]) return;
-  const n=S.nodes[sel];
-  if(e.target.id==='edit'){ n.text=e.target.value; if(n.reply) n.stale=true; }
-  else if(e.target.id==='editNote'){ if(e.target.value.trim()) n.note=e.target.value; else delete n.note; }
-  else { if(e.target.value){ n.reply=e.target.value; n.replyEdited=true; } else { delete n.reply; delete n.replyEdited; } delete n.stale; }
-  save(); renderTree(); renderCtx(); if(e.target.id==='editNote') renderNotes();
-  const st=document.getElementById('edStatus');
-  if(st){ st.textContent='Saved'; st.classList.add('saved'); clearTimeout(savedTimer); savedTimer=setTimeout(()=>{ st.textContent='Saves as you type'; st.classList.remove('saved'); }, 1400); }
+let noteBefore=null;
+ctxCardEl.addEventListener('focusin', e=>{ if(e.target.id==='editNote') noteBefore=JSON.stringify(S); });
+ctxCardEl.addEventListener('input', e=>{
+  if(e.target.id!=='editNote' || !S.nodes[sel]) return;
+  const n=S.nodes[sel]; if(e.target.value.trim()) n.note=e.target.value; else delete n.note;
+  save(); keepDraft(()=>renderTree());
 });
-editorCard.addEventListener('change', e=>{ if(e.target.id==='edSkip' && sel!=null) run('skip', sel); });
-editorCard.addEventListener('focusout', e=>{
-  if(!isEditField(e.target)) return;
-  if(editBefore && editBefore!==JSON.stringify(S)) pushUndo({kind:'tree', sid:DB.current, s:editBefore});
-  editBefore=null;
-  setTimeout(()=>{ if(!editorCard.contains(document.activeElement)){ setEditing(false); renderTree(); } }, 0);
+ctxCardEl.addEventListener('focusout', e=>{
+  if(e.target.id!=='editNote') return;
+  if(noteBefore && noteBefore!==JSON.stringify(S)) pushUndo({kind:'tree', sid:DB.current, s:noteBefore});
+  noteBefore=null;
 });
 /* one hidden file picker serves every "attach" button */
 const filePicker=document.createElement('input'); filePicker.type='file'; filePicker.multiple=true; filePicker.hidden=true; document.body.append(filePicker);
@@ -3807,11 +3828,6 @@ document.getElementById('filesCard').addEventListener('click', e=>{
   if(e.target.closest('[data-attachspace]')){ openPicker('space'); return; }
   const r=e.target.closest('[data-rmspacefile]'); if(r){ const i=+r.dataset.rmspacefile, m=S.files[i]; commit(`Removed ${m.name} from this space`, ()=>{ S.files.splice(i,1); }, {touch:false}); }
 });
-document.getElementById('editorCard').addEventListener('click', e=>{
-  const r=e.target.closest('[data-rmnodefile]'); if(!r || !S.nodes[sel]) return;
-  const i=+r.dataset.rmnodefile, m=S.nodes[sel].files[i];
-  commit(`Removed ${m.name} from #${sel}`, ()=>{ S.nodes[sel].files.splice(i,1); if(!S.nodes[sel].files.length) delete S.nodes[sel].files; }, {touch:false});
-});
 document.getElementById('toastRoot').addEventListener('click', e=>{
   if(e.target.id==='toastUndo') undo();
   if(e.target.id==='toastAct' && toastAction){ const a=toastAction; document.getElementById('toastRoot').innerHTML=''; a.fn(); }
@@ -3819,30 +3835,17 @@ document.getElementById('toastRoot').addEventListener('click', e=>{
 document.getElementById('undoBtn').onclick=undo;
 document.getElementById('redoBtn').onclick=redo;
 document.getElementById('newBtn').onclick=startNewConversation;
-const branchCard=document.getElementById('branchCard');
-branchCard.addEventListener('click', e=>{
-  const co=e.target.closest('[data-co]'); if(co){ checkout(co.dataset.co); return; }
-  const d=e.target.closest('[data-delbr]'); if(d && !d.disabled) deleteRef(d.dataset.delbr);
-});
-branchCard.addEventListener('change', e=>{ if(e.target.dataset.rename!=null) renameRef(e.target.dataset.rename, e.target.value); });
-branchCard.addEventListener('keydown', e=>{ if(e.target.dataset.rename!=null && e.key==='Enter') e.target.blur(); });
-const opsCardEl=document.getElementById('opsCard');
-opsCardEl.addEventListener('change', e=>{
+/* operation options live in Settings › Operations (setEl is declared further down, so look it up here) */
+document.getElementById('settings').addEventListener('change', e=>{
 
   if(e.target.id==='optSummary'){ opts.summary=e.target.checked; save(); }
   if(e.target.id==='optCow'){ opts.cow=e.target.checked; save(); }
   if(e.target.name==='rerootBy'){ opts.rerootBy=e.target.value; save(); }
   if(e.target.name==='squashBy'){ opts.squashBy=e.target.value; save(); }
 });
-opsCardEl.addEventListener('input', e=>{
-  const k=e.target.dataset && e.target.dataset.prompt; if(!k) return;
-  setPrompt(k, e.target.value, e.target);
-});
-opsCardEl.addEventListener('click', e=>{
-  const ro=e.target.closest('[data-runop]'); if(ro){ if(sel!=null) run(ro.dataset.runop, sel); return; }
+document.getElementById('settings').addEventListener('click', e=>{
+  const ro=e.target.closest('[data-runop]'); if(ro){ closeSettings(); if(sel!=null) run(ro.dataset.runop, sel); else toast('Select a prompt first.'); return; }
   if(e.target.closest('[data-openquick]')){ openSettings('bar'); return; }
-  const r=e.target.closest('[data-reset]'); if(!r) return;
-  resetPrompt(r.dataset.reset);
 });
 const asideEl=document.querySelector('aside');
 asideEl.addEventListener('toggle', e=>{ const d=e.target, k=d.dataset && d.dataset.openkey; if(k && (opts.open[k] ?? null)!==d.open){ opts.open[k]=d.open; save(); } }, true);
@@ -3863,30 +3866,26 @@ function placeAside(){
 window.addEventListener('scroll', placeAside, {passive:true});
 window.addEventListener('resize', placeAside);
 if(typeof ResizeObserver!=='undefined') new ResizeObserver(placeAside).observe(document.querySelector('.app') || document.body);
-document.getElementById('editorCard').addEventListener('click', e=>{
-  const g=e.target.closest('[data-gotoop]'); if(!g) return;
-  const all_=opsCardEl.querySelector('details.cardd'), d=opsCardEl.querySelector(`[data-openkey="op-${g.dataset.gotoop}"]`);
-  if(all_) all_.open=true; if(d){ d.open=true; d.scrollIntoView({block:'nearest', behavior: Motion.reduced() ? 'auto' : 'smooth'}); const t=d.querySelector('textarea'); if(t) t.focus({preventScroll:true}); }
-});
-let ioPending=null;
-document.getElementById('io').addEventListener('toggle', e=>{
-  if(!e.target.open) return;
-  const t=document.getElementById('ioText');
-  t.value = ioPending ?? JSON.stringify(S,null,2);
-  if(ioPending!=null) t.select();
-  ioPending=null;
-});
+/* ---- panels: Space files, Import / export ---- */
+const sfEl=()=>document.getElementById('spaceFiles'), ioEl=()=>document.getElementById('ioView');
+let panelReturn=null;
+function openPanel(el){ panelReturn=document.activeElement; closeMenu && menuEl && closeMenu(); el.hidden=false; document.body.style.overflow='hidden'; const f=el.querySelector('textarea, [data-attachspace], button'); if(f) f.focus({preventScroll:true}); }
+function closePanel(el){ el.hidden=true; document.body.style.overflow=''; if(panelReturn && panelReturn.focus && document.contains(panelReturn)) panelReturn.focus({preventScroll:true}); }
+function openSpaceFiles(){ renderSpaceFiles(); openPanel(sfEl()); }
+function openIo(text){ const t=document.getElementById('ioText'); t.value = text ?? JSON.stringify(S,null,2); openPanel(ioEl()); t.focus({preventScroll:true}); if(text!=null) t.select(); }
+for(const el of [sfEl(), ioEl()]) el.addEventListener('click', e=>{ if(e.target===el || e.target.closest('[data-panelclose]')) closePanel(el); });
 document.getElementById('copyJson').onclick=()=>copyText(JSON.stringify(S,null,2));
 document.getElementById('loadJson').onclick=()=>{
   let d; try{ d=JSON.parse(document.getElementById('ioText').value); }catch(e){ toast('That isn’t valid JSON. Paste a tree exported from this page.'); return; }
   if(!valid(d)){ toast('JSON needs a nextId number and nodes with id, parents and text.'); return; }
   withTree(d, migrate);
-  storeCommit('Imported the pasted JSON as a new space', ()=>{ DB.current=addSpace(uniqueSpaceName('Imported space'), d); });
+  if(storeCommit('Imported the pasted JSON as a new space', ()=>{ DB.current=addSpace(uniqueSpaceName('Imported space'), d); })) closePanel(ioEl());
 };
 document.addEventListener('keydown', e=>{
   if((e.metaKey||e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='k'){ e.preventDefault(); if(palEl().hidden) openPalette(); else closePalette(); return; }
   if(!palEl().hidden){ if(e.key==='Escape') closePalette(); return; }
   if(!impEl().hidden){ if(e.key==='Escape'){ e.preventDefault(); closeImport(); } else if(e.key==='Tab') trapTab(e, impEl()); return; }
+  for(const el of [sfEl(), ioEl()]) if(!el.hidden){ if(e.key==='Escape'){ e.preventDefault(); closePanel(el); } else if(e.key==='Tab') trapTab(e, el); return; }
   if(!mapEl().hidden){ if(e.key==='Escape' || (e.key.toLowerCase()==='m' && !e.metaKey && !e.ctrlKey && !e.altKey)){ e.preventDefault(); closeMapView(); } else if(e.key==='Tab') trapTab(e, mapEl()); return; }
   if(!cmpEl().hidden){ if(e.key==='Escape'){ e.preventDefault(); closeCompare(); } else if(e.key==='Tab') trapTab(e, cmpEl()); return; }
   if(!setEl.hidden){ if(e.key==='Escape'){ e.preventDefault(); closeSettings(); } else if(e.key==='Tab') trapTab(e); return; }
@@ -4012,7 +4011,7 @@ function applyAppearance(){
 if(darkMQ.addEventListener) darkMQ.addEventListener('change', ()=>{ if(set('theme')==='system'){ applyAppearance(); if(!setEl.hidden) renderSettings(); } });
 
 const setEl=document.getElementById('settings'), setBodyEl=document.getElementById('setBody'), setTabsEl=document.getElementById('setTabs');
-const SET_TABS=[['look','Personalization'],['system','System'],['prompts','Prompts'],['bar','Quick access'],['keys','Keyboard']];
+const SET_TABS=[['look','Personalization'],['system','System'],['prompts','Prompts'],['ops','Operations'],['bar','Quick access'],['keys','Keyboard']];
 const PROMPT_GROUPS=[['every','Sent with every request',''], ['ops','Operations','Used by Merge, Reroot and Squash.'], ['tools',AI+'Tools','What Claude is asked when you use a '+AI+'tool.'], ['naming',AI+'Naming','Used when Claude names branches, conversations and spaces (turn these on under System).']];
 let setReturn=null;
 const segs=(key, choices, label)=>`<div class="segs" role="group" aria-label="${esc(label)}">${choices.map(([v,l])=>`<button class="seg" data-set="${key}" data-val="${v}" aria-pressed="${String(set(key))===String(v)}">${esc(l)}</button>`).join('')}</div>`;
@@ -4092,6 +4091,8 @@ function renderSettings(){
       h+=`<section class="setsec"><h3>${title}</h3>${note?`<p class="note">${note}</p>`:''}<div class="pes">${ks.map(k=>promptEditor(k,'-set')).join('')}</div></section>`;
     }
     h+=`<section class="setsec">${setRow('Reset prompts', custom?`${custom} prompt${custom===1?' is':'s are'} changed from the default.`:'All prompts are the defaults.', `<button class="btn" data-resetprompts ${custom?'':'disabled'}>Reset all prompts</button>`)}</section>`;
+  } else if(tab==='ops'){
+    h+=`<section class="setsec"><div id="opsCard"></div></section>`;
   } else if(tab==='bar'){
     const on=quickList(), off=Object.keys(OPS).filter(k=>pinnable(k) && !on.includes(k));
     const row=(k,i,inBar)=>`<li class="qrow ${inBar?'on':''}"><label class="chk"><input type="checkbox" data-qtoggle="${k}" ${inBar?'checked':''}> <span class="${OPS[k].danger?'danger':''}">${esc(OPS[k].label)}</span></label><span class="qhint">${esc(OPS[k].hint)}</span>${opts.opKeys===false?'':`<kbd>${kk(OPS[k].key)}</kbd>`}
@@ -4106,6 +4107,7 @@ function renderSettings(){
     h+=`<section class="setsec"><h3>Operations${opts.opKeys===false?' (off)':''}</h3><dl class="keys">${Object.values(OPS).map(o=>k(kb(kk(o.key)),o.label.replace('…',''))).join('')}</dl></section>`;
   }
   setBodyEl.innerHTML=h;
+  if(tab==='ops') renderOpsCard();
 }
 function openSettings(tab){
   if(tab) opts.setTab=tab;
@@ -4555,13 +4557,18 @@ function renderMapView(){
     return `<button class="maprow ${row.id===sel?'sel':''} ${pathSet.has(row.id)?'':'off'} ${n.kind==='merge'?'merge':''}" data-mapgo="${row.id}" style="height:${rowH}px;padding-left:${gw}px" title="${esc(clip(plainText(n.text||''), 400))}"><span class="mid">#${row.id}</span><span class="mtxt">${txt}</span><span class="mtags">${tags}${pills}</span></button>`;
   }).join('');
   box.innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="mapTitle">Branch map</h2><p class="note">${esc(clip(convTitle(root),120))} · ${L.rows.filter(x=>S.nodes[x.id].kind!=='merge').length} prompts · ${nTips} branch${nTips===1?'':'es'}</p></div><div class="bar"><button class="btn" data-mapclose>Close <kbd class="inv">Esc</kbd></button></div></div>
-    <div class="mapbody"><div class="mapgraph"><svg width="${gw}" height="${L.rows.length*rowH}" aria-hidden="true">${mapGraphSVG(L, gx, gy, r, pathSet)}</svg><div class="maprows">${rows}</div></div></div>`;
+    <div class="mapbody">${branchesHTML(root.id)}<div class="mapgraph"><svg width="${gw}" height="${L.rows.length*rowH}" aria-hidden="true">${mapGraphSVG(L, gx, gy, r, pathSet)}</svg><div class="maprows">${rows}</div></div></div>`;
 }
 mapEl().addEventListener('click', e=>{
   if(e.target===mapEl() || e.target.closest('[data-mapclose]')){ closeMapView(); return; }
+  const co=e.target.closest('[data-co]'); if(co){ checkout(co.dataset.co); renderMapView(); return; }
+  const db=e.target.closest('[data-delbr]'); if(db && !db.disabled){ deleteRef(db.dataset.delbr); return; }
   const g=e.target.closest('[data-mapgo]'); if(g) goFromMap(+g.dataset.mapgo);
 });
+mapEl().addEventListener('change', e=>{ if(e.target.dataset.rename!=null) renameRef(e.target.dataset.rename, e.target.value); });
+mapEl().addEventListener('toggle', e=>{ if(e.target.dataset && e.target.dataset.openkey==='mapbr'){ opts.open.mapbr=e.target.open; save(); } }, true);
 mapEl().addEventListener('keydown', e=>{
+  if(e.target.dataset && e.target.dataset.rename!=null && e.key==='Enter'){ e.target.blur(); return; }
   if(e.key!=='ArrowDown' && e.key!=='ArrowUp') return;
   const rows=[...mapEl().querySelectorAll('.maprow')], i=rows.indexOf(document.activeElement);
   const t=rows[Math.max(0, Math.min(rows.length-1, (i<0?0:i)+(e.key==='ArrowDown'?1:-1)))];
@@ -4645,7 +4652,6 @@ const onScroll=()=>{ const on=window.scrollY>4; if(on!==wasScrolled){ wasScrolle
 window.addEventListener('scroll', onScroll, {passive:true});
 Files.init().then(()=>render(true));
 load(); applyAppearance(); applyLayout(); applySimple(); renderOpsCard();
-document.getElementById('io').open = opts.open['card-io'] ?? CARD_DEFAULT_OPEN.io;
 render(true); onScroll(); placeAside(); connectModel(); Agent.connect();
 </script>
 </body>

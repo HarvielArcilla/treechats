@@ -93,7 +93,8 @@ Treechats must be running for any of this.
 - Nothing in `data/` or `.env` is ever committed; both are in `.gitignore`.
 
 To bring spaces over from the claude.ai version: in each space there, open **Import / export › Copy this space
-as JSON**, then here paste it and choose **Import pasted JSON as a new space**.
+as JSON**, then here open the space's **⋯ › Import / export JSON…**, paste it and choose **Import pasted JSON as a
+new space**.
 
 ## Security
 
