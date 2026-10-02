@@ -1,11 +1,11 @@
 /* An MCP server at /mcp, so Claude Code (or any MCP client) can use Treechats.
 
-   Reading: list spaces and conversations, search them, and pull the context of a branch or prompt into a session.
+   Reading: list projects and chats, search them, and pull the context of a branch or prompt into a session.
    These never change anything.
 
-   Subagents (Phase 1, see docs/VISION.md): an agent can start conversations whose context Treechats owns, continue
+   Subagents (Phase 1, see docs/VISION.md): an agent can start chats whose context Treechats owns, continue
    and fork them, leave turns out, correct replies, regenerate, and distill what they found. Agents only ever change
-   their own run spaces ("Run: <name>"); everything they add is labeled with the agent's name, stays out of your
+   their own run projects ("Run: <name>"); everything they add is labeled with the agent's name, stays out of your
    Undo, and each run has a cap on model requests. The open Treechats page carries the changes out (server/relay.ts).
 
    Add it to Claude Code with:
@@ -39,7 +39,7 @@ function conversation(v: TreeView, q?: string | number) {
   const low = String(q).toLowerCase();
   return rs.find((r) => v.title(r).toLowerCase() === low) || rs.find((r) => v.title(r).toLowerCase().includes(low)) || null;
 }
-/* where a conversation is "at": its checked-out branch, else main, else its first branch */
+/* where a chat is "at": its checked-out branch, else main, else its first branch */
 function convTip(v: TreeView, rootId: number) {
   const bs = v.branches(rootId);
   const b = bs.find((x) => x.head) || bs.find((x) => x.name === 'main') || bs[0];
@@ -48,21 +48,21 @@ function convTip(v: TreeView, rootId: number) {
   for (;;) { const k = v.all().filter((n) => n.parents[0] === cur && v.visible(n)); if (!k.length) return cur; cur = k[0].id; }
 }
 
-type Pick = { space?: string; conversation?: string; branch?: string; prompt?: number };
-/* the prompt a request means: by number, by branch name, by conversation (where it's checked out), else the selection */
+type Pick = { project?: string; chat?: string; branch?: string; prompt?: number };
+/* the prompt a request means: by number, by branch name, by chat (where it's checked out), else the selection */
 function pick(s: State, a: Pick): { error: string } | { sp: State['db']['spaces'][string]; t: Tree; v: TreeView; id: number } {
-  const sp = space(s, a.space); if (!sp) return { error: `No space matches "${a.space}".` };
+  const sp = space(s, a.project); if (!sp) return { error: `No project matches "${a.project}".` };
   const t: Tree = sp.tree, v = new TreeView(t);
   let id: number | null = null;
-  const conv = conversation(v, a.conversation);
-  if (a.conversation && !conv) return { error: `No conversation in ${sp.name} matches "${a.conversation}".` };
+  const conv = conversation(v, a.chat);
+  if (a.chat && !conv) return { error: `No chat in ${sp.name} matches "${a.chat}".` };
   if (a.prompt != null) {
     if (!t.nodes[a.prompt]) return { error: `There is no prompt #${a.prompt} in ${sp.name}.` };
     id = a.prompt;
   } else if (a.branch) {
     const bs = v.branches(conv?.id).filter((b) => b.name === a.branch);
     if (!bs.length) return { error: `No branch named "${a.branch}"${conv ? ` in "${v.title(conv)}"` : ` in ${sp.name}`}.` };
-    if (bs.length > 1) return { error: `Several conversations have a branch named "${a.branch}". Say which conversation:\n` + bs.map((b) => `- "${v.title(v.rootOf(b.tip))}"`).join('\n') };
+    if (bs.length > 1) return { error: `Several chats have a branch named "${a.branch}". Say which chat:\n` + bs.map((b) => `- "${v.title(v.rootOf(b.tip))}"`).join('\n') };
     id = bs[0].tip;
   } else if (conv) id = convTip(v, conv.id);
   else {
@@ -70,15 +70,15 @@ function pick(s: State, a: Pick): { error: string } | { sp: State['db']['spaces'
     id = selId != null && t.nodes[selId] ? selId : t.head && t.refs[t.head] ? t.refs[t.head].tip : null;
     if (id == null) { const r = v.roots()[0]; if (r) id = convTip(v, r.id); }
   }
-  if (id == null) return { error: `${sp.name} has no conversations yet.` };
+  if (id == null) return { error: `${sp.name} has no chats yet.` };
   if (t.nodes[id].kind === 'merge') id = t.nodes[id].parents[0];
   return { sp, t, v, id };
 }
 
-type Done = { space: string; conversation?: number; prompt?: number; branch?: string; reply?: string; note?: string; brief?: string; replaced?: number; message?: string };
+type Done = { project: string; chat?: number; prompt?: number; branch?: string; reply?: string; note?: string; brief?: string; replaced?: number; message?: string };
 /* what a subagent operation did, as text for the orchestrator */
 function report(d: Done, left?: number) {
-  const where = [`space "${d.space}"`, d.conversation != null ? `conversation #${d.conversation}` : '', d.prompt != null ? `prompt #${d.prompt}` : '', d.branch ? `branch ${d.branch}` : ''].filter(Boolean).join(', ');
+  const where = [`project "${d.project}"`, d.chat != null ? `chat #${d.chat}` : '', d.prompt != null ? `prompt #${d.prompt}` : '', d.branch ? `branch ${d.branch}` : ''].filter(Boolean).join(', ');
   return [d.message ? `${d.message} (${where})` : where,
     d.note ? `Note: ${d.note}` : '',
     d.reply != null ? `\nReply:\n${d.reply}` : '',
@@ -89,27 +89,27 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching conversations with Claude, organised into spaces. Reading: use list_conversations or search to find a conversation, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a space. Subagents: spawn starts a conversation in a run space whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
-    return s ? fn(s, a) : fail('Treechats has nothing saved yet. Open it in the browser and start a conversation first.');
+    return s ? fn(s, a) : fail('Treechats has nothing saved yet. Open it in the browser and start a chat first.');
   };
-  const spaceArg = z.string().optional().describe('Space name or id. Defaults to the space open in Treechats.');
+  const projectArg = z.string().optional().describe('Project name or id. Defaults to the project open in Treechats.');
 
-  server.registerTool('list_spaces', { title: 'List spaces', description: 'The spaces in Treechats, with how many conversations each holds. The one open in the app is marked.', inputSchema: {} },
+  server.registerTool('list_projects', { title: 'List projects', description: 'The projects in Treechats, with how many chats each holds. The one open in the app is marked.', inputSchema: {} },
     withState((s) => text(s.db.order.filter((id) => s.db.spaces[id]).map((id) => {
       const sp = s.db.spaces[id], v = new TreeView(sp.tree);
-      return `- ${sp.name} (${id})${id === s.db.current ? ' [open]' : ''}: ${v.roots().length} conversations`;
-    }).join('\n') || 'No spaces.')));
+      return `- ${sp.name} (${id})${id === s.db.current ? ' [open]' : ''}: ${v.roots().length} chats`;
+    }).join('\n') || 'No projects.')));
 
-  server.registerTool('list_conversations', { title: 'List conversations', description: 'Conversations in a space, newest first, each with its branches and the prompt each branch ends at.', inputSchema: { space: spaceArg } },
-    withState((s, a: { space?: string }) => {
-      const sp = space(s, a.space); if (!sp) return fail(`No space matches "${a.space}".`);
+  server.registerTool('list_chats', { title: 'List chats', description: 'Chats in a project, newest first, each with its branches and the prompt each branch ends at.', inputSchema: { project: projectArg } },
+    withState((s, a: { project?: string }) => {
+      const sp = space(s, a.project); if (!sp) return fail(`No project matches "${a.project}".`);
       const v = new TreeView(sp.tree);
       const rs = v.roots().sort((x, y) => v.convKey(y) - v.convKey(x));
-      if (!rs.length) return text(`${sp.name} has no conversations yet.`);
-      return text(`Space: ${sp.name}\n\n` + rs.map((r) => {
+      if (!rs.length) return text(`${sp.name} has no chats yet.`);
+      return text(`Project: ${sp.name}\n\n` + rs.map((r) => {
         const n = v.all().filter((x) => x.kind !== 'merge' && v.chain(x.id)[0] === r.id).length;
         const bs = v.branches(r.id).map((b) => `${b.name} → #${b.tip}${b.head ? ' (checked out)' : ''}`).join(', ');
         return `- "${v.title(r)}" (starts at #${r.id}, ${n} prompts)\n  branches: ${bs || 'none'}`;
@@ -118,10 +118,10 @@ export function buildMcpServer(read: () => State | null) {
 
   server.registerTool('get_context', {
     title: 'Get context',
-    description: 'The context Treechats would send to Claude from a prompt: standing instructions, every earlier prompt and reply on its path, merge notes, minus anything left out. Pick it by prompt number, or by branch name (the branch\'s latest prompt), or by conversation (where it is checked out). With nothing given, uses the prompt selected in the app.',
+    description: 'The context Treechats would send to Claude from a prompt: standing instructions, every earlier prompt and reply on its path, merge notes, minus anything left out. Pick it by prompt number, or by branch name (the branch\'s latest prompt), or by chat (where it is checked out). With nothing given, uses the prompt selected in the app.',
     inputSchema: {
-      space: spaceArg,
-      conversation: z.string().optional().describe('Conversation title (or part of it), or the number of its first prompt.'),
+      project: projectArg,
+      chat: z.string().optional().describe('Chat title (or part of it), or the number of its first prompt.'),
       branch: z.string().optional().describe('Branch name, such as main.'),
       prompt: z.number().int().optional().describe('Prompt number, such as 12 for #12.'),
       format: z.enum(['prompt', 'messages']).optional().describe('"prompt" (default): one block to read. "messages": the user/assistant turns as JSON.'),
@@ -129,14 +129,14 @@ export function buildMcpServer(read: () => State | null) {
   }, withState((s, a: Pick & { format?: 'prompt' | 'messages' }) => {
     const r = pick(s, a); if ('error' in r) return fail(r.error);
     const { sp, t, v, id } = r;
-    const where = `Space "${sp.name}", conversation "${v.title(v.rootOf(id))}", up to prompt #${id}`;
+    const where = `Project "${sp.name}", chat "${v.title(v.rootOf(id))}", up to prompt #${id}`;
     return a.format === 'messages' ? text(where + '\n\n' + JSON.stringify(turnsFor(s, t, id), null, 2)) : text(`(${where})\n\n` + contextPrompt(s, t, id));
   }));
 
-  server.registerTool('search', { title: 'Search', description: 'Find prompts, replies and notes containing some text, in one space or all of them.', inputSchema: { query: z.string().min(1), space: z.string().optional().describe('Space name or id. Searches every space when left out.') } },
-    withState((s, a: { query: string; space?: string }) => {
-      const q = a.query.toLowerCase(), sps = a.space ? [space(s, a.space)].filter(Boolean) : s.db.order.map((id) => s.db.spaces[id]).filter(Boolean);
-      if (!sps.length) return fail(`No space matches "${a.space}".`);
+  server.registerTool('search', { title: 'Search', description: 'Find prompts, replies and notes containing some text, in one project or all of them.', inputSchema: { query: z.string().min(1), project: z.string().optional().describe('Project name or id. Searches every project when left out.') } },
+    withState((s, a: { query: string; project?: string }) => {
+      const q = a.query.toLowerCase(), sps = a.project ? [space(s, a.project)].filter(Boolean) : s.db.order.map((id) => s.db.spaces[id]).filter(Boolean);
+      if (!sps.length) return fail(`No project matches "${a.project}".`);
       const hits: string[] = [];
       for (const sp of sps) {
         const v = new TreeView(sp!.tree);
@@ -154,16 +154,16 @@ export function buildMcpServer(read: () => State | null) {
       return text(hits.length ? hits.join('\n') : `Nothing matches "${a.query}".`);
     }));
 
-  server.registerTool('get_prompt', { title: 'Get a prompt', description: 'One prompt in full: its text, Claude\'s reply, your note, what it follows, what follows it, and the branches through it.', inputSchema: { prompt: z.number().int(), space: spaceArg } },
-    withState((s, a: { prompt: number; space?: string }) => {
-      const sp = space(s, a.space); if (!sp) return fail(`No space matches "${a.space}".`);
+  server.registerTool('get_prompt', { title: 'Get a prompt', description: 'One prompt in full: its text, Claude\'s reply, your note, what it follows, what follows it, and the branches through it.', inputSchema: { prompt: z.number().int(), project: projectArg } },
+    withState((s, a: { prompt: number; project?: string }) => {
+      const sp = space(s, a.project); if (!sp) return fail(`No project matches "${a.project}".`);
       const t = sp.tree, v = new TreeView(t), n = t.nodes[a.prompt];
       if (!n) return fail(`There is no prompt #${a.prompt} in ${sp.name}.`);
       const kids = v.all().filter((k) => k.parents.includes(n.id) && v.visible(k)).map((k) => '#' + k.id);
       const bs = v.branches().filter((b) => v.chain(b.tip).includes(n.id)).map((b) => b.name);
       return text([
         `#${n.id} in "${v.title(v.rootOf(n.id))}" (${sp.name})${n.skip ? ' · left out of context' : ''}${n.star ? ' · starred' : ''}`,
-        `Follows: ${n.parents.map((p) => '#' + p).join(', ') || 'nothing (starts the conversation)'} · Followed by: ${kids.join(', ') || 'nothing'} · Branches: ${bs.join(', ') || 'none'}`,
+        `Follows: ${n.parents.map((p) => '#' + p).join(', ') || 'nothing (starts the chat)'} · Followed by: ${kids.join(', ') || 'nothing'} · Branches: ${bs.join(', ') || 'none'}`,
         n.kind === 'merge' ? `Merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}` : `\nPrompt:\n${n.text}`,
         n.reply ? `\nClaude's reply:\n${n.reply}` : '',
         n.note ? `\nNote (never sent to Claude):\n${n.note}` : '',
@@ -171,10 +171,10 @@ export function buildMcpServer(read: () => State | null) {
     }));
 
   /* ---- subagents ---- */
-  const run = z.string().min(1).max(60).describe('A short name for this piece of work, such as "auth-review". Each run gets its own space ("Run: auth-review"); use the same name to keep working in it.');
+  const run = z.string().min(1).max(60).describe('A short name for this piece of work, such as "auth-review". Each run gets its own project ("Run: auth-review"); use the same name to keep working in it.');
   const agent = z.string().max(40).optional().describe('Your name, shown on everything you add. Defaults to "agent".');
   const model = z.enum(['quick', 'default', 'complex']).optional().describe('Which model answers: quick, default or complex. Defaults to the model chosen in Treechats.');
-  const promptNo = z.number().int().describe('A prompt number in the run space, as returned by spawn, ask or fork.');
+  const promptNo = z.number().int().describe('A prompt number in the run project, as returned by spawn, ask or fork.');
   const act = (op: string, spends: boolean) => async (a: Record<string, unknown>) => {
     let left: number | undefined;
     try {
@@ -190,13 +190,13 @@ export function buildMcpServer(read: () => State | null) {
 
   server.registerTool('spawn', {
     title: 'Start a subagent',
-    description: 'Start a subagent: a new conversation in your run space, with exactly the context you give it, and get its reply. Context can be text you pass (a brief, notes, file contents) and/or the context of an existing Treechats branch or prompt (copied in, the original is not changed). Returns the conversation, its first prompt number and the reply.',
+    description: 'Start a subagent: a new chat in your run project, with exactly the context you give it, and get its reply. Context can be text you pass (a brief, notes, file contents) and/or the context of an existing Treechats branch or prompt (copied in, the original is not changed). Returns the chat, its first prompt number and the reply.',
     inputSchema: {
       run, agent, model,
       prompt: z.string().min(1).describe('What to ask the subagent.'),
-      title: z.string().max(80).optional().describe('A title for the subagent conversation.'),
+      title: z.string().max(80).optional().describe('A title for the subagent chat.'),
       context: z.string().optional().describe('Material the subagent should have before your prompt: a brief, notes, code, file contents.'),
-      from: z.object({ space: z.string().optional(), conversation: z.string().optional(), branch: z.string().optional(), prompt: z.number().int().optional() }).optional()
+      from: z.object({ project: z.string().optional(), chat: z.string().optional(), branch: z.string().optional(), prompt: z.number().int().optional() }).optional()
         .describe('Copy in the context of an existing Treechats branch or prompt, picked like get_context.'),
     },
   }, async (a) => {
@@ -213,7 +213,7 @@ export function buildMcpServer(read: () => State | null) {
   server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
   server.registerTool('edit_reply', { title: 'Correct a reply', description: 'Replace what the subagent said at a prompt. Prompts after it see your version. Marked as edited.', inputSchema: { run, agent, prompt: promptNo, reply: z.string() } }, act('edit_reply', false));
   server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));
-  server.registerTool('distill', { title: 'Distill a subagent', description: 'Have Claude write a short brief (goal, decisions, facts, open questions) of a subagent conversation up to a prompt, so only the brief needs to enter your own context.', inputSchema: { run, agent, prompt: promptNo.optional(), branch: z.string().optional(), save_as_note: z.boolean().optional().describe('Also keep the brief as a note on that prompt.') } }, act('distill', true));
+  server.registerTool('distill', { title: 'Distill a subagent', description: 'Have Claude write a short brief (goal, decisions, facts, open questions) of a subagent chat up to a prompt, so only the brief needs to enter your own context.', inputSchema: { run, agent, prompt: promptNo.optional(), branch: z.string().optional(), save_as_note: z.boolean().optional().describe('Also keep the brief as a note on that prompt.') } }, act('distill', true));
 
   return server;
 }

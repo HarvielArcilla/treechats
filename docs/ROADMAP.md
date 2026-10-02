@@ -6,7 +6,7 @@ foundation once the agent interface has been tried on a real task, then everythi
 ## Done
 - Runs locally with your API key or Claude Code (subscription); saved to SQLite with snapshots; Windows, macOS, Linux
 - Replies side by side with a queue; full Markdown, math and highlighted code
-- Simple view: one conversation as a chat thread, with branch switching and merges you can open
+- Chat view: one chat as a chat thread, with branch switching and merges you can open
 - Branch map: git-style graph in the panel, full size with M
 - Context tools: edit Claude's replies, copy context as a prompt, ✦ Distill into a brief
 - Every prompt Treechats sends is editable (Settings › Prompts); ✦ marks tools where Claude does the work
@@ -14,11 +14,11 @@ foundation once the agent interface has been tried on a real task, then everythi
 
 ## Phase 1: subagents prototype
 Test whether an orchestrating agent benefits from subagents whose context Treechats owns.
-- MCP tools `spawn` (new conversation from chosen context, a prompt and a model; returns the reply), `ask`
+- MCP tools `spawn` (new chat from chosen context, a prompt and a model; returns the reply), `ask`
   (continue it), `distill` (return a brief), and the operations that matter most for steering a subagent:
   `fork`, `leave_out`, `edit_reply`, `regenerate`
-- Agent runs go into their own space; every turn an agent creates is labeled with the agent's name
-- Guardrails from day one: agents can only change their own run spaces; a cap on requests per run; agent
+- Agent runs go into their own project; every turn an agent creates is labeled with the agent's name
+- Guardrails from day one: agents can only change their own run projects; a cap on requests per run; agent
   changes stay out of your Undo
 - Prototype shortcut: writes are carried out by the open Treechats page (the server relays them), so operations
   keep their single definition in the page for now; if the page isn't open, the tools say so
@@ -27,9 +27,9 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 ## Phase 2: foundation
 - Each operation defined once in TypeScript and run on the server; the page becomes a client (removes the
   duplicate context building and the page-relay shortcut)
-- The tree stored as rows (spaces, turns, branches) instead of one document; attachments in the database
+- The tree stored as rows (projects, turns, branches) instead of one document; attachments in the database
 - Turns made of content blocks (text, tool calls and results, thinking, images), provider-neutral
-- Attribution and history for every change; permissions per space (read, suggest, write)
+- Attribution and history for every change; permissions per project (read, suggest, write)
 - Context fingerprint on every reply: a hash chain over exactly what was sent (each turn's hash covers the turn
   and the previous hash), recorded when the reply is written and never sent to the model. Powers a small, neutral
   "context changed at #4" marker that can be turned off (informs, never blocks), opt-in checks for agents ("only if
@@ -38,7 +38,7 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - MCP writes without the page open; a small CLI over the same operations
 
 ## Phase 3: reuse and agents in full
-- Context blocks switched on per conversation, with instructions per conversation as one kind of block
+- Context blocks switched on per chat, with instructions per chat as one kind of block
 - Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; pin,
   `compare`/`judge`; history per run with undo; a Runs view of agent runs
 - Replay: re-run the prompts below a point against edited context, as new versions, with a preview of how many
@@ -47,7 +47,7 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 
 ## Later
 - Cost: start one fan-out request first so the others read the shared start from the prompt cache (confirm cache
-  timing first); warn when a conversation is too short for the model to cache
+  timing first); warn when a chat is too short for the model to cache
 - Per-turn send modes (full, prompt only, summary, left out); reversible summaries
 - Request settings per branch: system prompt, temperature, thinking, max tokens; real token counts and cost
 - Recipes (saved pipelines of tools), sweeps across models or contexts, re-running saved contexts as evals

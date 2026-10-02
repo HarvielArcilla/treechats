@@ -25,7 +25,7 @@ server/config.ts        .env settings
 | `GET /api/config` | Which provider is active and ready, model labels for each tier, limits |
 | `GET /api/state`, `PUT /api/state` | Load and save the app state (one JSON document) |
 | `GET /api/snapshots`, `GET /api/snapshots/:id` | Earlier saved states |
-| `POST /mcp` | MCP (streamable HTTP, stateless). Read: `list_spaces`, `list_conversations`, `get_context`, `search`, `get_prompt`. Subagents: `spawn`, `ask`, `fork`, `leave_out`, `edit_reply`, `regenerate`, `distill` |
+| `POST /mcp` | MCP (streamable HTTP, stateless). Read: `list_projects`, `list_chats`, `get_context`, `search`, `get_prompt`. Subagents: `spawn`, `ask`, `fork`, `leave_out`, `edit_reply`, `regenerate`, `distill` |
 | `GET /api/agent/events` | Server-sent events: subagent commands for the open page to carry out |
 | `POST /api/agent/result` | The page's answer to a command: `{id, ok, result}` or `{id, ok:false, error}` |
 | `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |

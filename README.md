@@ -1,10 +1,10 @@
 # Treechats
 
-Branch, merge and rearrange conversations with Claude, the way git handles code. Every prompt is a node in a
+Branch, merge and rearrange chats with Claude, the way git handles code. Every prompt is a node in a
 tree: continue from any point, try several directions side by side, fold a dead end away, merge two lines of
 thought back together, and see exactly what context Claude gets from wherever you are.
 
-Treechats runs on your own computer. Your conversations are saved in a file on your machine, and replies come
+Treechats runs on your own computer. Your chats are saved in a file on your machine, and replies come
 either from your Anthropic API key or from your installed Claude Code (which can use a Claude subscription).
 
 ## Run it
@@ -45,7 +45,7 @@ Copy `.env.example` to `.env` (Windows: `copy .env.example .env`, Mac: `cp .env.
   Treechats runs `claude -p` for each reply, with Claude Code's tools, MCP servers and memory turned off, so it
   answers like a plain chat. Replies count toward your subscription's usage limits.
 - **An API key.** Put your key from the [Claude Console](https://platform.claude.com/settings/keys) in
-  `ANTHROPIC_API_KEY`. Usage is billed to your Console account. This route sends real conversation turns, uses
+  `ANTHROPIC_API_KEY`. Usage is billed to your Console account. This route sends real chat turns, uses
   prompt caching (branches share their beginnings, so repeat context is cheap), and supports images directly.
 
 With `TREECHATS_PROVIDER=auto` (the default) Treechats uses the API key when there is one, and Claude Code
@@ -59,24 +59,24 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
 
 ## Use it from Claude Code (MCP)
 
-Treechats serves an MCP server at `/mcp`, so Claude Code can read your conversations while you work. Add it once:
+Treechats serves an MCP server at `/mcp`, so Claude Code can read your chats while you work. Add it once:
 
 ```
 claude mcp add --transport http --scope user treechats http://localhost:5178/mcp
 ```
 
-**Reading.** Ask for things like "get the context of the main branch of my rate limiter conversation from
-treechats". It can list spaces and conversations, search them, and pull the context of a branch or prompt: the
+**Reading.** Ask for things like "get the context of the main branch of my rate limiter chat from
+treechats". It can list projects and chats, search them, and pull the context of a branch or prompt: the
 same text as **Copy as a prompt** in the app. Attached files appear by name only, since their contents are kept
 in the browser.
 
-**Subagents.** Claude Code can also run subagents in Treechats, conversations whose context you can see and
+**Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and
 steer: `spawn` (start one with exactly the context it should have), `ask`, `fork`, `leave_out`, `edit_reply`,
-`regenerate` and `distill` (get back a short brief instead of the whole conversation). For example: "use
+`regenerate` and `distill` (get back a short brief instead of the whole chat). For example: "use
 treechats to spawn three subagents that each review this design from a different angle, then distill each".
 
-- Each piece of work is a run with its own space, **Run: <name>**, where you can watch and step in. Agents can't
-  change anything outside their run spaces, and their changes stay out of your Undo.
+- Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't
+  change anything outside their run projects, and their changes stay out of your Undo.
 - Everything an agent adds is labeled with its name (⚙).
 - Each run may spend 60 model requests (`TREECHATS_AGENT_MAX_REQUESTS` in `.env`; the count resets when
   Treechats restarts).
@@ -87,19 +87,19 @@ Treechats must be running for any of this.
 
 ## Your data
 
-- Conversations, spaces and settings: `data/treechats.db` (SQLite). A snapshot is kept every 10 minutes
+- Chats, projects and settings: `data/treechats.db` (SQLite). A snapshot is kept every 10 minutes
   (the last 50), so a bad change can be recovered.
 - Attached files: stored by your browser for now (IndexedDB).
 - Nothing in `data/` or `.env` is ever committed; both are in `.gitignore`.
 
-To bring spaces over from the claude.ai version: in each space there, open **Import / export › Copy this space
-as JSON**, then here open the space's **⋯ › Import / export JSON…**, paste it and choose **Import pasted JSON as a
-new space**.
+To bring spaces over from the claude.ai version (where projects were called spaces): in each space there, open
+**Import / export › Copy this space as JSON**, then here open a project's **⋯ › Import / export JSON…**, paste it
+and choose **Import pasted JSON as a new project**.
 
 ## Security
 
 The server only listens on this computer (127.0.0.1), and only answers pages it served itself, so other
-websites can't use it to spend your key or read your conversations. The API key stays on the server and is
+websites can't use it to spend your key or read your chats. The API key stays on the server and is
 never sent to the browser.
 
 ## Develop

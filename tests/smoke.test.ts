@@ -145,11 +145,11 @@ test('Claude Code mode: a missing CLI is reported, not a crash', async () => {
   assert.equal(evs.at(-1).code, 'cli_missing');
 });
 
-test('MCP: Claude Code can list, search and read the context of a saved conversation', async () => {
+test('MCP: Claude Code can list, search and read the context of a saved chat', async () => {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const { base } = await startServer({ TREECHATS_FAKE: '1' });
-  /* a conversation with a branch merged back in, a left-out prompt and standing instructions */
+  /* a chat with a branch merged back in, a left-out prompt and standing instructions */
   const tree = {
     nextId: 7, nextRef: 3, head: 'r1', active: {}, convs: {}, files: [], views: [], fold: {},
     nodes: {
@@ -169,7 +169,7 @@ test('MCP: Claude Code can list, search and read the context of a saved conversa
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_conversations', 'list_spaces', 'regenerate', 'search', 'spawn']);
+  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_chats', 'list_projects', 'regenerate', 'search', 'spawn']);
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
 
   const full = (await call('get_context', { branch: 'main' })).content[0].text, ctx = full.slice(full.indexOf('<conversation>'));
@@ -179,7 +179,7 @@ test('MCP: Claude Code can list, search and read the context of a saved conversa
   assert.ok(!ctx.includes('Skip this one'), 'left-out prompts are not included');
   assert.ok(!ctx.includes('keep it short'), 'notes are never sent');
 
-  assert.match((await call('list_conversations', {})).content[0].text, /main → #6 \(checked out\)/);
+  assert.match((await call('list_chats', {})).content[0].text, /main → #6 \(checked out\)/);
   assert.match((await call('search', { query: 'nata' })).content[0].text, /#3 \(reply\)/);
   assert.match((await call('get_prompt', { prompt: 6 })).content[0].text, /keep it short/);
   assert.equal((await call('get_context', { prompt: 99 })).isError, true);
@@ -218,7 +218,7 @@ test('MCP subagents: commands go to the open page, results come back, and each r
           const data = chunk.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
           if (!data) continue;
           const cmd = JSON.parse(data); seen.push(cmd);
-          const body = cmd.args.prompt === 'fail' ? { id: cmd.id, ok: false, error: 'There is no prompt #9 in this run.' } : { id: cmd.id, ok: true, result: { space: 'Run: r', conversation: 1, prompt: 1, branch: 'main', reply: 'Atomic, yes.' } };
+          const body = cmd.args.prompt === 'fail' ? { id: cmd.id, ok: false, error: 'There is no prompt #9 in this run.' } : { id: cmd.id, ok: true, result: { project: 'Run: r', chat: 1, prompt: 1, branch: 'main', reply: 'Atomic, yes.' } };
           await fetch(base + '/api/agent/result', { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
         }
       }

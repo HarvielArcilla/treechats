@@ -469,7 +469,6 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .shell.simple ul.thread .reply:hover .racts,.shell.simple ul.thread .reply:focus-within .racts{opacity:1}
 @media (hover:none){.shell.simple ul.thread .reply .racts{opacity:1}}
 .shell.simple section.conv.thread{background:none;border:0;padding:0;content-visibility:visible}
-.shell.simple .thread .convHead{margin-bottom:14px}
 .shell.simple ul.tree.thread{display:grid;gap:18px;padding:0;margin:0}
 .shell.simple ul.thread li.g::before{display:none}
 .shell.simple ul.thread li.g{padding:0}
@@ -525,10 +524,24 @@ ol.ctx li.files .cid{color:var(--l1)}
 .uacts{justify-content:flex-end}
 .ractrow{margin-left:-7px}
 .ractrow .edtag{margin-left:6px}
-.uacts .act,.ractrow .act{opacity:0;transition:opacity .12s}
-ul.thread .row:hover ~ .uacts .act,ul.thread .uacts:hover .act,ul.thread .uacts:focus-within .act,ul.thread .reply:hover .act,ul.thread .reply:focus-within .act,ul.thread > li.g:last-child .ractrow .act{opacity:1}
-@media (hover:none){.uacts .act,.ractrow .act{opacity:1}}
-.uacts .fork{margin-right:4px}
+.uacts > *,.ractrow .act{opacity:0;transition:opacity .12s}
+ul.thread .row:hover ~ .uacts > *,ul.thread .uacts:hover > *,ul.thread .uacts:focus-within > *,ul.thread .reply:hover .act,ul.thread .reply:focus-within .act,ul.thread > li.g:last-child .ractrow .act{opacity:1}
+@media (hover:none){.uacts > *,.ractrow .act{opacity:1}}
+.uacts .fork{margin-left:4px}
+/* Chat | Editor */
+.viewsw{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:9px;background:var(--surface);flex:none}
+.viewsw .seg{border:0;border-radius:7px;padding:5px 12px;font-size:.84rem}
+/* Chat view: titles together, the input bar pinned to the bottom like any chat */
+.shell.simple header.top{display:none}
+.chathead{display:grid;gap:2px;margin:0 0 18px}
+.chatproj{justify-self:start;border:0;background:none;color:var(--muted);font:500 .78rem var(--mono);letter-spacing:.04em;padding:2px 0;cursor:pointer}
+.chatproj:hover{color:var(--fg)}
+.chattitle{display:flex;align-items:center;gap:8px;min-width:0}
+.chattitle h1{margin:0;font:700 1.5rem/1.25 var(--display);letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
+.chathead .viewbar{margin-top:8px}
+.shell.simple section.conv.thread{display:flex;flex-direction:column;min-height:calc(100vh - 90px)}
+.shell.simple ul.tree.thread{flex:1 0 auto;align-content:start}
+.shell.simple .simpleops{position:sticky;bottom:0;z-index:6;background:var(--bg);padding:12px 0 16px;margin-top:22px;box-shadow:0 -14px 14px -10px var(--bg)}
 .shell.simple ul.thread .rfoot{display:none}
 .shell.simple ul.thread .row.editing{width:min(85%,640px)}
 .shell.simple ul.thread .rfoot .ver{display:none}
@@ -825,20 +838,20 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
 
 <div class="shell" id="shell">
 <nav class="side" id="side" aria-label="Spaces">
-  <div class="phead"><div class="brand sbrand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M6 9c0 4 12 2 12 7" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="4" r="2.4" fill="var(--accent)"/><circle cx="6" cy="20" r="2.4" fill="var(--accent)"/><circle cx="18" cy="17" r="2.4" fill="var(--l1)"/></svg>Treechats</div><span class="ptitle stitle">Spaces</span><button class="pclose" data-panelclose="spaces" aria-label="Hide spaces" title="Hide spaces">«</button></div>
-  <button class="btn primary" id="newSpaceBtn">+ New space</button>
-  <p class="sidelabel">Spaces</p>
+  <div class="phead"><div class="brand sbrand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M6 9c0 4 12 2 12 7" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="4" r="2.4" fill="var(--accent)"/><circle cx="6" cy="20" r="2.4" fill="var(--accent)"/><circle cx="18" cy="17" r="2.4" fill="var(--l1)"/></svg>Treechats</div><span class="ptitle stitle">Projects</span><button class="pclose" data-panelclose="spaces" aria-label="Hide projects" title="Hide projects">«</button></div>
+  <button class="btn primary" id="newSpaceBtn">+ New project</button>
+  <p class="sidelabel">Projects</p>
   <ul class="spaces" id="spaceList"></ul>
   <div class="sidefoot">
-    <button class="linkbtn" id="exampleBtn">Add example space</button>
+    <button class="linkbtn" id="exampleBtn">Add example project</button>
   </div>
 </nav>
 <nav class="convs" id="convs" aria-label="Conversations">
   <div class="brand cbrand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M6 9c0 4 12 2 12 7" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="4" r="2.4" fill="var(--accent)"/><circle cx="6" cy="20" r="2.4" fill="var(--accent)"/><circle cx="18" cy="17" r="2.4" fill="var(--l1)"/></svg>Treechats</div>
-  <div class="phead"><span class="ptitle">Conversations</span><span style="display:flex;gap:2px"><button class="pclose toSpaces" data-gospaces aria-label="Switch space" title="Spaces">⊞</button><button class="pclose" data-panelclose="convs" aria-label="Hide conversations" title="Hide conversations">«</button></span></div>
+  <div class="phead"><span class="ptitle">Chats</span><span style="display:flex;gap:2px"><button class="pclose toSpaces" data-gospaces aria-label="Switch project" title="Projects">⊞</button><button class="pclose" data-panelclose="convs" aria-label="Hide chats" title="Hide chats">«</button></span></div>
   <p class="psub" id="convSpace"></p>
-  <button class="btn" id="newConvSide">+ New conversation</button>
-  <input type="search" id="convFilter" placeholder="Search prompts and replies  /" aria-label="Search conversations, prompts and replies" autocomplete="off">
+  <button class="btn" id="newConvSide">+ New chat</button>
+  <input type="search" id="convFilter" placeholder="Search prompts and replies  /" aria-label="Search chats, prompts and replies" autocomplete="off">
   <div class="filters" id="convFilters" role="group" aria-label="Show only"><button class="seg" data-filter="star" aria-pressed="false">★ Starred</button><button class="seg" data-filter="note" aria-pressed="false">Notes</button><button class="seg" data-filter="skip" aria-pressed="false">Left out</button></div>
   <div class="cvtools" id="cvTools"></div>
   <ul class="convlist" id="convList"></ul>
@@ -848,32 +861,32 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
 <div class="main">
 <div class="topbar" id="topbar">
   <div class="tb-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M6 9c0 4 12 2 12 7" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="4" r="2.4" fill="var(--accent)"/><circle cx="6" cy="20" r="2.4" fill="var(--accent)"/><circle cx="18" cy="17" r="2.4" fill="var(--l1)"/></svg><span>Treechats</span></div>
-  <button class="btn" id="spacesBtn" aria-controls="side"><span class="lbl">Spaces</span><span class="ico" aria-hidden="true">☰</span></button>
-  <button class="btn" id="convsBtn" aria-controls="convs" aria-label="Conversations"><span class="ico" aria-hidden="true">☰</span><span class="lbl">Conversations</span></button>
+  <button class="btn" id="spacesBtn" aria-controls="side"><span class="lbl">Projects</span><span class="ico" aria-hidden="true">☰</span></button>
+  <button class="btn" id="convsBtn" aria-controls="convs" aria-label="Chats"><span class="ico" aria-hidden="true">☰</span><span class="lbl">Chats</span></button>
   <span class="tb-spacer"></span>
   <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘ Z)" aria-label="Undo"><span class="ico" aria-hidden="true">↶</span><span class="lbl">Undo</span></button>
   <button class="btn" id="redoBtn" title="Redo (Ctrl/⌘ Shift Z)" aria-label="Redo"><span class="ico" aria-hidden="true">↷</span><span class="lbl">Redo</span></button>
-  <button class="btn switchbtn" id="simpleBtn" role="switch" aria-checked="false" title="One conversation as a plain chat, without the tree and tools"><span class="track" aria-hidden="true"><span class="knob"></span></span><span class="lbl">Simple view</span></button>
+  <div class="viewsw" id="viewSw" role="group" aria-label="View"><button class="seg" data-viewsw="chat" aria-pressed="false" title="One chat, read like any chat app">Chat</button><button class="seg" data-viewsw="editor" aria-pressed="false" title="The whole tree, with the inspector and every tool">Editor</button></div>
   <button class="btn" id="mapBtn" aria-haspopup="dialog" aria-label="Branch map" title="Branch map (M)"><span class="ico" aria-hidden="true">⑂</span><span class="lbl">Map</span></button>
   <button class="btn" id="paletteBtn" aria-haspopup="dialog" aria-label="Commands" title="Commands"><span class="lbl">Commands</span><kbd class="tbk" id="palKbd">⌘K</kbd><span class="ico" aria-hidden="true">⌘</span></button>
   <button class="btn" id="settingsBtn" aria-haspopup="dialog" aria-label="Settings" title="Settings"><span class="lbl">Settings</span><span class="ico" aria-hidden="true">⚙</span></button>
-  <button class="btn primary" id="newBtn" aria-label="New conversation">+<span class="lbl"> New conversation</span></button>
+  <button class="btn primary" id="newBtn" aria-label="New chat">+<span class="lbl"> New chat</span></button>
 </div>
 <div class="wrap">
   <header class="top">
     <div style="min-width:0">
-      <p class="eyebrow">Space</p>
+      <p class="eyebrow">Project</p>
       <div class="titlerow">
         <h1 id="spaceTitle"></h1>
         <button class="btn icon" id="titleMenuBtn" aria-label="Options" aria-haspopup="menu">⋯</button>
       </div>
-      <p class="sub">Each prompt is a node. The model sees the path from the start of a conversation to the prompt you select.</p>
+      <p class="sub">Each prompt is a node. The model sees the path from the start of a chat to the prompt you select.</p>
       <div class="stats" id="stats"></div>
     </div>
   </header>
 
   <div class="app">
-    <main class="treeBox" id="tree" aria-label="Conversation tree"></main>
+    <main class="treeBox" id="tree" aria-label="Chat tree"></main>
     <aside>
       <section class="card" id="ctxCard"></section>
     </aside>
@@ -886,7 +899,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="impbox" role="dialog" aria-modal="true" aria-labelledby="impTitle">
     <div class="sethead"><h2 id="impTitle">Import chats</h2><button class="btn" data-impclose>Cancel</button></div>
     <div class="impbody">
-      <p class="note">Paste a conversation, or choose a file. Treechats reads chats copied with their speaker labels (<code>You:</code> / <code>Claude:</code>, <code>User:</code> / <code>Assistant:</code>, <code>ChatGPT:</code>), its own Markdown export, and the <code>conversations.json</code> file in a Claude or ChatGPT data export. ChatGPT exports keep their edited messages and regenerated replies as versions.</p>
+      <p class="note">Paste a chat, or choose a file. Treechats reads chats copied with their speaker labels (<code>You:</code> / <code>Claude:</code>, <code>User:</code> / <code>Assistant:</code>, <code>ChatGPT:</code>), its own Markdown export, and the <code>conversations.json</code> file in a Claude or ChatGPT data export. ChatGPT exports keep their edited messages and regenerated replies as versions.</p>
       <textarea id="impText" rows="7" spellcheck="false" placeholder="You: How do I rate-limit an API?&#10;Claude: Start by deciding what you are limiting…&#10;You: Show me a token bucket."></textarea>
       <div class="bar"><button class="btn" data-impfile>Choose a file…</button><span class="note" id="impFileName"></span></div>
       <div id="impPreview" aria-live="polite"></div>
@@ -895,17 +908,17 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   </div>
 </div>
 <div class="setwrap" id="spaceFiles" hidden><div class="cmpbox smallbox" role="dialog" aria-modal="true" aria-labelledby="sfTitle">
-  <div class="sethead"><div class="cmptitle"><h2 id="sfTitle">Space files</h2><p class="note" id="sfSpace"></p></div><div class="bar"><button class="btn" data-panelclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+  <div class="sethead"><div class="cmptitle"><h2 id="sfTitle">Project files</h2><p class="note" id="sfSpace"></p></div><div class="bar"><button class="btn" data-modalclose>Done <kbd class="inv">Esc</kbd></button></div></div>
   <div class="sfbody" id="filesCard"></div></div></div>
 <div class="setwrap" id="ioView" hidden><div class="cmpbox smallbox" role="dialog" aria-modal="true" aria-labelledby="ioTitle">
-  <div class="sethead"><div class="cmptitle"><h2 id="ioTitle">Import / export</h2><p class="note">A space as JSON, to back it up or move it to another Treechats.</p></div><div class="bar"><button class="btn" data-panelclose>Done <kbd class="inv">Esc</kbd></button></div></div>
-  <div class="sfbody"><textarea id="ioText" spellcheck="false" aria-label="Space as JSON"></textarea>
-    <div class="bar"><button class="btn" id="copyJson">Copy this space as JSON</button><button class="btn" id="loadJson">Import pasted JSON as a new space</button><button class="btn" data-openimport>Import chats from Claude, ChatGPT or text…</button></div></div></div></div>
+  <div class="sethead"><div class="cmptitle"><h2 id="ioTitle">Import / export</h2><p class="note">A project as JSON, to back it up or move it to another Treechats.</p></div><div class="bar"><button class="btn" data-modalclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+  <div class="sfbody"><textarea id="ioText" spellcheck="false" aria-label="Project as JSON"></textarea>
+    <div class="bar"><button class="btn" id="copyJson">Copy this project as JSON</button><button class="btn" id="loadJson">Import pasted JSON as a new project</button><button class="btn" data-openimport>Import chats from Claude, ChatGPT or text…</button></div></div></div></div>
 <div class="setwrap" id="mapView" hidden><div class="cmpbox mapbox" role="dialog" aria-modal="true" aria-labelledby="mapTitle"></div></div>
 <div class="setwrap" id="compare" hidden><div class="cmpbox" role="dialog" aria-modal="true" aria-labelledby="cmpTitle"></div></div>
 <div class="setwrap palwrap" id="palette" hidden>
   <div class="palbox" role="dialog" aria-modal="true" aria-label="Commands">
-    <input id="palInput" type="text" placeholder="Run a command, find a conversation, or type #42" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list">
+    <input id="palInput" type="text" placeholder="Run a command, find a chat, or type #42" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list">
     <ul id="palList" role="listbox" aria-label="Commands"></ul>
     <p class="palfoot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> run</span><span><kbd>Esc</kbd> close</span></p>
   </div>
@@ -943,7 +956,7 @@ const IS_MAC=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent);
 const sendKbd = () => opts.sendKey==='mod' ? (IS_MAC?'⌘↵':'Ctrl ↵') : '↵';
 const sendNote = () => opts.sendKey==='mod' ? `${IS_MAC?'⌘':'Ctrl'}+Enter sends. Enter adds a new line.` : 'Enter sends. Shift+Enter adds a new line.';
 let S, sel = null, pick = null, composeFor = null, renaming = false, undoStack = [], redoStack = [];
-let opts = {simple:false, summary:true, cow:false, rerootBy:'template', squashBy:'join', replies:'selected', model:'quick', prompts:{}, open:{ops:true}, collapsed:{spaces:false, convs:false}};
+let opts = {simple:true, summary:true, cow:false, rerootBy:'template', squashBy:'join', replies:'selected', model:'quick', prompts:{}, open:{ops:true}, collapsed:{spaces:false, convs:false}};
 let sampleFn = null, sampleState = 'loading'; const genNotes = {};
 const TIERS = (window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.tiers) || [['quick','Quick (fastest, lightest)'],['default','Default'],['complex','Complex (most capable)']];
 const openReplies = new Set(), fullReplies = new Set();
@@ -958,7 +971,7 @@ const PROMPTS = {
   summarize:{label:'Summary request', group:'ops', def:'Summarize the conversation below so the summary can stand in for it as context when the discussion continues. Keep decisions, key facts, names, code identifiers and open questions. Write a brief recap in plain prose, under 150 words, with no preamble.\n\n{conversation}',
     help:'What Claude is asked when it writes a summary for Reroot or Squash. {conversation} becomes the turns being summarized.'},
   distill:{label:'Distill request', group:'tools', def:'Distill the conversation below into a brief that can start a fresh conversation with the same understanding. Write Markdown with these sections, leaving out any that would be empty: Goal, Decisions (each with its reason), Key facts and names (exact identifiers, values, file paths), Constraints, Open questions, Next step. Be specific and concise. No preamble.\n\n{conversation}',
-    help:'What Claude is asked when you distill a conversation into a brief. {conversation} becomes the context up to the prompt you picked.'},
+    help:'What Claude is asked when you distill a chat into a brief. {conversation} becomes the context up to the prompt you picked.'},
   fan:{label:'Fan out: reading the options', group:'tools', def:"You are helping someone branch a conversation into one thread per option.\n\nBelow are their message and the assistant's reply. If the reply offers several distinct options, approaches or directions to choose between, list each one. For each, give a short title of 2 to 4 words, and a follow-up message they could send to pursue only that option: written in their voice, one or two sentences, making sense on its own. Also say which option the reply recommends, if it clearly recommends one.\n\nTheir message:\n{message}\n\nThe assistant's reply:\n{reply}",
     help:'What Claude is asked when you fan out a reply. {message} becomes your prompt and {reply} Claude\u2019s reply.',
     fmt:'Reply with only JSON in this shape:\n{"options":[{"title":"Token bucket","prompt":"Let\'s go with the token bucket. Walk me through implementing it."}],"recommended":0}\nUse "recommended": null when nothing is clearly recommended, and "options": [] when the reply doesn\'t offer a choice.'},
@@ -966,10 +979,10 @@ const PROMPTS = {
     help:'What Claude is asked by Suggest wordings. {message} becomes the first variant.', fmt:'Reply with only a JSON array of strings.'},
   nameBranch:{label:'Naming branches', group:'naming', def:'Name a branch of a conversation, the way a developer names a git branch: 1 to 3 lowercase words joined by hyphens, at most 24 characters, saying what this branch explores.\n\n{branch}\n\nNames already used here: {used}',
     help:'{branch} becomes the prompt the branch follows, its own prompt and the start of its reply. {used} becomes the names already taken.', fmt:'Reply with only JSON: {"name":"token-bucket"}'},
-  nameConv:{label:'Naming conversations', group:'naming', def:'Write a short title for a conversation, at most 6 words, no quotes and no ending punctuation, the way a chat app titles a conversation.\n\n{conversation}',
+  nameConv:{label:'Naming chats', group:'naming', def:'Write a short title for a conversation, at most 6 words, no quotes and no ending punctuation, the way a chat app titles a conversation.\n\n{conversation}',
     help:'{conversation} becomes the first message and the start of the first reply.', fmt:'Reply with only JSON: {"title":"Rate limiter design"}'},
-  nameSpace:{label:'Naming spaces', group:'naming', def:'Name a workspace that holds these conversations, in 1 to 4 words, no quotes.\n\nConversations:\n{titles}',
-    help:'{titles} becomes the titles of up to six conversations in the space.', fmt:'Reply with only JSON: {"name":"API rate limiting"}'},
+  nameSpace:{label:'Naming projects', group:'naming', def:'Name a workspace that holds these conversations, in 1 to 4 words, no quotes.\n\nConversations:\n{titles}',
+    help:'{titles} becomes the titles of up to six chats in the project.', fmt:'Reply with only JSON: {"name":"API rate limiting"}'},
   reroot:{label:'Reroot summary', group:'ops', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
@@ -1008,12 +1021,12 @@ function load(){
     try{ const raw=localStorage.getItem(OLD_KEY); if(raw){ const d=JSON.parse(raw); if(valid(d.tree)){ old=d.tree; opts=Object.assign(opts, d.opts||{}); } } }catch(e){}
     /* saves from before replies existed: fill sample replies for untouched sample prompts */
     if(old) for(const n of Object.values(old.nodes)){ const e=EXAMPLE.nodes[n.id]; if(e && e.reply && !('reply' in n) && e.text===n.text) n.reply=e.reply; }
-    DB.current = addSpace(old ? 'My space' : 'Example: rate limiter', old || clone(EXAMPLE));
+    DB.current = addSpace(old ? 'My project' : 'Example: rate limiter', old || clone(EXAMPLE));
   }
   for(const id of Object.keys(DB.spaces)){ const sp=DB.spaces[id]; if(!valid(sp.tree)) sp.tree=emptyTree(); withTree(sp.tree, migrate); }
   DB.order=DB.order.filter(id=>DB.spaces[id]);
   for(const id of Object.keys(DB.spaces)) if(!DB.order.includes(id)) DB.order.push(id);
-  if(!DB.order.length) DB.current=addSpace('My space', null);
+  if(!DB.order.length) DB.current=addSpace('My project', null);
   if(!DB.spaces[DB.current]) DB.current=DB.order[0];
   opts.prompts=Object.assign({}, opts.prompts);
   opts.open=Object.assign({ops:true}, opts.open);
@@ -1236,7 +1249,7 @@ async function readFiles(list, {textOnly=false}={}){
   for(const f of list){
     const name=f.name || (f.type.startsWith('image/') ? 'pasted-image.'+(f.type.split('/')[1]||'png') : 'file');
     const isImage=f.type.startsWith('image/'), isText=!isImage && (f.type.startsWith('text/') || /json|xml|javascript|yaml|csv/.test(f.type) || TEXT_EXT.test(name));
-    if(isImage && textOnly){ toast(`${name}: space files are sent as text, so images can only be attached to a prompt.`); continue; }
+    if(isImage && textOnly){ toast(`${name}: project files are sent as text, so images can only be attached to a prompt.`); continue; }
     if(isImage){ if(f.size>MAX_IMAGE_FILE){ toast(`${name} is over 20 MB. Try a smaller image.`); continue; } }
     else if(isText){ if(f.size>MAX_TEXT_FILE){ toast(`${name} is ${fmtSize(f.size)}. Text files can be up to 300 KB here.`); continue; } }
     else { toast(`${name}: only text, code and image files can be attached for now.`); continue; }
@@ -1348,13 +1361,13 @@ function switchSpace(sid){
   render(true); Motion.swap(treeEl);
 }
 function createSpace(){
-  storeCommit('Created a new space. Rename it any time.', ()=>{ DB.current=addSpace(uniqueSpaceName('New space'), null); });
+  storeCommit('Created a new project. Rename it any time.', ()=>{ DB.current=addSpace(uniqueSpaceName('New project'), null); });
 }
 function renameSpace(sid, name){
   renamingSpace=null;
   name=(name||'').trim().slice(0,60);
   if(!DB.spaces[sid] || !name || name===DB.spaces[sid].name){ renderSpaces(); return; }
-  storeCommit(`Renamed space to ${name}`, ()=>{ DB.spaces[sid].name=name; });
+  storeCommit(`Renamed project to ${name}`, ()=>{ DB.spaces[sid].name=name; });
 }
 function deleteSpace(sid){
   if(spaceIds().length<2){ toast('Keep at least one space. Create another before deleting this one.'); return; }
@@ -1386,7 +1399,7 @@ const convTitle = r => convMeta(convKey(r)).title || ((r.kind==='summary' ? 'Rer
 function moveConversation(rootId, to){
   const comp=component(rootId), title=convTitle(S.nodes[rootId]);
   let target=to;
-  const ok=storeCommit(to==='new' ? `Split “${clip(title,40)}” into a new space` : `Moved “${clip(title,40)}” to ${DB.spaces[to].name}`, ()=>{
+  const ok=storeCommit(to==='new' ? `Split “${clip(title,40)}” into a new project` : `Moved “${clip(title,40)}” to ${DB.spaces[to].name}`, ()=>{
     if(to==='new') target=addSpace(uniqueSpaceName(clip(title,40)), null);
     if(comp.has(sel)) delete DB.spaces[DB.current].sel;
     transplant(S, [...comp], DB.spaces[target].tree);
@@ -1396,8 +1409,8 @@ function moveConversation(rootId, to){
 function moveConversations(rootIds, to){
   const comp=new Set(); for(const r of rootIds) for(const x of component(r)) comp.add(x);
   let target=to;
-  storeCommit(to==='new' ? `Moved ${rootIds.length} conversations into a new space` : `Moved ${rootIds.length} conversations to ${DB.spaces[to].name}`, ()=>{
-    if(to==='new') target=addSpace(uniqueSpaceName('New space'), null);
+  storeCommit(to==='new' ? `Moved ${rootIds.length} chats into a new project` : `Moved ${rootIds.length} chats to ${DB.spaces[to].name}`, ()=>{
+    if(to==='new') target=addSpace(uniqueSpaceName('New project'), null);
     if(comp.has(sel)) delete DB.spaces[DB.current].sel;
     transplant(S, [...comp], DB.spaces[target].tree);
   }, {label:'Open', fn:()=>switchSpace(target)});
@@ -1418,7 +1431,7 @@ function cloneMenu(id){
   const count = sc => [...cloneIds(id, sc)].filter(x=>S.nodes[x].kind!=='merge').length;
   const pl = sc => { const c=count(sc); return `${c} prompt${c===1?'':'s'}`; };
   openMenu(anchor, [
-    {heading:'Clone into a new conversation'},
+    {heading:'Clone into a new chat'},
     {label:`Up to here · ${pl('upto')}`, run:()=>cloneFrom(id,'upto')},
     {label:`From here on · ${pl('from')}`, run:()=>cloneFrom(id,'from')},
     {label:`Through here · ${pl('through')}`, run:()=>cloneFrom(id,'through')}
@@ -1429,8 +1442,8 @@ function cloneFrom(id, scope){
   for(const x of ids){ const n=S.nodes[x]; if(!n.parents.length && visible(n)) titles[convKey(n)] = 'Clone of '+clip(convTitle(n),70); }
   /* cloning from a prompt makes it the new conversation's start, so it gets that prompt's title */
   if(scope==='from' && S.nodes[id].parents.length) titles[S.nodes[id].alt ?? id] = 'Clone from #'+id+': '+clip(S.nodes[id].text||'',60);
-  const what={upto:'everything up to', from:'everything from', through:'everything through', all:'the whole conversation of'}[scope];
-  commit(`Cloned ${what} #${id} into a new conversation`, ()=>{
+  const what={upto:'everything up to', from:'everything from', through:'everything through', all:'the whole chat of'}[scope];
+  commit(`Cloned ${what} #${id} into a new chat`, ()=>{
     const map=transplant(S, [...ids], S, {copy:true, titles});
     const t=map.get(id); if(t!=null && S.nodes[t]){ sel=t; setActivePath(sel); S.head=refsAt(sel)[0] ?? null; }
   });
@@ -1455,7 +1468,7 @@ function duplicateConversation(rootId, to){
     return;
   }
   let target=to;
-  storeCommit(to==='new' ? `Cloned “${name}” into a new space` : `Cloned “${name}” into ${DB.spaces[to].name}`, ()=>{
+  storeCommit(to==='new' ? `Cloned “${name}” into a new project` : `Cloned “${name}” into ${DB.spaces[to].name}`, ()=>{
     if(to==='new') target=addSpace(uniqueSpaceName(name), null);
     const t=DB.spaces[target].tree; if(!t.files) t.files=[];
     transplant(S, [...comp], t, {copy:true, titles: to==='new' ? {} : titles});
@@ -1510,15 +1523,15 @@ const OPS = {
     detail:'Opens the variants editor in place of the input box. Each variant is a prompt with its own model, and each becomes its own branch from the selected prompt; the first continues the current branch. Start from what you have typed, add wordings yourself or ask Claude to suggest some, then send them all. Replies come one after another, ready for Compare.'},
   compare:{label:'Compare', key:'v', hide:true, hint:'Read the replies to this prompt’s follow-ups side by side.',
     detail:'Only on prompts with two or more follow-ups, such as the branches a Fan out makes. Shows each follow-up and Claude’s reply in its own column so you can read them together, then open one, make one the mainline, or prune the ones you don’t want.'},
-  promote:{label:'Make mainline', key:'p', hide:true, hint:'Make the branch through this prompt the conversation’s main branch.',
+  promote:{label:'Make mainline', key:'p', hide:true, hint:'Make the branch through this prompt the chat’s main branch.',
     detail:'The branch running through this prompt becomes main and is drawn as the straight line. The old main takes that branch’s name, so nothing is lost. No prompts move.'},
   skip:{label:'Leave out', key:'l', hint:'Keep this prompt in the tree but stop sending it to Claude.',
     detail:'Keeps the prompt and its reply where they are, but leaves them out of the context sent from the prompts below it. It shows faded with a “left out” tag. Run it again to bring it back. A prompt is always sent when Claude is answering that prompt itself.'},
-  clone:{label:'Clone…', key:'d', hint:'Copy this prompt into a new conversation: its path, its path and everything below, or the whole conversation.',
-    detail:'Makes an independent copy as a new conversation at the top of the space, and opens it. Each option includes this prompt. <em>Up to here</em>: everything before it, the exact context it was written in, with no side branches. <em>From here on</em>: it and everything after it, as a fresh conversation with no earlier context. <em>Through here</em>: both together. Replies, versions, files and branch names come along; the original never changes. To copy a whole conversation, use Clone in its ⋯ menu.'},
+  clone:{label:'Clone…', key:'d', hint:'Copy this prompt into a new chat: its path, its path and everything below, or the whole conversation.',
+    detail:'Makes an independent copy as a new chat at the top of the project, and opens it. Each option includes this prompt. <em>Up to here</em>: everything before it, the exact context it was written in, with no side branches. <em>From here on</em>: it and everything after it, as a fresh chat with no earlier context. <em>Through here</em>: both together. Replies, versions, files and branch names come along; the original never changes. To copy a whole chat, use Clone in its ⋯ menu.'},
   branch:{label:'Branch', key:'b', hint:'Start a new branch at this prompt and switch to it.',
     detail:'Adds a branch at the selected prompt with a default name like branch-1 and checks it out, without adding a prompt. If other branches point at the same prompt, tap a branch chip or use the picker above the Continue box to choose which one your next prompt goes on. Rename it any time under Branches or with Rename above the Continue box. As in git, a branch is only a label on a tip, so deleting one never deletes prompts.'},
-  reroot:{label:'Reroot', key:'r', hint:'Cut this prompt from its parent and start a new conversation from it.',
+  reroot:{label:'Reroot', key:'r', hint:'Cut this prompt from its parent and start a new chat from it.',
     detail:'Cuts the link to the parent, so the prompt and everything below it become a separate conversation. The model no longer sees any earlier turns, except through the optional summary root, which the template or Claude can write.'},
   splice:{label:'Splice out', key:'s', hint:'Remove only this prompt. Its follow-ups attach to its parent.',
     detail:'Deletes just this prompt. Its children move up to its parent, so their context loses this one turn and keeps everything else. Useful for dropping a bad or off-topic turn.'},
@@ -1715,7 +1728,7 @@ function addPrompt(parent, text){
   composeFor=null; renaming=false;
   if(parent==null){
     const files=takePending();
-    commit('Started a conversation on main', ()=>{ const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[], text}; if(files) S.nodes[nid].files=files; S.head=newRef('main', nid); sel=nid; });
+    commit('Started a chat on main', ()=>{ const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[], text}; if(files) S.nodes[nid].files=files; S.head=newRef('main', nid); sel=nid; });
     wantReplies([sel]);
     return;
   }
@@ -1744,7 +1757,7 @@ function renameRef(rid, to){
   const r=S.refs[rid]; if(!r) return;
   to=to.trim(); if(to===r.name) return;
   if(!NAME_RE.test(to)){ toast('Use letters, numbers, dots, dashes, slashes or underscores (no spaces).'); renderBranches(); return; }
-  if(namesIn(convOf(r.tip), rid).has(to)){ toast(`This conversation already has a branch named ${to}.`); renderBranches(); return; }
+  if(namesIn(convOf(r.tip), rid).has(to)){ toast(`This chat already has a branch named ${to}.`); renderBranches(); return; }
   const from=r.name;
   commit(`Renamed ${from} to ${to}`, ()=>{ S.refs[rid].name=to; });
 }
@@ -1941,7 +1954,7 @@ function paintGen(g){
   if(paintRaf) return;
   paintRaf=requestAnimationFrame(()=>{
     paintRaf=0;
-    /* in Simple view, a reply coming in keeps the page at the bottom if you were there, as chat apps do */
+    /* in Chat view, a reply coming in keeps the page at the bottom if you were there, as chat apps do */
     const de=document.documentElement, atEnd=atPageEnd();
     for(const x of paintDue){
       if(x.sid!==DB.current || !gens.has(gkey(x.sid,x.id))) continue;
@@ -2177,7 +2190,7 @@ function renderCompare(){
    by itself. */
 let distill=null;
 async function openDistill(id){
-  if(id==null || !S.nodes[id]){ toast('Select a prompt first. The brief covers its conversation up to it.'); return; }
+  if(id==null || !S.nodes[id]){ toast('Select a prompt first. The brief covers its chat up to it.'); return; }
   if(sampleState!=='ready'){ toast('Distill needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
   if(distill && distill.ctl) distill.ctl.abort();
   closeCompare && cmpFor!=null && closeCompare();
@@ -2204,9 +2217,9 @@ function distillHTML(){
   const d=distill, id=d.id, n=d.text.trim() ? 1 : 0;
   const head=`<div class="fanhead"><b>Brief of the context up to #${id}</b><span class="note">${d.status==='loading'?'Claude is writing it…':'Edit it before you use it.'}</span><button class="rmore" data-dcancel>${d.status==='loading'?'Stop':'Close'}</button></div>`;
   const body = d.status==='loading'
-    ? `<div class="rbody">${d.text?md(d.text):'<p class="thinking">Reading the conversation…</p>'}</div>`
+    ? `<div class="rbody">${d.text?md(d.text):'<p class="thinking">Reading the chat…</p>'}</div>`
     : `${d.status==='error'?`<p class="gnote">${esc(d.err||'Claude couldn’t write the brief.')}</p>`:''}<textarea id="distillText" rows="${Math.min(22, Math.max(6, d.text.split('\n').length+1))}" aria-label="Brief">${esc(d.text)}</textarea>
-      <div class="bar"><button class="btn primary" data-dgo="new" ${n?'':'disabled'} title="A new conversation whose first prompt starts with this brief">Start a new conversation with it</button><button class="btn" data-dgo="file" ${n?'':'disabled'} title="Sent with every conversation in this space">Add to space files</button><button class="btn" data-dgo="note" ${n?'':'disabled'} title="Kept on #${id}, never sent to Claude">Save as note</button><button class="btn" data-dgo="copy" ${n?'':'disabled'}>Copy</button><button class="btn" data-dgo="again">Write again</button></div>`;
+      <div class="bar"><button class="btn primary" data-dgo="new" ${n?'':'disabled'} title="A new chat whose first prompt starts with this brief">Start a new chat with it</button><button class="btn" data-dgo="file" ${n?'':'disabled'} title="Sent with every chat in this project">Add to project files</button><button class="btn" data-dgo="note" ${n?'':'disabled'} title="Kept on #${id}, never sent to Claude">Save as note</button><button class="btn" data-dgo="copy" ${n?'':'disabled'}>Copy</button><button class="btn" data-dgo="again">Write again</button></div>`;
   return `<div class="fan distill" data-key="ds${id}">${head}${body}</div>`;
 }
 async function useDistill(how){
@@ -2266,7 +2279,7 @@ const Agent=(()=>{
     if(r.error) throw new Error(`#${id} got no reply: ${r.error}`);
     return {...base, prompt:id, reply:r.reply, note:r.note||undefined};
   }
-  const where = (sid, id) => withTree(DB.spaces[sid].tree, ()=>({space:DB.spaces[sid].name, conversation:chain(id)[0], branch:refsAt(id).map(refName)[0]}));
+  const where = (sid, id) => withTree(DB.spaces[sid].tree, ()=>({project:DB.spaces[sid].name, chat:chain(id)[0], branch:refsAt(id).map(refName)[0]}));
   const ops={
     async spawn(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
@@ -2370,7 +2383,7 @@ function contextPrompt(id){
   return `Here is an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`;
 }
 function copyContextPrompt(id){
-  if(id==null || !S.nodes[id]){ toast('Select a prompt first. The context runs from the start of its conversation to it.'); return; }
+  if(id==null || !S.nodes[id]){ toast('Select a prompt first. The context runs from the start of its chat to it.'); return; }
   copyText(contextPrompt(id), true).then(ok=>{ if(ok) toast(`Copied the context up to #${id} as a prompt, about ${tokens(turnsFor(id,true)).toLocaleString()} tokens. Paste it and add your question.`); });
 }
 /* ---- Markdown export ---- */
@@ -2446,18 +2459,18 @@ function paletteCommands(q){
     add(g, 'Copy this path as Markdown', ()=>copyText(pathMarkdown(sel)));
     add(g, 'Copy this path as messages JSON', ()=>copyText(JSON.stringify(turnsFor(sel,true),null,2)));
     add(g, 'Deselect', ()=>deselect());
-    const r=rootOfSel(); if(r) add('Conversation', 'Copy the whole conversation as Markdown', ()=>copyText(treeMarkdown(r.id)));
+    const r=rootOfSel(); if(r) add('Chat', 'Copy the whole chat as Markdown', ()=>copyText(treeMarkdown(r.id)));
   }
-  add('App', 'New conversation', ()=>document.getElementById('newBtn').click());
-  add('App', 'New space', ()=>createSpace());
+  add('App', 'New chat', ()=>document.getElementById('newBtn').click());
+  add('App', 'New project', ()=>createSpace());
   add('App', 'Undo', ()=>undo(), IS_MAC?'⌘Z':'Ctrl+Z');
   add('App', 'Redo', ()=>redo(), IS_MAC?'⌘⇧Z':'Ctrl+Shift+Z');
-  add('App', opts.simple?'Turn off Simple view':'Turn on Simple view', ()=>document.getElementById('simpleBtn').click());
-  add('App', 'Show all conversations', ()=>showAll());
+  add('App', opts.simple?'Switch to Editor':'Switch to Chat', ()=>setView(!opts.simple));
+  add('App', 'Show all chats', ()=>showAll());
   add('App', 'Import chats', ()=>openImport());
   for(const [f,l] of [['star','starred prompts'],['note','prompts with notes'],['skip','left-out prompts']]) add('Filter', `Show ${l}`, ()=>setFilter(f, true));
   add('App', 'Open the branch map', ()=>openMapView(), 'M');
-  add('Space', 'Space files', ()=>openSpaceFiles());
+  add('Project', 'Project files', ()=>openSpaceFiles());
   add('Space', 'Import / export JSON', ()=>openIo());
   add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
@@ -2465,8 +2478,8 @@ function paletteCommands(q){
   add('Settings', 'Keyboard shortcuts', ()=>openSettings('keys'));
   for(const [m,l] of [['system','System'],['light','Light'],['dark','Dark']]) add('Settings', `Theme mode: ${l}`, ()=>{ opts.theme=m; afterSetting('theme'); });
   for(const id of [...Object.keys(PALETTES), ...Object.keys(customThemes())]) add('Settings', `Palette: ${PALETTES[id]?PALETTES[id].name:customThemes()[id].name}`, ()=>{ opts.palette=id; afterSetting('palette'); });
-  for(const r of orderedRoots()) add('Go to conversation', convTitle(r), ()=>openConv(convKey(r)));
-  for(const sid of spaceIds()) if(sid!==DB.current) add('Switch space', DB.spaces[sid].name, ()=>switchSpace(sid));
+  for(const r of orderedRoots()) add('Go to chat', convTitle(r), ()=>openConv(convKey(r)));
+  for(const sid of spaceIds()) if(sid!==DB.current) add('Switch project', DB.spaces[sid].name, ()=>switchSpace(sid));
   const num=q.match(/^#?(\d+)$/);
   if(num && S.nodes[+num[1]] && S.nodes[+num[1]].kind!=='merge'){ const id=+num[1]; out.unshift({group:'Go to prompt', label:`#${id} ${clip(S.nodes[id].text||'',70)}`, run:()=>select(id), score:1000}); }
   if(q.length>=3 && !num) for(const h of searchHits(q).slice(0,6)){ const n=S.nodes[h.id]; out.push({group:'In prompts and replies', label:`#${h.id} ${clip((h.field==='reply'?'Claude: ':'')+(n[h.field]||'').replace(/\s+/g,' '),80)}`, run:()=>select(h.id), score:5}); }
@@ -2628,9 +2641,9 @@ function sendVariants(){
 function composerHTML(forId){
   if(forId!=='root' && variants) return variantsHTML(forId);
   if(forId==='root') return `<div class="composer root">
-    <textarea id="composeText" placeholder="First prompt of a new conversation" aria-label="First prompt">${esc(draftRoot)}</textarea>
+    <textarea id="composeText" placeholder="First prompt of a new chat" aria-label="First prompt">${esc(draftRoot)}</textarea>
     ${fileChips(pendingFiles, true)}
-    <div class="bar"><button class="btn primary" data-compose="add-root">Start conversation <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}</div>
+    <div class="bar"><button class="btn primary" data-compose="add-root">Start chat <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}</div>
     <p class="note">${sendNote()} Have a chat elsewhere? <button class="rmore" data-openimport>Import it</button>.</p></div>`;
   const onTip = S.head && S.refs[S.head] && S.refs[S.head].tip===forId;
   const here = refsAt(forId);
@@ -2684,7 +2697,7 @@ function showOpsCard(customize){
 function opsHTML(id){
   const isM=S.nodes[id].kind==='merge', q=new Set(quickList());
   const btns = quickList().map(k=>[k,OPS[k]]).filter(([k,o])=>(isM||k==='unmerge'||o.hide) ? available(k,id) : true).map(([k,o])=>
-    `<button class="btn ${o.danger?'danger':''}" data-act="${k}" data-hint="${esc(k==='skip'&&S.nodes[id].skip?'Send this prompt to Claude again.':o.hint)}" ${available(k,id)?'':'disabled title="Already the start of a conversation"'}>${opLabel(k,id)}${opts.opKeys===false?'':` <kbd>${kk(o.key)}</kbd>`}</button>`).join('');
+    `<button class="btn ${o.danger?'danger':''}" data-act="${k}" data-hint="${esc(k==='skip'&&S.nodes[id].skip?'Send this prompt to Claude again.':o.hint)}" ${available(k,id)?'':'disabled title="Already the start of a chat"'}>${opLabel(k,id)}${opts.opKeys===false?'':` <kbd>${kk(o.key)}</kbd>`}</button>`).join('');
   return `<div class="ops" data-key="o${id}"><div class="bar">${btns}<button class="btn more" data-opsmore aria-haspopup="menu" title="Other operations, and choosing what sits in this bar">More ▾</button></div><p class="hint" id="hint">Hover an operation for a quick summary. Full descriptions are in Settings › Operations.</p>${renaming && S.head ? renameFormHTML() : composerHTML(id)}</div>`;
 }
 /* ✦ marks tools where Claude does the work (each use sends a request), as opposed to ones that only move text.
@@ -2723,10 +2736,10 @@ function rowHTML(id, pathSet){
     <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Claude answers the edited prompt. The original and its reply stay as the other version.">Send as new version <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-pedit="save" title="Change the prompt where it is. Its reply and everything below stay as they are.">Save in place</button>`}<button class="btn" data-pedit="cancel">Cancel</button></div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
   let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
-  /* actions sit in a row under the prompt: in Simple view under every message (shown on hover, like a chat app),
+  /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${forkHTML(id)}<button class="act" data-promptedit="${id}">Edit</button><button class="act" data-copyprompt="${id}">Copy</button></div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
     else if(id===sel) h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${tog}${fold}</div>`;
   }
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
@@ -2735,7 +2748,7 @@ function rowHTML(id, pathSet){
   if(distill && distill.id===id) h+=distillHTML();
   return h;
 }
-/* which replies are open; Simple view is one thread, so it shows every reply in it */
+/* which replies are open; Chat view is one thread, so it shows every reply in it */
 const repliesMode = () => opts.simple ? 'path' : opts.replies;
 function setRepliesMode(m){ opts.replies=m; openReplies.clear(); save(); }
 /* long replies away from the selected prompt are shortened unless Length is set to Full; each reply's own Show all / Shorten flips just that one */
@@ -2764,7 +2777,7 @@ function replyFoot(id){
 }
 /* Editing a reply: fix what Claude said, so everything below builds on the corrected version. Undo brings the original back. */
 let replyEditFor=null, promptEditFor=null;
-/* Editing a prompt where it is. "Send" (the only choice in Simple view, as in any chat) makes a new version that
+/* Editing a prompt where it is. "Send" (the only choice in Chat view, as in any chat) makes a new version that
    Claude answers, keeping the original and its reply one ‹ › away. "Save in place" just changes the text. */
 function openPromptEdit(id){
   if(!S.nodes[id] || S.nodes[id].kind==='merge') return;
@@ -2870,7 +2883,7 @@ function runHTML(id, lane, pathSet){
   /* rows are keyed by version group, so flipping reply versions keeps the row and swaps the reply */
   return items.map(([nid,h],i)=>`<li class="g ${i===0?'first ':''}${i===items.length-1?'last':''}" data-key="n${S.nodes[nid].alt ?? nid}">${h}</li>`).join('');
 }
-/* ---- Simple view ----
+/* ---- Chat view ----
    One conversation, read top to bottom like a chat: the line from its start to the tip of the branch you're on,
    with Claude's replies in full and the input box at the end. Where the conversation branches, ‹ 1 / 3 › on the
    prompt switches between the branches, the way Claude switches between edits. Nothing about the tree changes. */
@@ -2889,6 +2902,9 @@ function forkHTML(id){
   const go=j=>sib[j] ? `data-forkgo="${sib[j].id}"` : 'disabled';
   return `<span class="fork" title="Other versions and branches from here"><button ${go(i-1)} aria-label="Previous branch">‹</button><span>${i+1} / ${sib.length}</span><button ${go(i+1)} aria-label="Next branch">›</button></span>`;
 }
+function lenGroupHTML(rl=lenMode()){
+  return `<div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div>`;
+}
 function simpleHTML(){
   const rs=orderedRoots();
   let base = sel!=null && S.nodes[sel] ? sel : null;
@@ -2898,7 +2914,7 @@ function simpleHTML(){
   const c=chain(tip), pathSet=new Set(path(tip)), r=S.nodes[c[0]];
   /* the thread follows this conversation's own line; what a merge brings in folds into one line at the merge */
   const items=c.map(id=>`<li class="g" data-key="n${S.nodes[id].alt ?? id}">${S.nodes[id].kind==='merge' ? mergeBoxHTML(id, pathSet) : rowHTML(id, pathSet)}</li>`).join('');
-  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="convHead"><span class="ctitle">${esc(convTitle(r))}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
+  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="chathead" data-key="chathead"><button class="chatproj" data-projmenu aria-haspopup="menu" title="Project options">${esc(DB.spaces[DB.current].name)}</button><div class="chattitle"><h1>${esc(convTitle(r))}</h1><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div><div class="viewbar">${lenGroupHTML()}</div></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
 }
 /* A merge in the thread: one line saying which branch came in, opening to the note Claude reads at the join
    and the prompts and replies the branch brings, which Claude sees as part of this conversation. */
@@ -2908,7 +2924,7 @@ function mergeBoxHTML(m, pathSet){
   for(const q of n.parents.slice(1)) for(const x of path(q)) if(!seen.has(x)){ seen.add(x); if(S.nodes[x].kind!=='merge') inn.push(x); }
   const from=n.from || '#'+n.parents[1], k=inn.length, open=openMerges.has(m) || inn.includes(sel);
   return `<details class="mergebox" data-mergebox="${m}" ${open?'open':''}><summary><span class="mic" aria-hidden="true">⤵</span><span class="mwhat"><b>${esc(from)}</b> merged in here</span><span class="mmeta">${k} prompt${k===1?'':'s'} with replies · Claude sees ${k===1?'it':'them'} too</span></summary>
-    <div class="mbody"><p class="note">Claude reads this note, then the prompts below, as part of this conversation:</p><blockquote class="seamq">${esc(n.seam || promptText('seam'))}</blockquote>
+    <div class="mbody"><p class="note">Claude reads this note, then the prompts below, as part of this chat:</p><blockquote class="seamq">${esc(n.seam || promptText('seam'))}</blockquote>
     <ul class="tree thread">${inn.map(x=>`<li class="g" data-key="n${S.nodes[x].alt ?? x}">${rowHTML(x, pathSet)}</li>`).join('')}</ul></div></details>`;
 }
 treeEl.addEventListener('toggle', e=>{ const d=e.target; if(d.dataset && d.dataset.mergebox!=null){ const m=+d.dataset.mergebox; d.open ? openMerges.add(m) : openMerges.delete(m); } }, true);
@@ -2924,20 +2940,20 @@ function renderTree(){
   const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
   if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
     const showGroup=`<div class="vgroup" role="group" aria-label="Show replies"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}">${l}</button>`).join('')}</div>`;
-    const lenGroup=`<div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div>`;
-    h+=`<div class="viewbar" data-key="viewbar">${simpleNow?'':showGroup}${lenGroup}</div>`; }
+    const lenGroup=lenGroupHTML(rl);
+    if(!simpleNow) h+=`<div class="viewbar" data-key="viewbar">${showGroup}${lenGroup}</div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
   if(simpleNow) h+=simpleHTML();
   else {
-  if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New conversation</p>':`<p class="emptyhead">Start a conversation in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a conversation here from another space with its Move button.</p>`}${composerHTML('root')}</section>`;
+  if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New chat</p>':`<p class="emptyhead">Start a chat in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a chat here from another project with its Move button.</p>`}${composerHTML('root')}</section>`;
   const offN=rs.length-shown.length;
-  if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} conversations in this space are hidden. Choose which to show from the conversation list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
+  if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} chats in this project are hidden. Choose which to show from the chat list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
   for(const r of shown){
     const size=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1, k=convKey(r);
     const est=60+size*44+(repliesMode()==='all'?size*140:0);
-    h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a space in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
+    h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a project in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
   }
-  if(offN && shown.length) h+=`<p class="offnote" data-key="offnote">${offN} more conversation${offN===1?'':'s'} in this space ${offN===1?'is':'are'} hidden.<button class="linkbtn" data-showall>Show all</button></p>`;
+  if(offN && shown.length) h+=`<p class="offnote" data-key="offnote">${offN} more chat${offN===1?'':'s'} in this project ${offN===1?'is':'are'} hidden.<button class="linkbtn" data-showall>Show all</button></p>`;
   }
   const fk=focusKey();
   treeEl.innerHTML=h;
@@ -2968,8 +2984,8 @@ function renderSpaces(){
   const ul=document.getElementById('spaceList');
   ul.innerHTML=spaceIds().map(id=>{
     const sp=DB.spaces[id], cur=id===DB.current, st=spaceStats(sp.tree);
-    if(renamingSpace===id) return `<li class="sp ${cur?'cur':''}" data-space="${id}"><input class="spinput" id="spname-${id}" data-spname="${id}" value="${esc(sp.name)}" maxlength="60" aria-label="Space name"></li>`;
-    return `<li class="sp ${cur?'cur':''}" data-space="${id}"><button class="spmain" data-open="${id}" ${cur?'aria-current="page"':''}><span class="spname">${esc(sp.name)}</span><span class="spmeta">${st.convs} conversation${st.convs===1?'':'s'} · ${st.prompts} prompt${st.prompts===1?'':'s'}</span></button><button class="spmore" data-spmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for ${esc(sp.name)}">⋯</button></li>`;
+    if(renamingSpace===id) return `<li class="sp ${cur?'cur':''}" data-space="${id}"><input class="spinput" id="spname-${id}" data-spname="${id}" value="${esc(sp.name)}" maxlength="60" aria-label="Project name"></li>`;
+    return `<li class="sp ${cur?'cur':''}" data-space="${id}"><button class="spmain" data-open="${id}" ${cur?'aria-current="page"':''}><span class="spname">${esc(sp.name)}</span><span class="spmeta">${st.convs} chat${st.convs===1?'':'s'} · ${st.prompts} prompt${st.prompts===1?'':'s'}</span></button><button class="spmore" data-spmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for ${esc(sp.name)}">⋯</button></li>`;
   }).join('');
   if(renamingSpace){ const inp=document.getElementById('spname-'+renamingSpace); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
 }
@@ -2993,22 +3009,22 @@ function renderConvs(){
     if(renamingConv===k) return `<li class="cv cur" data-key="cl${k}"><input class="spinput" id="cvname-${k}" data-cvname="${k}" value="${esc(convTitle(r))}" maxlength="120" aria-label="Conversation name"></li>`;
     const meta=`${n} prompt${n===1?'':'s'} · ${b} branch${b===1?'':'es'}`;
     if(selecting) return `<li class="cv ${on?'':'off'} ${checked.has(k)?'checked':''}" data-key="cl${k}"><input type="checkbox" class="cvcheck" id="ck-${k}" data-check="${k}" ${checked.has(k)?'checked':''} aria-label="Select ${esc(convTitle(r))}"><label class="cvmain" for="ck-${k}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></label></li>`;
-    const tip = pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all conversations' : 'Move the focus here')
+    const tip = pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
       : !on ? 'Hidden. Click to show it and jump to it.'
-      : cur===k ? (onN>1 ? 'Click again to hide the other conversations' : 'Click again to show all conversations') : 'Jump to it';
-    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this conversation">⋯</button></li>`;
+      : cur===k ? (onN>1 ? 'Click again to hide the other chats' : 'Click again to show all chats') : 'Jump to it';
+    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
   };
   convListEl.classList.toggle('choosing', pickingRows);
-  if(!q && !filters.size) convListEl.innerHTML = list.length ? list.map(item).join('') : '<li><p class="cvempty">No conversations yet.</p></li>';
+  if(!q && !filters.size) convListEl.innerHTML = list.length ? list.map(item).join('') : '<li><p class="cvempty">No chats yet.</p></li>';
   else if(!q){
     const hits=searchHits('');
     const what=[...filters].map(f=>({star:'starred',note:'with notes',skip:'left out'})[f]).join(', ');
-    convListEl.innerHTML = `<li class="cvsec">Prompts ${what} <span>${hits.length>=60?'60+':hits.length}</span></li>` + (hits.length ? hits.map(h=>hitHTML(h, '')).join('') : `<li><p class="cvempty">No prompts ${what} in this space yet.</p></li>`);
+    convListEl.innerHTML = `<li class="cvsec">Prompts ${what} <span>${hits.length>=60?'60+':hits.length}</span></li>` + (hits.length ? hits.map(h=>hitHTML(h, '')).join('') : `<li><p class="cvempty">No prompts ${what} in this project yet.</p></li>`);
   }
   else {
     const hits=searchHits(q);
     convListEl.innerHTML =
-      `<li class="cvsec">Conversations <span>${list.length}</span></li>` + (list.length ? list.map(item).join('') : '<li><p class="cvempty">No titles match.</p></li>') +
+      `<li class="cvsec">Chats <span>${list.length}</span></li>` + (list.length ? list.map(item).join('') : '<li><p class="cvempty">No titles match.</p></li>') +
       `<li class="cvsec">In prompts and replies <span>${hits.length>=60?'60+':hits.length}</span></li>` +
       (hits.length ? hits.map(h=>hitHTML(h, q)).join('') : '<li><p class="cvempty">Nothing matches.</p></li>');
   }
@@ -3018,13 +3034,13 @@ function renderConvs(){
   if(selecting){
     tools.innerHTML=`<div class="seltop"><span class="count">${checked.size} of ${roots.length} selected</span><button class="btn xs" data-bulk="${checked.size===roots.length?'none':'all'}">${checked.size===roots.length?'Select none':'Select all'}</button></div>
        <div class="selacts"><button class="btn xs" data-bulk="move" ${none} aria-haspopup="menu">Move to…</button></div>
-       <div class="selfoot"><p class="selhint">Tick conversations to move them together.</p><button class="btn xs primary" data-bulk="done">Done</button></div>`;
+       <div class="selfoot"><p class="selhint">Tick chats to move them together.</p><button class="btn xs primary" data-bulk="done">Done</button></div>`;
   } else {
     tools.innerHTML = roots.length>1 ? `<div class="vishead"><span class="vislabel">On the page</span><span class="count">${onN} of ${roots.length}</span></div>
-      <div class="vismodes" data-mode="${mode}" role="group" aria-label="Which conversations are on the page"><span class="vmpill" data-key="vmpill" aria-hidden="true"></span>${['select','focus'].map(m=>`<button class="vm" data-vismode="${m}" aria-pressed="${mode===m}">${VIS_LABEL[m]}</button>`).join('')}</div>
-      <p class="vishint">${pickingRows ? 'Click conversations to show or hide them. Press Done when you\u2019re finished.' : VIS_HINT[mode]}</p>
+      <div class="vismodes" data-mode="${mode}" role="group" aria-label="Which chats are on the page"><span class="vmpill" data-key="vmpill" aria-hidden="true"></span>${['select','focus'].map(m=>`<button class="vm" data-vismode="${m}" aria-pressed="${mode===m}">${VIS_LABEL[m]}</button>`).join('')}</div>
+      <p class="vishint">${pickingRows ? 'Click chats to show or hide them. Press Done when you\u2019re finished.' : VIS_HINT[mode]}</p>
       ${mode==='select' ? viewsHTML() : ''}
-      ${mode==='select' ? `<div class="pickacts"><button class="btn xs pickmode" data-pick="toggle" aria-pressed="${pickingRows}" title="${pickingRows?'Stop selecting':'Click conversations in the list to show or hide them'}">${pickingRows?'Done':'Select…'}</button><button class="btn xs" data-pick="all">All</button><button class="btn xs" data-pick="invert">Invert</button><button class="btn xs" data-pick="none">None</button>${q&&list.length?`<button class="btn xs" data-pick="matches">Only the ${list.length} match${list.length===1?'':'es'}</button>`:''}</div>` : ''}` : '';
+      ${mode==='select' ? `<div class="pickacts"><button class="btn xs pickmode" data-pick="toggle" aria-pressed="${pickingRows}" title="${pickingRows?'Stop selecting':'Click chats in the list to show or hide them'}">${pickingRows?'Done':'Select…'}</button><button class="btn xs" data-pick="all">All</button><button class="btn xs" data-pick="invert">Invert</button><button class="btn xs" data-pick="none">None</button>${q&&list.length?`<button class="btn xs" data-pick="matches">Only the ${list.length} match${list.length===1?'':'es'}</button>`:''}</div>` : ''}` : '';
   }
   if(renamingConv!=null){ const inp=document.getElementById('cvname-'+renamingConv); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
   if(renamingView!=null){ const inp=document.getElementById('vname-'+renamingView); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
@@ -3038,7 +3054,7 @@ function branchesHTML(rootId){
     <button class="coBtn" data-co="${rid}" aria-label="Check out ${esc(refName(rid))}" aria-pressed="${S.head===rid}" title="${S.head===rid?'Checked out':'Check out'}"></button>
     <input id="br-${rid}" value="${esc(refName(rid))}" data-rename="${rid}" aria-label="Branch name" spellcheck="false" autocomplete="off">
     <span class="meta">#${S.refs[rid].tip}</span>
-    <button class="btn xs danger" data-delbr="${rid}" ${rids.length<2?'disabled title="A conversation keeps at least one branch"':''} aria-label="Delete branch ${esc(refName(rid))}">Delete</button></li>`).join('')}</ul>
+    <button class="btn xs danger" data-delbr="${rid}" ${rids.length<2?'disabled title="A chat keeps at least one branch"':''} aria-label="Delete branch ${esc(refName(rid))}">Delete</button></li>`).join('')}</ul>
     <p class="note">Edit a name to rename it. Deleting a branch keeps its prompts.</p></details>`;
 }
 let ctxFor;
@@ -3065,7 +3081,7 @@ function renderCtx(){
   const ents=contextEntries(sel), msgs=turnsFor(sel,true), merged=ents.some(e=>e.seam), instr=promptText('instructions').trim(), fs=S.files||[];
   const tok=t=>Math.ceil(t.length/4);
   const items=(instr?`<li class="seam instr" data-gotoprompts title="Standing instructions, sent first. Change them in Settings › Prompts."><span class="cid">✎</span><span class="ct">${esc(instr)}</span><span></span></li>`:'')
-    +(fs.length?`<li class="files" data-openspacefiles title="Sent with every request in this space"><span class="cid">⎘</span><span class="ct">${fs.length} space file${fs.length===1?'':'s'}: ${esc(fs.map(f=>f.name).join(', '))}</span><span></span></li>`:'')
+    +(fs.length?`<li class="files" data-openspacefiles title="Sent with every request in this project"><span class="cid">⎘</span><span class="ct">${fs.length} project file${fs.length===1?'':'s'}: ${esc(fs.map(f=>f.name).join(', '))}</span><span></span></li>`:'')
     +ents.map(e=>{
       if(e.seam) return `<li class="seam" data-sel="${e.merge}"><span class="cid">⑂</span><span class="ct">${esc(e.text)}</span><span></span></li>`;
       const m=S.nodes[e.id]; if(m.kind==='merge') return '';
@@ -3095,7 +3111,7 @@ function renderCtx(){
 function renderSpaceFiles(){
   const card=document.getElementById('filesCard'), fs=S.files||[];
   document.getElementById('sfSpace').textContent='in '+DB.spaces[DB.current].name;
-  card.innerHTML=`<p class="note">Sent with every request in this space, like project knowledge in Claude. Text and code files only.</p>
+  card.innerHTML=`<p class="note">Sent with every request in this project, like project knowledge in Claude. Text and code files only.</p>
     ${fs.length ? `<ul class="flist">${fs.map((m,i)=>`<li><span class="fkind">TXT</span><span class="fname" title="${esc(m.name)}">${esc(m.name)}</span><span class="meta">${fmtSize(m.size)}</span><button class="btn xs danger" data-rmspacefile="${i}">Remove</button></li>`).join('')}</ul>` : ''}
     <div class="dropzone" data-dropspace>Drop files here, or <button class="linkbtn" data-attachspace style="color:var(--accent)">choose files</button></div>`;
 }
@@ -3184,7 +3200,7 @@ function openConv(key){
    select - you decide. Click a hidden conversation to show it; click the one you're in again to hide or show the others.
    focus  - only the one you're in, and the focus follows you as you open other conversations */
 const VIS_LABEL={select:'Selection', focus:'Focus'};
-const VIS_HINT={select:'Click a hidden conversation to show it. Click the one you\u2019re in again to hide or show the others.', focus:'Only the conversation you\u2019re in. Open another and it takes its place.'};
+const VIS_HINT={select:'Click a hidden chat to show it. Click the one you\u2019re in again to hide or show the others.', focus:'Only the chat you\u2019re in. Open another and it takes its place.'};
 const visMode = () => (S && S.vis==='focus') ? 'focus' : 'select';
 function applyVis(){
   const m=visMode(); if(m!=='focus' || !S.convs) return;
@@ -3195,7 +3211,7 @@ function applyVis(){
 function setVisMode(m){
   if(m==='focus' && !orderedRoots().length) return;
   if(m==='focus') pickingRows=false;
-  const msg = m==='focus' ? 'Focus is on the conversation you\u2019re in' : 'Left focus. Showing all conversations';
+  const msg = m==='focus' ? 'Focus is on the chat you\u2019re in' : 'Left focus. Showing all chats';
   /* leaving focus brings everything back */
   morphTools(()=>commit(msg, ()=>{ S.vis=m; if(m==='focus') applyVis(); else for(const r of orderedRoots()) setOff(convKey(r), false); }, {touch:false, hidden:true}), {fade:false});
 }
@@ -3254,14 +3270,14 @@ function viewsHTML(){
   const vs=S.views||[];
   const chips=vs.map(v=> renamingView===v.id
     ? `<input class="viewinput" id="vname-${v.id}" data-viewname="${v.id}" value="${esc(v.name)}" maxlength="40" aria-label="Group name">`
-    : `<button class="chip" data-view="${v.id}" aria-pressed="${viewIsActive(v)}" title="${viewIsActive(v)?'Showing this group. Click again for options.':'Show '+v.keys.length+' conversation'+(v.keys.length===1?'':'s')}">${esc(v.name)}</button>`).join('');
-  return `<div class="views"><span class="vislabel">Groups</span>${chips}<button class="chip add" data-view="save" title="Save the conversations shown now as a group">+ Save as group</button></div>`;
+    : `<button class="chip" data-view="${v.id}" aria-pressed="${viewIsActive(v)}" title="${viewIsActive(v)?'Showing this group. Click again for options.':'Show '+v.keys.length+' chat'+(v.keys.length===1?'':'s')}">${esc(v.name)}</button>`).join('');
+  return `<div class="views"><span class="vislabel">Groups</span>${chips}<button class="chip add" data-view="save" title="Save the chats shown now as a group">+ Save as group</button></div>`;
 }
 function saveView(){
-  const keys=shownKeys(); if(!keys.length){ toast('Show at least one conversation first.'); return; }
+  const keys=shownKeys(); if(!keys.length){ toast('Show at least one chat first.'); return; }
   const used=new Set((S.views||[]).map(v=>v.name)); let k=(S.views||[]).length+1; while(used.has(`Group ${k}`)) k++;
   const name = keys.length===1 ? clip(convTitle(vRoots().find(r=>convKey(r)===keys[0])), 24) : `Group ${k}`;
-  commit(`Saved “${name}”. Click it any time to show those ${keys.length} conversation${keys.length===1?'':'s'} again.`, ()=>{
+  commit(`Saved “${name}”. Click it any time to show those ${keys.length} chat${keys.length===1?'':'s'} again.`, ()=>{
     S.nextView=(S.nextView||0)+1; S.views.push({id:'v'+S.nextView, name: used.has(name) ? `Group ${k}` : name, keys});
   }, {touch:false});
 }
@@ -3272,7 +3288,7 @@ function applyView(v){
 function viewMenu(anchor, v){
   openMenu(anchor, [
     {label:'Rename', run:()=>{ renamingView=v.id; renderConvs(); }},
-    {label:'Update to what\u2019s shown now', run:()=>{ const keys=shownKeys(); if(!keys.length){ toast('Show at least one conversation first.'); return; } commit(`Updated “${v.name}”`, ()=>{ S.views.find(x=>x.id===v.id).keys=keys; }, {touch:false}); }},
+    {label:'Update to what\u2019s shown now', run:()=>{ const keys=shownKeys(); if(!keys.length){ toast('Show at least one chat first.'); return; } commit(`Updated “${v.name}”`, ()=>{ S.views.find(x=>x.id===v.id).keys=keys; }, {touch:false}); }},
     {sep:true},
     {label:'Delete group', danger:true, run:()=>commit(`Deleted group “${v.name}”`, ()=>{ S.views=S.views.filter(x=>x.id!==v.id); }, {touch:false})}
   ]);
@@ -3286,10 +3302,10 @@ function renameView(id, name){
 function setPickingRows(on){
   pickingRows=on;
   const btn=document.querySelector('#cvTools [data-pick="toggle"]'), hint=document.querySelector('#cvTools .vishint');
-  if(btn){ btn.setAttribute('aria-pressed', on); btn.textContent = on ? 'Done' : 'Select…'; btn.title = on ? 'Stop selecting' : 'Click conversations in the list to show or hide them'; btn.blur(); }
+  if(btn){ btn.setAttribute('aria-pressed', on); btn.textContent = on ? 'Done' : 'Select…'; btn.title = on ? 'Stop selecting' : 'Click chats in the list to show or hide them'; btn.blur(); }
   if(hint){
     const h0=hint.getBoundingClientRect().height;
-    hint.textContent = on ? 'Click conversations to show or hide them. Press Done when you\u2019re finished.' : VIS_HINT[visMode()];
+    hint.textContent = on ? 'Click chats to show or hide them. Press Done when you\u2019re finished.' : VIS_HINT[visMode()];
     const h1=hint.getBoundingClientRect().height;
     if(!Motion.reduced()){ hint.animate([{opacity:.25},{opacity:1}], {duration:180, easing:'ease-out'}); if(Math.abs(h1-h0)>1) hint.animate([{height:h0+'px', overflow:'hidden'},{height:h1+'px', overflow:'hidden'}], {duration:200, easing:'cubic-bezier(.2,.75,.2,1)'}); }
   }
@@ -3341,13 +3357,13 @@ function finishChoosing(apply){
   if(choosing==null) return;
   const before=choosing; choosing=null;
   if(!apply){ S=JSON.parse(before); DB.spaces[DB.current].tree=S; if(sel!=null && !S.nodes[sel]) sel=defaultSel(); save(); morphTools(()=>Motion.run(treeEl, ()=>render(true), [])); return; }
-  if(JSON.stringify(S)!==before){ pushUndo({kind:'tree', sid:DB.current, s:before}); toast('Updated which conversations are hidden', true); }
+  if(JSON.stringify(S)!==before){ pushUndo({kind:'tree', sid:DB.current, s:before}); toast('Updated which chats are hidden', true); }
   save(); morphTools(()=>Motion.run(treeEl, ()=>render(true), []));
 }
 function chooseAction(a){
   const roots=orderedRoots(), q=convFilterEl.value.trim().toLowerCase(), cur=lastConvKey();
   if(a==='start'){ startChoosing(); return; }
-  if(a==='current' && cur==null){ toast('Select a prompt in a conversation first'); return; }
+  if(a==='current' && cur==null){ toast('Select a prompt in a chat first'); return; }
   if(a==='done'){ finishChoosing(true); return; }
   if(a==='cancel'){ finishChoosing(false); return; }
   chooseApply(()=>{
@@ -3363,20 +3379,20 @@ function chooseAction(a){
 }
 function setHidden(keys, hidden, then){
   const names=keys.map(k=>{ const r=vRoots().find(x=>convKey(x)===k); return r ? convTitle(r) : ''; });
-  const msg = keys.length===1 ? `${hidden?'Hid':'Showing'} “${clip(names[0],40)}”` : `${hidden?'Hid':'Showing'} ${keys.length} conversations`;
+  const msg = keys.length===1 ? `${hidden?'Hid':'Showing'} “${clip(names[0],40)}”` : `${hidden?'Hid':'Showing'} ${keys.length} chats`;
   commit(msg, ()=>{ for(const k of keys) S.convs[k]=Object.assign(S.convs[k]||{}, {hidden}); for(const k of keys) if(!hidden) delete S.convs[k].hidden; }, {touch:false, hidden:true});
   if(then) then();
 }
 function showOnly(keys){
   const set=new Set(keys), roots=orderedRoots();
-  if(roots.every(r=>isHidden(r)!==set.has(convKey(r)))){ toast(keys.length===1 ? 'The other conversations are already hidden' : 'Already showing just those'); return; }
-  commit(keys.length===1 ? 'Hid all other conversations' : `Hid all but ${keys.length} conversations`, ()=>{
+  if(roots.every(r=>isHidden(r)!==set.has(convKey(r)))){ toast(keys.length===1 ? 'The other chats are already hidden' : 'Already showing just those'); return; }
+  commit(keys.length===1 ? 'Hid all other chats' : `Hid all but ${keys.length} chats`, ()=>{
     for(const r of roots){ const k=convKey(r); S.convs[k]=Object.assign(S.convs[k]||{}, {hidden:!set.has(k)}); if(set.has(k)) delete S.convs[k].hidden; }
   }, {touch:false, hidden:true});
 }
 function showAll(){ if(visMode()==='focus'){ setVisMode('select'); return; }
-  const keys=orderedRoots().filter(isHidden).map(convKey); if(!keys.length){ toast('All conversations are already shown'); return; }
-  commit('Showing all conversations', ()=>{ for(const k of keys) delete S.convs[k].hidden; }, {touch:false});
+  const keys=orderedRoots().filter(isHidden).map(convKey); if(!keys.length){ toast('All chats are already shown'); return; }
+  commit('Showing all chats', ()=>{ for(const k of keys) delete S.convs[k].hidden; }, {touch:false});
 }
 function startNewConversation(){
   closeDrawers(); pick=null; composeFor='root';
@@ -3388,7 +3404,7 @@ function renameConv(rootId, name){
   const r=S.nodes[rootId]; if(!r){ Motion.run(convListEl, renderConvs); return; }
   const k=convKey(r); name=(name||'').trim().slice(0,120);
   if(!name || name===convTitle(r)){ Motion.run(convListEl, renderConvs); return; }
-  commit(`Renamed conversation to ${clip(name,40)}`, ()=>{ S.convs[k]=Object.assign(S.convs[k]||{}, {title:name}); });
+  commit(`Renamed chat to ${clip(name,40)}`, ()=>{ S.convs[k]=Object.assign(S.convs[k]||{}, {title:name}); });
 }
 function deleteConv(rootId){
   const title=convTitle(S.nodes[rootId]);
@@ -3453,12 +3469,12 @@ function spaceMenu(anchor, sid){
   const others=spaceIds().filter(x=>x!==sid);
   openMenu(anchor, [
     {label:'Rename', run:()=>{ renamingSpace=sid; if(narrow()) openDrawer('spaces'); else if(opts.collapsed.spaces){ opts.collapsed.spaces=false; applyLayout(); save(); } renderSpaces(); }},
-    {label:'Space files…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openSpaceFiles(); }},
+    {label:'Project files…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openSpaceFiles(); }},
     {label:'Import / export JSON…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openIo(); }},
     {heading:'Combine into'},
-    ...(others.length ? others.map(o=>({label:DB.spaces[o].name, run:()=>combineSpaces(sid, o)})) : [{label:'No other spaces yet', disabled:true}]),
+    ...(others.length ? others.map(o=>({label:DB.spaces[o].name, run:()=>combineSpaces(sid, o)})) : [{label:'No other projects yet', disabled:true}]),
     {sep:true},
-    {label:'Delete space', danger:true, disabled:!others.length, run:()=>deleteSpace(sid)}
+    {label:'Delete project', danger:true, disabled:!others.length, run:()=>deleteSpace(sid)}
   ]);
 }
 function convMenu(anchor, rootId, full){
@@ -3475,13 +3491,13 @@ function convMenu(anchor, rootId, full){
     {label:AI+'Distill into a brief…', disabled: sampleState!=='ready', run:()=>openDistill(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
     {label:'Move along with others…', disabled: orderedRoots().length<2, run:()=>{ selecting=true; checked.clear(); checked.add(k); if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } morphTools(renderConvs); }},
     {sep:true},
-    {heading: linked>0 ? `Move, with ${linked} linked by a merge` : 'Move to space'},
+    {heading: linked>0 ? `Move, with ${linked} linked by a merge` : 'Move to project'},
     ...others.map(o=>({label:DB.spaces[o].name, run:()=>moveConversation(rootId, o)})),
-    {label:'New space from this', run:()=>moveConversation(rootId, 'new')},
+    {label:'New project from this', run:()=>moveConversation(rootId, 'new')},
     {heading:'Clone into'},
     ...others.map(o=>({label:DB.spaces[o].name, run:()=>duplicateConversation(rootId, o)})),
-    {label:'A new space', run:()=>duplicateConversation(rootId, 'new')},
-    {sep:true}, {label:'Delete conversation', danger:true, run:()=>deleteConv(rootId)}
+    {label:'A new project', run:()=>duplicateConversation(rootId, 'new')},
+    {sep:true}, {label:'Delete chat', danger:true, run:()=>deleteConv(rootId)}
   ]);
 }
 
@@ -3491,7 +3507,7 @@ const narrow = () => window.matchMedia('(max-width:1099px)').matches;
 /* docked panels collapse on wide screens; on narrow screens they are drawers */
 function applySimple(){
   shellEl.classList.toggle('simple', !!opts.simple);
-  document.getElementById('simpleBtn').setAttribute('aria-checked', !!opts.simple);
+  for(const b of document.querySelectorAll('[data-viewsw]')) b.setAttribute('aria-pressed', (b.dataset.viewsw==='chat')===!!opts.simple);
 }
 function applyLayout(){
   shellEl.classList.toggle('hide-spaces', !!opts.collapsed.spaces);
@@ -3503,11 +3519,13 @@ const closeSide = closeDrawers;
 function showPanel(which){ if(narrow()){ openDrawer(which); return; } opts.collapsed[which]=false; applyLayout(); save(); }
 function hidePanel(which){ if(narrow()){ closeDrawers(); return; } opts.collapsed[which]=true; applyLayout(); save(); }
 document.getElementById('spacesBtn').onclick=()=>showPanel('spaces');
-document.getElementById('simpleBtn').onclick=()=>{
-  opts.simple=!opts.simple; simpleTip=null; pick=null; save();
+function setView(chat){
+  if(!!opts.simple===chat) return;
+  opts.simple=chat; simpleTip=null; pick=null; save();
   Motion.run(treeEl, ()=>{ applySimple(); render(true); }, [sel]);
   if(opts.simple) scrollThreadEnd();
-};
+}
+document.getElementById('viewSw').addEventListener('click', e=>{ const b=e.target.closest('[data-viewsw]'); if(b) setView(b.dataset.viewsw==='chat'); });
 document.getElementById('convsBtn').onclick=()=>showPanel('convs');
 for(const b of document.querySelectorAll('[data-panelclose]')) b.onclick=()=>hidePanel(b.dataset.panelclose);
 scrimEl.onclick=closeDrawers;
@@ -3539,7 +3557,7 @@ document.getElementById('cvTools').addEventListener('click', e=>{
   }
   if(pk){
     const a=pk.dataset.pick, q=convFilterEl.value.trim().toLowerCase(), roots=orderedRoots();
-    const label={all:'Showing all conversations', invert:'Inverted which conversations are shown', none:'Hid all conversations', matches:'Showing only the matching conversations'}[a];
+    const label={all:'Showing all chats', invert:'Inverted which chats are shown', none:'Hid all chats', matches:'Showing only the matching chats'}[a];
     const before=JSON.stringify([S.convs, S.vis||null]), leavingFocus=visMode()==='focus';
     /* these work from either mode: in Focus they leave focus and apply in the same step */
     const go=()=>commit(label, ()=>{ if(leavingFocus) S.vis='select'; for(const r of roots){ const k=convKey(r); setOff(k, a==='all' ? false : a==='invert' ? !isHidden(r) : a==='none' ? true : !convTitle(r).toLowerCase().includes(q)); } }, {touch:false, hidden:true});
@@ -3557,7 +3575,7 @@ document.getElementById('cvTools').addEventListener('click', e=>{
   const b=e.target.closest('[data-bulk]'); if(!b) return;
   const a=b.dataset.bulk, keys=[...checked];
   if(a==='select'){ selecting=true; checked.clear(); morphTools(renderConvs); return; }
-  if(a==='onlycur'){ const k=lastConvKey(); if(k==null){ toast('Select a prompt in a conversation first'); return; } showOnly([k]); return; }
+  if(a==='onlycur'){ const k=lastConvKey(); if(k==null){ toast('Select a prompt in a chat first'); return; } showOnly([k]); return; }
   if(a==='done'){ selecting=false; checked.clear(); morphTools(renderConvs); return; }
   if(a==='all'){ for(const r of orderedRoots()) checked.add(convKey(r)); renderConvs(); return; }
   if(a==='none'){ checked.clear(); renderConvs(); return; }
@@ -3567,7 +3585,7 @@ document.getElementById('cvTools').addEventListener('click', e=>{
   if(a==='show'){ setHidden(keys, false); return; }
   if(a==='move'){
     const others=spaceIds().filter(x=>x!==DB.current), roots=keys.map(rootForKey).filter(x=>x!=null);
-    openMenu(b, [{heading:`Move ${keys.length} to space`}, ...others.map(o=>({label:DB.spaces[o].name, run:()=>{ selecting=false; checked.clear(); moveConversations(roots, o); }})), {label:'New space from these', run:()=>{ selecting=false; checked.clear(); moveConversations(roots, 'new'); }}]);
+    openMenu(b, [{heading:`Move ${keys.length} to project`}, ...others.map(o=>({label:DB.spaces[o].name, run:()=>{ selecting=false; checked.clear(); moveConversations(roots, o); }})), {label:'New project from these', run:()=>{ selecting=false; checked.clear(); moveConversations(roots, 'new'); }}]);
   }
 });
 document.querySelector('[data-gospaces]').onclick=()=>openDrawer('spaces');
@@ -3586,7 +3604,7 @@ convListEl.addEventListener('keydown', e=>{
 });
 convListEl.addEventListener('focusout', e=>{ const inp=e.target.closest('[data-cvname]'); if(inp && renamingConv===+inp.dataset.cvname) renameConv(rootForKey(inp.dataset.cvname), inp.value); });
 document.getElementById('titleMenuBtn').onclick=e=>spaceMenu(e.currentTarget, DB.current);
-document.getElementById('exampleBtn').onclick=()=>{ closeSide(); storeCommit('Added the example space', ()=>{ DB.current=addSpace(uniqueSpaceName('Example: rate limiter'), clone(EXAMPLE)); }); };
+document.getElementById('exampleBtn').onclick=()=>{ closeSide(); storeCommit('Added the example project', ()=>{ DB.current=addSpace(uniqueSpaceName('Example: rate limiter'), clone(EXAMPLE)); }); };
 const spaceListEl=document.getElementById('spaceList');
 spaceListEl.addEventListener('click', e=>{
   const m=e.target.closest('[data-spmenu]'); if(m){ spaceMenu(m, m.dataset.spmenu); return; }
@@ -3677,6 +3695,7 @@ async function copyText(text, quiet){
 
 /* events */
 treeEl.addEventListener('click', e=>{
+  const pm=e.target.closest('[data-projmenu]'); if(pm){ spaceMenu(pm, DB.current); return; }
   const pe=e.target.closest('[data-pedit]'); if(pe){ finishPromptEdit(pe.dataset.pedit); return; }
   if(e.target.closest('.pedit')) return; /* typing in the prompt editor doesn't select anything */
   const pb=e.target.closest('[data-promptedit]'); if(pb){ openPromptEdit(+pb.dataset.promptedit); return; }
@@ -3816,7 +3835,7 @@ async function addFiles(list, target){
   if(!list.length) return;
   if(target==='space'){
     const metas=await readFiles(list, {textOnly:true}); if(!metas.length) return;
-    commit(`Added ${metas.length===1?metas[0].name:metas.length+' files'} to this space`, ()=>{ S.files=[...(S.files||[]), ...metas]; }, {touch:false});
+    commit(`Added ${metas.length===1?metas[0].name:metas.length+' files'} to this project`, ()=>{ S.files=[...(S.files||[]), ...metas]; }, {touch:false});
     return;
   }
   const metas=await readFiles(list); if(!metas.length) return;
@@ -3843,7 +3862,7 @@ for(const [el, target] of [[treeEl,'prompt'], [document.getElementById('filesCar
 }
 document.getElementById('filesCard').addEventListener('click', e=>{
   if(e.target.closest('[data-attachspace]')){ openPicker('space'); return; }
-  const r=e.target.closest('[data-rmspacefile]'); if(r){ const i=+r.dataset.rmspacefile, m=S.files[i]; commit(`Removed ${m.name} from this space`, ()=>{ S.files.splice(i,1); }, {touch:false}); }
+  const r=e.target.closest('[data-rmspacefile]'); if(r){ const i=+r.dataset.rmspacefile, m=S.files[i]; commit(`Removed ${m.name} from this project`, ()=>{ S.files.splice(i,1); }, {touch:false}); }
 });
 document.getElementById('toastRoot').addEventListener('click', e=>{
   if(e.target.id==='toastUndo') undo();
@@ -3890,13 +3909,13 @@ function openPanel(el){ panelReturn=document.activeElement; closeMenu && menuEl 
 function closePanel(el){ el.hidden=true; document.body.style.overflow=''; if(panelReturn && panelReturn.focus && document.contains(panelReturn)) panelReturn.focus({preventScroll:true}); }
 function openSpaceFiles(){ renderSpaceFiles(); openPanel(sfEl()); }
 function openIo(text){ const t=document.getElementById('ioText'); t.value = text ?? JSON.stringify(S,null,2); openPanel(ioEl()); t.focus({preventScroll:true}); if(text!=null) t.select(); }
-for(const el of [sfEl(), ioEl()]) el.addEventListener('click', e=>{ if(e.target===el || e.target.closest('[data-panelclose]')) closePanel(el); });
+for(const el of [sfEl(), ioEl()]) el.addEventListener('click', e=>{ if(e.target===el || e.target.closest('[data-modalclose]')) closePanel(el); });
 document.getElementById('copyJson').onclick=()=>copyText(JSON.stringify(S,null,2));
 document.getElementById('loadJson').onclick=()=>{
   let d; try{ d=JSON.parse(document.getElementById('ioText').value); }catch(e){ toast('That isn’t valid JSON. Paste a tree exported from this page.'); return; }
   if(!valid(d)){ toast('JSON needs a nextId number and nodes with id, parents and text.'); return; }
   withTree(d, migrate);
-  if(storeCommit('Imported the pasted JSON as a new space', ()=>{ DB.current=addSpace(uniqueSpaceName('Imported space'), d); })) closePanel(ioEl());
+  if(storeCommit('Imported the pasted JSON as a new project', ()=>{ DB.current=addSpace(uniqueSpaceName('Imported project'), d); })) closePanel(ioEl());
 };
 document.addEventListener('keydown', e=>{
   if((e.metaKey||e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='k'){ e.preventDefault(); if(palEl().hidden) openPalette(); else closePalette(); return; }
@@ -4029,7 +4048,7 @@ if(darkMQ.addEventListener) darkMQ.addEventListener('change', ()=>{ if(set('them
 
 const setEl=document.getElementById('settings'), setBodyEl=document.getElementById('setBody'), setTabsEl=document.getElementById('setTabs');
 const SET_TABS=[['look','Personalization'],['system','System'],['prompts','Prompts'],['ops','Operations'],['bar','Quick access'],['keys','Keyboard']];
-const PROMPT_GROUPS=[['every','Sent with every request',''], ['ops','Operations','Used by Merge, Reroot and Squash.'], ['tools',AI+'Tools','What Claude is asked when you use a '+AI+'tool.'], ['naming',AI+'Naming','Used when Claude names branches, conversations and spaces (turn these on under System).']];
+const PROMPT_GROUPS=[['every','Sent with every request',''], ['ops','Operations','Used by Merge, Reroot and Squash.'], ['tools',AI+'Tools','What Claude is asked when you use a '+AI+'tool.'], ['naming',AI+'Naming','Used when Claude names branches, chats and projects (turn these on under System).']];
 let setReturn=null;
 const segs=(key, choices, label)=>`<div class="segs" role="group" aria-label="${esc(label)}">${choices.map(([v,l])=>`<button class="seg" data-set="${key}" data-val="${v}" aria-pressed="${String(set(key))===String(v)}">${esc(l)}</button>`).join('')}</div>`;
 const setRow=(lab, sub, ctl)=>`<div class="setrow"><div class="lab">${lab}${sub?`<small>${sub}</small>`:''}</div>${ctl}</div>`;
@@ -4079,12 +4098,12 @@ function renderSettings(){
       ${setRow('Font','System uses your device’s own font.',segs('font',Object.entries(FONTS).map(([k,v])=>[k,v[0]]),'Font'))}
       ${setRow('Density','Compact fits more prompts on screen.',segs('density',[['comfortable','Comfortable'],['compact','Compact']],'Density'))}
       ${setRow('Motion','Reduced turns off animations.',segs('motion',[['system','System'],['reduced','Reduced']],'Motion'))}
-      ${setRow('Branch map in the panel','A small graph of the conversation\u2019s branches under the conversation list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
+      ${setRow('Branch map in the panel','A small graph of the chat\u2019s branches under the chat list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
       <p class="note">${AI}marks tools where Claude does the work, such as Distill or Fan out. Each use sends a request.</p>
       ${setRow('Default model','Also in the box under each prompt.',`<select data-setselect="model" aria-label="Default model">${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select>`)}
-      ${setRow('Show replies','Simple view always shows every reply in the conversation.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
+      ${setRow('Show replies','Chat view always shows every reply in the chat.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['short','Shorten'],['full','Full']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, merge notes, and what every '+AI+'tool asks Claude.','<button class="btn" data-setprompts>Edit prompts</button>')}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
@@ -4095,11 +4114,11 @@ function renderSettings(){
     h+=`<section class="setsec"><h3>${AI}Naming</h3>${ready?'':'<p class="note">Naming by Claude needs replies to be working: an API key in .env, or Claude Code signed in. Until then the plain names are used.</p>'}
       ${setRow('Branches', set('nameBranches')?'Claude reads a new branch\u2019s first prompt and names it, like <code>token-bucket</code>. One quick request each.':'New branches are numbered: branch-1, branch-2…', segs('nameBranches',[['true','Claude names them'],['false','Numbered']],'Branch names'))}
       ${set('nameBranches') && ready && nb ? setRow('', `${nb} numbered branch${nb===1?'':'es'} in this space.`, `<button class="btn" data-namenow>Name ${nb===1?'it':'them'} now</button>`) : ''}
-      ${setRow('Conversations', set('nameConvs')?'After the first reply, Claude writes a short title.':'Titled with the first prompt. Rename any time.', segs('nameConvs',[['true','Claude titles them'],['false','First prompt']],'Conversation titles'))}
-      ${setRow('Spaces', set('nameSpaces')?'A new space is named after its first conversation.':'New spaces are called New space. Rename any time.', segs('nameSpaces',[['true','Claude names them'],['false','New space']],'Space names'))}</section>`;
+      ${setRow('Chats', set('nameConvs')?'After the first reply, Claude writes a short title.':'Titled with the first prompt. Rename any time.', segs('nameConvs',[['true','Claude titles them'],['false','First prompt']],'Chat titles'))}
+      ${setRow('Projects', set('nameSpaces')?'A new project is named after its first chat.':'New projects are called New project. Rename any time.', segs('nameSpaces',[['true','Claude names them'],['false','New project']],'Project names'))}</section>`;
     const st=spaceIds().reduce((a,id)=>{ const x=spaceStats(DB.spaces[id].tree); a.c+=x.convs; a.p+=x.prompts; return a; },{c:0,p:0});
-    h+=`<section class="setsec"><h3>Storage</h3><p class="note">Everything is saved on this computer in data/treechats.db: ${spaceIds().length} space${spaceIds().length===1?'':'s'}, ${st.c} conversation${st.c===1?'':'s'}, ${st.p} prompt${st.p===1?'':'s'}. Use Import / export to move it elsewhere.</p>
-      ${setRow('Reset settings','Puts Personalization and System back to their defaults. Your conversations and prompts aren’t touched.','<button class="btn danger" data-setreset>Reset settings</button>')}</section>`;
+    h+=`<section class="setsec"><h3>Storage</h3><p class="note">Everything is saved on this computer in data/treechats.db: ${spaceIds().length} project${spaceIds().length===1?'':'s'}, ${st.c} chat${st.c===1?'':'s'}, ${st.p} prompt${st.p===1?'':'s'}. Use Import / export to move it elsewhere.</p>
+      ${setRow('Reset settings','Puts Personalization and System back to their defaults. Your chats and prompts aren’t touched.','<button class="btn danger" data-setreset>Reset settings</button>')}</section>`;
   } else if(tab==='prompts'){
     const custom=Object.keys(PROMPTS).filter(k=>promptText(k)!==PROMPTS[k].def).length;
     h+=`<section class="setsec"><p class="note">Every piece of text Treechats sends to Claude on your behalf. Words in {braces} are filled in when it\u2019s sent; if you remove one, that material is added at the end instead. Edits apply from the next request.</p></section>`;
@@ -4119,7 +4138,7 @@ function renderSettings(){
       <div class="bar"><button class="btn" data-qreset ${Array.isArray(opts.quick)?'':'disabled'}>Reset to the default</button></div></section>`;
   } else {
     const k=(a,b)=>`<dt>${a}</dt><dd>${b}</dd>`, kb=x=>`<kbd>${x}</kbd>`;
-    h+=`<section class="setsec"><h3>Moving around</h3><dl class="keys">${k(kb('↑')+' '+kb('↓'),'Select the previous or next prompt')}${k(kb('←')+' '+kb('→'),'Switch between reply versions')}${k(kb(IS_MAC?'⌘K':'Ctrl+K'),'Open commands: run anything by name')}${k(kb('/'),'Search conversations')}${k(kb('Esc'),'Cancel, or deselect the prompt')}${k(kb(IS_MAC?'⌘Z':'Ctrl+Z')+' '+kb(IS_MAC?'⌘⇧Z':'Ctrl+Shift+Z'),'Undo and redo')}</dl></section>`;
+    h+=`<section class="setsec"><h3>Moving around</h3><dl class="keys">${k(kb('↑')+' '+kb('↓'),'Select the previous or next prompt')}${k(kb('←')+' '+kb('→'),'Switch between reply versions')}${k(kb(IS_MAC?'⌘K':'Ctrl+K'),'Open commands: run anything by name')}${k(kb('/'),'Search chats')}${k(kb('Esc'),'Cancel, or deselect the prompt')}${k(kb(IS_MAC?'⌘Z':'Ctrl+Z')+' '+kb(IS_MAC?'⌘⇧Z':'Ctrl+Shift+Z'),'Undo and redo')}</dl></section>`;
     h+=`<section class="setsec"><h3>Writing</h3><dl class="keys">${k(kb(sendKbd()),'Send')}${k(kb(set('sendKey')==='mod'?'↵':(IS_MAC?'⇧↵':'Shift ↵')),'New line')}${k(kb(IS_MAC?'⌘':'Ctrl')+' / '+kb(IS_MAC?'⇧':'Shift')+' + click','Also reply to another prompt')}</dl></section>`;
     h+=`<section class="setsec"><h3>Operations${opts.opKeys===false?' (off)':''}</h3><dl class="keys">${Object.values(OPS).map(o=>k(kb(kk(o.key)),o.label.replace('…',''))).join('')}</dl></section>`;
   }
@@ -4334,7 +4353,7 @@ function parseImport(txt){
     let d; try{ d=JSON.parse(t); }catch(e){ return {convs:[], error:'That looks like JSON but couldn’t be read. Check that the whole file was pasted.'}; }
     const arr=Array.isArray(d) ? d : [d], out=[];
     for(const c of arr){ if(c && c.mapping) out.push(fromChatGPT(c)); else if(c && Array.isArray(c.chat_messages)) out.push(fromClaude(c)); }
-    if(!out.length) return {convs:[], error:'No chats found in that JSON. Use conversations.json from a Claude or ChatGPT data export. To restore a Treechats space, use “Import pasted JSON as a new space” instead.'};
+    if(!out.length) return {convs:[], error:'No chats found in that JSON. Use conversations.json from a Claude or ChatGPT data export. To restore a Treechats project, use “Import pasted JSON as a new project” instead.'};
     return {convs:out.map(c=>Object.assign(c, buildTurns(c))).filter(c=>c.turns.length), error:null};
   }
   const c=fromText(t);
@@ -4389,7 +4408,7 @@ function openImport(){
   const t=document.getElementById('impText'); t.value=''; document.getElementById('impFileName').textContent='';
   impParsed={convs:[], error:null}; impChecked=new Set();
   const sp=document.getElementById('impSpace');
-  sp.innerHTML=spaceIds().map(id=>`<option value="${id}" ${id===DB.current?'selected':''}>${esc(DB.spaces[id].name)}</option>`).join('')+'<option value="new">A new space</option>';
+  sp.innerHTML=spaceIds().map(id=>`<option value="${id}" ${id===DB.current?'selected':''}>${esc(DB.spaces[id].name)}</option>`).join('')+'<option value="new">A new project</option>';
   renderImportPreview(); impEl().hidden=false; document.body.style.overflow='hidden'; t.focus({preventScroll:true});
 }
 function closeImport(){ impEl().hidden=true; document.body.style.overflow=''; if(impReturn && impReturn.focus && document.contains(impReturn)) impReturn.focus({preventScroll:true}); }
@@ -4553,7 +4572,7 @@ function goFromMap(id){
 const mapEl=()=>document.getElementById('mapView');
 let mapReturn=null;
 function openMapView(){
-  if(!mapRoot()){ toast('Start a conversation first. The map shows its branches.'); return; }
+  if(!mapRoot()){ toast('Start a chat first. The map shows its branches.'); return; }
   mapReturn=document.activeElement; closeMenu && menuEl && closeMenu();
   mapEl().hidden=false; document.body.style.overflow='hidden';
   renderMapView();
@@ -4601,7 +4620,7 @@ for(const name of ['render','renderTree','renderConvs','renderCtx','renderBranch
    Small requests, one at a time, only while no reply is being written. Each checks that the name it would
    replace is still the automatic one, so a name you typed in the meantime is never overwritten. */
 const nameJobs=[], titling=new Set(); let naming=false;
-const AUTO_BRANCH=/^branch-\d+$/, AUTO_SPACE=/^(New space|Imported chats)( \d+)?$/;
+const AUTO_BRANCH=/^branch-\d+$/, AUTO_SPACE=/^(New space|New project|Imported space|Imported project|Imported chats)( \d+)?$/;
 const seenRefs=new Set();
 function noteExistingRefs(){ for(const rid of Object.keys(S.refs||{})) seenRefs.add(DB.current+':'+rid); }
 const numberedBranches = () => Object.keys(S.refs).filter(rid=>AUTO_BRANCH.test(S.refs[rid].name) && S.nodes[S.refs[rid].tip] && S.nodes[S.refs[rid].tip].kind!=='merge');
