@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 4v16M6 9c0 4 12 2 12 7' fill='none' stroke='%232350D8' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='6' cy='4' r='2.4' fill='%232350D8'/%3E%3Ccircle cx='6' cy='20' r='2.4' fill='%232350D8'/%3E%3Ccircle cx='18' cy='17' r='2.4' fill='%230E8A6A'/%3E%3C/svg%3E">
 <!-- connects the page to the local server (saving and Claude); must load before the app -->
 <script src="/local-shim.js"></script>
+<script type="module" src="./markdown.js"></script>
 <title>Treechats</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -368,8 +369,21 @@ ul.tree, ul.kids, ul.tree li{min-width:0;max-width:100%}
 .rbody p,.reply.empty p{margin:0}
 .reply.empty p{color:var(--muted);font-style:italic;margin-top:4px}
 .rbody ul{margin:0;padding-left:18px;display:grid;gap:2px}
+.rbody li > p{margin:0}
+.rbody li > ul,.rbody li > ol{margin-top:2px}
+.rbody h1,.rbody h2,.rbody h3,.rbody h4,.rbody h5,.rbody h6{margin:6px 0 0;font-family:var(--display);font-weight:700;line-height:1.3}
+.rbody h1{font-size:1.2rem}.rbody h2{font-size:1.08rem}.rbody h3{font-size:.98rem}.rbody h4,.rbody h5,.rbody h6{font-size:.92rem}
+.rbody > :first-child{margin-top:0}
+.tablewrap{overflow-x:auto;max-width:100%}
+.rbody table{border-collapse:collapse;font-size:.86em;min-width:50%}
+.rbody th,.rbody td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+.rbody th{background:var(--code-bg);font-weight:600}
+.rbody .math{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:2px 0}
+.rbody .katex{font-size:1.08em}
+.rbody .katex-display{margin:0}
+.rbody del{opacity:.7}
 .rbody code{font:.82em var(--mono);background:var(--code-bg);padding:1px 4px;border-radius:3px}
-.rbody pre{margin:0;background:var(--code-bg);border-radius:6px;padding:10px;overflow-x:auto;max-width:100%}
+.rbody pre{margin:0;background:var(--code-bg);border-radius:0 0 6px 6px;padding:10px 12px;overflow-x:auto;max-width:100%}
 .rbody pre code{background:none;padding:0;font-size:.78rem;line-height:1.5}
 .reply.clamp .rbody{max-height:7.2em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
 .btn.sm{font-size:.78rem;padding:4px 10px;justify-self:start;margin-top:8px}
@@ -412,9 +426,20 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .fname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dropzone{border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;font-size:.82rem;color:var(--muted)}
 .dropping,.composer.dropping{outline:2px dashed var(--accent);outline-offset:4px;border-radius:8px}
-.codewrap{position:relative}
-.codecopy{position:absolute;top:6px;right:6px;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:5px;font-size:.72rem;padding:1px 7px;cursor:pointer;opacity:.85}
-.codecopy:hover{color:var(--fg);opacity:1}
+.codewrap{border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.codehead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 6px 3px 12px;background:var(--code-bg);border-bottom:1px solid var(--line);font:.72rem var(--mono);color:var(--muted)}
+.codecopy{border:1px solid transparent;background:none;color:var(--muted);border-radius:5px;font:inherit;padding:2px 8px;cursor:pointer}
+.codecopy:hover,.codecopy:focus-visible{color:var(--fg);border-color:var(--line);background:var(--surface)}
+.codecopy.done{color:var(--accent)}
+/* syntax colors come from the theme's own colors, so they follow light, dark and custom themes */
+.hljs-comment,.hljs-quote{color:var(--muted);font-style:italic}
+.hljs-keyword,.hljs-selector-tag,.hljs-meta .hljs-keyword,.hljs-doctag,.hljs-section{color:var(--l0)}
+.hljs-string,.hljs-regexp,.hljs-addition,.hljs-template-string{color:var(--l1)}
+.hljs-number,.hljs-literal,.hljs-symbol,.hljs-bullet,.hljs-variable.constant_{color:var(--l2)}
+.hljs-title,.hljs-title.function_,.hljs-title.class_,.hljs-built_in,.hljs-type{color:var(--l3)}
+.hljs-attr,.hljs-attribute,.hljs-property,.hljs-params,.hljs-meta{color:var(--reply-rule)}
+.hljs-deletion{color:var(--merge)}
+.hljs-emphasis{font-style:italic}.hljs-strong{font-weight:700}
 .rbody .mdh{font-weight:700;font-family:var(--display);margin-top:4px}
 .rbody .mdh1{font-size:1.15rem}.rbody .mdh2{font-size:1.05rem}.rbody .mdh3,.rbody .mdh4{font-size:.95rem}
 .rbody ol{margin:0;padding-left:20px;display:grid;gap:2px}
@@ -1041,13 +1066,17 @@ function tidy(){
   }
 }
 
-/* tiny markdown: fenced code, inline code, bold, dash lists, paragraphs */
-const mdCache=new Map();
+/* Replies are rendered by markdown.js (Markdown with tables, math and highlighted code). It loads just after this
+   script; anything drawn before then uses the tiny renderer below and is redrawn once it arrives. */
+const mdCache=new Map(); let mdStandIn=false;
 function md(src){
+  const R=window.TreechatsMarkdown;
+  if(!R){ mdStandIn=true; return mdRaw(src); }
   const hit=mdCache.get(src); if(hit!=null) return hit;
-  const out=mdRaw(src); mdCache.set(src, out); if(mdCache.size>600) mdCache.delete(mdCache.keys().next().value);
+  const out=R.render(src); mdCache.set(src, out); if(mdCache.size>600) mdCache.delete(mdCache.keys().next().value);
   return out;
 }
+window.addEventListener('treechats-markdown', ()=>{ mdCache.clear(); if(mdStandIn){ mdStandIn=false; render(); if(cmpFor!=null) renderCompare(); } });
 function mdRaw(src){
   const inline=t=>esc(t)
     .replace(/`([^`]+)`/g,'<code>$1</code>')
@@ -1056,7 +1085,7 @@ function mdRaw(src){
     .replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g,'$1<i>$2</i>')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
   return src.split(/```[\w+-]*\n?/).map((seg,i)=>{
-    if(i%2) return `<div class="codewrap"><button class="codecopy" data-copycode>Copy</button><pre><code>${esc(seg.replace(/\n$/,''))}</code></pre></div>`;
+    if(i%2) return `<div class="codewrap"><div class="codehead"><span class="codelang">code</span><button class="codecopy" data-copycode type="button">Copy</button></div><pre><code>${esc(seg.replace(/\n$/,''))}</code></pre></div>`;
     return seg.trim().split(/\n{2,}/).filter(Boolean).map(block=>{
       const lines=block.split('\n');
       const h=lines[0].match(/^(#{1,4})\s+(.*)$/);
@@ -3162,8 +3191,15 @@ function toast(msg, withUndo, action){
   r.innerHTML=`<div class="toast"><span>${esc(msg)}</span>${action?`<button id="toastAct">${esc(action.label)}</button>`:''}${withUndo?'<button id="toastUndo">Undo</button>':''}</div>`;
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>r.innerHTML='', action?6000:3800);
 }
-async function copyText(text){
-  try{ await navigator.clipboard.writeText(text); toast('Copied to the clipboard'); }
+/* a code block's Copy button, wherever the block is (a reply, Compare) */
+document.addEventListener('click', async e=>{
+  const b=e.target.closest('[data-copycode]'); if(!b) return;
+  e.stopPropagation();
+  const code=b.closest('.codewrap').querySelector('pre code');
+  if(await copyText(code.textContent, true)){ b.textContent='Copied'; b.classList.add('done'); clearTimeout(b._t); b._t=setTimeout(()=>{ b.textContent='Copy'; b.classList.remove('done'); }, 1600); }
+}, true);
+async function copyText(text, quiet){
+  try{ await navigator.clipboard.writeText(text); if(!quiet) toast('Copied to the clipboard'); return true; }
   catch(e){
     const io=document.getElementById('io'), t=document.getElementById('ioText');
     if(io.open){ t.value=text; t.select(); } else { ioPending=text; io.open=true; }
@@ -3197,7 +3233,6 @@ treeEl.addEventListener('click', e=>{
   }
   if(e.target.closest('[data-attach]')){ openPicker('prompt'); return; }
   const ua=e.target.closest('[data-unattach]'); if(ua){ pendingFiles.splice(+ua.dataset.unattach,1); const t=document.getElementById('contText')||document.getElementById('composeText'), keep=t?t.value:''; renderTree(); const t2=document.getElementById('contText')||document.getElementById('composeText'); if(t2) t2.value=keep; return; }
-  const cc=e.target.closest('[data-copycode]'); if(cc){ copyText(cc.parentElement.querySelector('code').textContent); return; }
   const cr=e.target.closest('[data-copyreply]'); if(cr){ copyText(S.nodes[+cr.dataset.copyreply].reply||''); return; }
   const er=e.target.closest('[data-editresend]'); if(er){ resendFor=+er.dataset.editresend; animRender([sel]); const t=document.getElementById('resendText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length,t.value.length); } return; }
   const rs=e.target.closest('[data-resend]');
