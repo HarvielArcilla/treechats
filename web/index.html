@@ -2235,7 +2235,7 @@ function paletteCommands(q){
     add(g, S.fold[sel] ? 'Show the prompts below' : 'Hide the prompts below', ()=>toggleFold(sel));
     if(n.kind!=='merge') add(g, n.star ? 'Unstar' : 'Star', ()=>toggleStar(sel));
     add(g, 'Copy context as a prompt', ()=>copyContextPrompt(sel));
-    if(sampleState==='ready' && n.kind!=='merge') add(g, 'Distill the context into a brief', ()=>openDistill(sel));
+    if(sampleState==='ready' && n.kind!=='merge') add(g, AI+'Distill the context into a brief', ()=>openDistill(sel));
     if(n.reply) add(g, 'Edit Claude’s reply', ()=>openReplyEdit(sel));
     add(g, 'Copy this path as Markdown', ()=>copyText(pathMarkdown(sel)));
     add(g, 'Copy this path as messages JSON', ()=>copyText(JSON.stringify(turnsFor(sel,true),null,2)));
@@ -2375,7 +2375,7 @@ function variantsHTML(forId){
     <ol class="vrows">${v.rows.map((r,i)=>`<li class="vrow"><textarea data-vtext="${i}" rows="2" aria-label="Variant ${i+1}" placeholder="${i?'Another wording, or the same prompt for another model':'Your prompt'}">${esc(r.text)}</textarea>
       <div class="vside"><select data-vtier="${i}" aria-label="Model for variant ${i+1}">${TIERS.map(([t,l])=>`<option value="${t}" ${r.tier===t?'selected':''}>${l.replace(/ \(.*\)/,'')}</option>`).join('')}</select>${v.rows.length>1?`<button class="fx" data-vdel="${i}" aria-label="Remove variant ${i+1}">×</button>`:''}</div></li>`).join('')}</ol>
     ${v.suggesting?'<p class="thinking note">Claude is suggesting wordings…</p>':''}
-    <div class="bar"><button class="btn primary" data-vsend ${n?'':'disabled'}>Send ${n} variant${n===1?'':'s'}</button><button class="btn" data-vadd>+ Add variant</button>${sampleState==='ready'?`<button class="btn" data-vsuggest ${v.suggesting||!v.rows[0].text.trim()?'disabled':''} title="One quick request: Claude rewrites the first variant a few ways">Suggest wordings</button>`:''}<button class="btn" data-vcancel>Cancel</button></div>
+    <div class="bar"><button class="btn primary" data-vsend ${n?'':'disabled'}>Send ${n} variant${n===1?'':'s'}</button><button class="btn" data-vadd>+ Add variant</button>${sampleState==='ready'?`<button class="btn" data-vsuggest ${v.suggesting||!v.rows[0].text.trim()?'disabled':''} title="One quick request: Claude rewrites the first variant a few ways">${AI}Suggest wordings</button>`:''}<button class="btn" data-vcancel>Cancel</button></div>
     <p class="note">The first ${rid0?`continues <b>${esc(refName(rid0))}</b>`:'starts a branch'}; the others get their own. ${sampleState==='ready'&&n>1?'Claude answers each, and they open side by side in Compare.':''}</p></div>`;
 }
 function openVariants(id){
@@ -2478,7 +2478,11 @@ function opsHTML(id){
     `<button class="btn ${o.danger?'danger':''}" data-act="${k}" data-hint="${esc(k==='skip'&&S.nodes[id].skip?'Send this prompt to Claude again.':o.hint)}" ${available(k,id)?'':'disabled title="Already the start of a conversation"'}>${opLabel(k,id)}${opts.opKeys===false?'':` <kbd>${kk(o.key)}</kbd>`}</button>`).join('');
   return `<div class="ops" data-key="o${id}"><div class="bar">${btns}<button class="btn more" data-opsmore aria-haspopup="menu" title="Other operations, and choosing what sits in this bar">More ▾</button></div><p class="hint" id="hint">Hover an operation for a quick summary. Full descriptions are under Operations.</p>${renaming && S.head ? renameFormHTML() : composerHTML(id)}</div>`;
 }
-const opLabel=(k,id)=> k==='skip' && S.nodes[id] && S.nodes[id].skip ? 'Include' : OPS[k].label;
+/* ✦ marks tools where Claude does the work (each use sends a request), as opposed to ones that only move text.
+   Replies themselves aren't marked. */
+const AI='✦ ';
+const usesClaude = k => sampleState==='ready' && (k==='fan' || (k==='reroot' && opts.summary && opts.rerootBy==='claude') || (k==='squash' && opts.squashBy==='claude'));
+const opLabel=(k,id)=> k==='skip' && S.nodes[id] && S.nodes[id].skip ? 'Include' : (usesClaude(k) ? AI : '')+OPS[k].label;
 function rowHTML(id, pathSet){
   const n=S.nodes[id], isM=n.kind==='merge';
   const cls=['row'];
@@ -2533,7 +2537,7 @@ function replyFoot(id){
   const vs=versions(id), i=vs.indexOf(id);
   const sw = vs.length>1 ? `<span class="ver" aria-label="Reply version"><button data-ver="${id}" data-dir="-1" ${i===0?'disabled':''} aria-label="Previous version">‹</button><span>${i+1} / ${vs.length}</span><button data-ver="${id}" data-dir="1" ${i===vs.length-1?'disabled':''} aria-label="Next version">›</button></span>` : '';
   const nOpt = id===sel && S.nodes[id].reply && !(fan && fan.id===id) ? listOptions(S.nodes[id].reply).options.length : 0;
-  const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">⑂ Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
+  const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
   const ds = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(distill && distill.id===id) ? `<button class="rmore" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">✦ Distill</button>` : '';
   const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button><button class="rmore" data-editresend="${id}">Edit &amp; resend</button>` : '')+fo+ds;
   const st = S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
@@ -2850,7 +2854,7 @@ function renderCtx(){
     <p class="note">What the next request would send, oldest first. Each prompt is followed by Claude’s reply to it.${nSkip?` ${nSkip} left-out prompt${nSkip===1?' is':'s are'} shown faded and not sent.`:''}</p>
     <ol class="ctx">${items}</ol>
     ${merged?'<p class="note">At a merge, the branch merged into comes first. Then the merge note, then the turns unique to the merged branch.</p>':''}
-    <div class="bar"><button class="btn" id="copyPrompt" title="One block to paste into Claude anywhere, then ask your question">Copy as a prompt</button><button class="btn" id="distillCtx" ${sampleState==='ready'?'':'disabled'} title="Claude writes a short brief of this context that you can reuse">Distill…</button><button class="btn" id="copyMd">Copy as Markdown</button><button class="btn" id="copyCtx">Copy as messages JSON</button></div>`);
+    <div class="bar"><button class="btn" id="copyPrompt" title="One block to paste into Claude anywhere, then ask your question">Copy as a prompt</button><button class="btn" id="distillCtx" ${sampleState==='ready'?'':'disabled'} title="Claude writes a short brief of this context that you can reuse">${AI}Distill…</button><button class="btn" id="copyMd">Copy as Markdown</button><button class="btn" id="copyCtx">Copy as messages JSON</button></div>`);
   if(changed) Motion.fade(card);
 }
 function renderSpaceFiles(){
@@ -3230,7 +3234,7 @@ function convMenu(anchor, rootId, full){
     {label:'Clone', run:()=>duplicateConversation(rootId, DB.current)},
     {label:'Copy as Markdown', run:()=>copyText(treeMarkdown(rootId))},
     {label:'Copy context as a prompt', run:()=>copyContextPrompt(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
-    {label:'Distill into a brief…', disabled: sampleState!=='ready', run:()=>openDistill(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
+    {label:AI+'Distill into a brief…', disabled: sampleState!=='ready', run:()=>openDistill(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
     {label:'Move along with others…', disabled: orderedRoots().length<2, run:()=>{ selecting=true; checked.clear(); checked.add(k); if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } morphTools(renderConvs); }},
     {sep:true},
     {heading: linked>0 ? `Move, with ${linked} linked by a merge` : 'Move to space'},
@@ -3870,6 +3874,7 @@ function renderSettings(){
       ${setRow('Overview map','A small picture of the page under the conversation list, on wide screens.',segs('map',[['true','Show'],['false','Hide']],'Overview map'))}</section>`;
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
+      <p class="note">${AI}marks tools where Claude does the work, such as Distill or Fan out. Each use sends a request.</p>
       ${setRow('Default model','Also in the box under each prompt.',`<select data-setselect="model" aria-label="Default model">${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select>`)}
       ${setRow('Show replies','Simple view always shows every reply in the conversation.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['short','Shorten'],['full','Full']],'Reply length'))}
@@ -3879,7 +3884,7 @@ function renderSettings(){
       ${setRow('Send with', set('sendKey')==='mod'?'Enter adds a new line.':'Shift+Enter adds a new line.', segs('sendKey',[['enter','Enter'],['mod',IS_MAC?'⌘ Enter':'Ctrl+Enter']],'Send with'))}
       ${setRow('Operation shortcuts',`${mod}letter runs an operation on the selected prompt.`, segs('opKeys',[['true','On'],['false','Off']],'Operation shortcuts'))}</section>`;
     const nb=numberedBranches().length, ready=sampleState==='ready';
-    h+=`<section class="setsec"><h3>Naming</h3>${ready?'':'<p class="note">Naming by Claude needs replies to be working: an API key in .env, or Claude Code signed in. Until then the plain names are used.</p>'}
+    h+=`<section class="setsec"><h3>${AI}Naming</h3>${ready?'':'<p class="note">Naming by Claude needs replies to be working: an API key in .env, or Claude Code signed in. Until then the plain names are used.</p>'}
       ${setRow('Branches', set('nameBranches')?'Claude reads a new branch\u2019s first prompt and names it, like <code>token-bucket</code>. One quick request each.':'New branches are numbered: branch-1, branch-2…', segs('nameBranches',[['true','Claude names them'],['false','Numbered']],'Branch names'))}
       ${set('nameBranches') && ready && nb ? setRow('', `${nb} numbered branch${nb===1?'':'es'} in this space.`, `<button class="btn" data-namenow>Name ${nb===1?'it':'them'} now</button>`) : ''}
       ${setRow('Conversations', set('nameConvs')?'After the first reply, Claude writes a short title.':'Titled with the first prompt. Rename any time.', segs('nameConvs',[['true','Claude titles them'],['false','First prompt']],'Conversation titles'))}
