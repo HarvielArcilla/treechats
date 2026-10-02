@@ -517,11 +517,19 @@ ol.ctx li.files .cid{color:var(--l1)}
 .pedit{display:grid;gap:8px;width:100%;cursor:auto}
 .pedit textarea{width:100%;font:inherit;resize:vertical;min-height:3.2em}
 .pedit .bar{display:flex;flex-wrap:wrap;gap:6px}
-.row .pact{border:0;background:none;color:var(--muted);font:.72rem var(--mono);cursor:pointer;padding:1px 4px;border-radius:4px;visibility:hidden}
-.row.sel .pact,.row:hover .pact,.row:focus-within .pact{visibility:visible}
-.row .pact:hover{color:var(--fg)}
-@media (hover:none){.row .pact{visibility:hidden}.row.sel .pact{visibility:visible}}
-.shell.simple ul.thread .row .tags > .pact{display:inline}
+/* message actions: a quiet row of words under the message */
+.act{border:0;background:none;color:var(--muted);font:.78rem var(--sans,inherit);cursor:pointer;padding:3px 7px;border-radius:6px;white-space:nowrap}
+.act:hover,.act:focus-visible{color:var(--fg);background:var(--surface);outline:none}
+.pacts{display:flex;flex-wrap:wrap;gap:2px;margin:-2px 0 6px 30px}
+.uacts,.ractrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:4px}
+.uacts{justify-content:flex-end}
+.ractrow{margin-left:-7px}
+.ractrow .edtag{margin-left:6px}
+.uacts .act,.ractrow .act{opacity:0;transition:opacity .12s}
+ul.thread .row:hover ~ .uacts .act,ul.thread .uacts:hover .act,ul.thread .uacts:focus-within .act,ul.thread .reply:hover .act,ul.thread .reply:focus-within .act,ul.thread > li.g:last-child .ractrow .act{opacity:1}
+@media (hover:none){.uacts .act,.ractrow .act{opacity:1}}
+.uacts .fork{margin-right:4px}
+.shell.simple ul.thread .rfoot{display:none}
 .shell.simple ul.thread .row.editing{width:min(85%,640px)}
 .shell.simple ul.thread .rfoot .ver{display:none}
 .mapbr{margin:0 0 12px;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
@@ -661,9 +669,6 @@ ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 .pnote{margin:-2px 0 6px 38px;padding:5px 10px;font-size:.82rem;background:color-mix(in srgb, var(--merge) 10%, var(--surface));border:1px solid color-mix(in srgb, var(--merge) 28%, var(--line));border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
 .pnote span{font:600 .66rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--merge);margin-right:8px}
 .flhint{font-weight:400;color:var(--muted);font-size:.76rem;margin-left:6px}
-.rtog.fold{visibility:hidden}
-.row:hover .rtog.fold,.row.sel .rtog.fold,.row:focus-within .rtog.fold{visibility:visible}
-@media (hover:none){.row .rtog.fold{visibility:hidden}.row.sel .rtog.fold{visibility:visible}}
 .foldnote{margin:0 0 6px 38px}
 .foldnote .linkbtn{font:.78rem var(--mono);color:var(--muted);border:1px dashed var(--line);border-radius:12px;padding:2px 10px;background:var(--surface);cursor:pointer}
 .foldnote .linkbtn:hover{color:var(--fg);border-color:var(--accent)}
@@ -802,7 +807,6 @@ ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 /* conversations off screen skip layout and painting until you scroll to them */
 section.conv{content-visibility:auto;contain-intrinsic-size:auto 900px}
 
-.rtog.fold.ph{visibility:hidden !important;pointer-events:none}
 .qlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .qrow{display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr) auto auto;gap:4px 12px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .qrow.on{background:var(--surface)}
@@ -2702,13 +2706,13 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const tags = (opts.simple && !pick ? forkHTML(id) : '')+(n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(id===sel&&editingNow&&!pick?'<span class="tag editing">editing</span>':'')+refs+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
   const shown=replyShown(id, pathSet);
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !S.fold[id];
   const nBelow = foldable ? [...desc(id)].filter(x=>S.nodes[x].kind!=='merge').length : 0;
-  const fold = foldable ? `<button class="rtog fold" data-fold="${id}" title="Collapse the ${nBelow} prompt${nBelow===1?'':'s'} below this one. Nothing is deleted.">▴ hide ${nBelow} below</button>` : (pick||isM ? '' : '<span class="rtog fold ph" aria-hidden="true">▴ hide 0 below</span>');
+  const fold = foldable ? `<button class="act" data-fold="${id}" title="Collapse the ${nBelow} prompt${nBelow===1?'':'s'} below this one. Nothing is deleted.">Hide ${nBelow} below</button>` : '';
   const star = isM || pick ? '' : `<button class="star ${n.star?'on':''}" data-star="${id}" aria-pressed="${!!n.star}" aria-label="${n.star?'Unstar':'Star'} #${id}" title="${n.star?'Starred. Click to unstar.':'Star this prompt'}">${n.star?'★':'☆'}</button>`;
-  const tog = n.reply && !liveGen(id) ? `<button class="rtog" data-rtog="${id}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} Claude\u2019s reply">${shown?'▾':'▸'} reply</button>` : '';
+  const tog = n.reply && !liveGen(id) ? `<button class="act" data-rtog="${id}" aria-expanded="${shown}">${shown?'Hide reply':'Show reply'}</button>` : '';
   /* the selected prompt is shown in full and formatted (tables, math, code) when it has more than plain text */
   const rich = !isM && (id===sel || opts.simple) && !pick && !(n.pending && !n.text) && RICH_RE.test(n.text||'');
   const txt = isM ? `<span class="txt">Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b></span>`
@@ -2718,7 +2722,13 @@ function rowHTML(id, pathSet){
   const txtE = editingHere ? `<div class="txt pedit" data-key="pe${id}"><textarea id="promptEditText" rows="${Math.min(14, Math.max(2, (n.text||'').split('\n').length+1))}" aria-label="Edit prompt #${id}">${esc(n.text||'')}</textarea>
     <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Claude answers the edited prompt. The original and its reply stay as the other version.">Send as new version <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-pedit="save" title="Change the prompt where it is. Its reply and everything below stay as they are.">Save in place</button>`}<button class="btn" data-pedit="cancel">Cancel</button></div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
-  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${!isM && !pick && !editingHere ? `<button class="pact" data-promptedit="${id}" title="Edit this prompt">✎ edit</button>` : ''}${tog}${fold}${star}</span></div>`;
+  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
+  /* actions sit in a row under the prompt: in Simple view under every message (shown on hover, like a chat app),
+     in the full view under the selected prompt */
+  if(!pick && !isM && !editingHere){
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${forkHTML(id)}<button class="act" data-promptedit="${id}">Edit</button><button class="act" data-copyprompt="${id}">Copy</button></div>`;
+    else if(id===sel) h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${tog}${fold}</div>`;
+  }
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
@@ -2819,8 +2829,14 @@ function replyHTML(id){
   const more = id!==sel&&long ? `<button class="rmore" data-rfull="${id}">${full?'Shorten':'Show all'}</button>` : '';
   if(resendFor===id) return resendHTML(id);
   if(replyEditFor===id) return replyEditHTML(id);
+  if(opts.simple){
+    const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
+    const ready = sampleState==='ready' && !liveGen(id);
+    const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}` : '';
+    return `<div class="reply" data-key="r${id}"><div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${ed}</div></div>`;
+  }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}${opts.simple && sampleState==='ready' && !liveGen(id) ? `<button class="rmore" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>` : ''}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -3695,6 +3711,7 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-attach]')){ openPicker('prompt'); return; }
   const ua=e.target.closest('[data-unattach]'); if(ua){ pendingFiles.splice(+ua.dataset.unattach,1); const t=document.getElementById('contText')||document.getElementById('composeText'), keep=t?t.value:''; renderTree(); const t2=document.getElementById('contText')||document.getElementById('composeText'); if(t2) t2.value=keep; return; }
   const cr=e.target.closest('[data-copyreply]'); if(cr){ copyText(S.nodes[+cr.dataset.copyreply].reply||''); return; }
+  const cp=e.target.closest('[data-copyprompt]'); if(cp){ copyText(S.nodes[+cp.dataset.copyprompt].text||''); return; }
   const ere=e.target.closest('[data-editreply]'); if(ere){ openReplyEdit(+ere.dataset.editreply); return; }
   const rea=e.target.closest('[data-replyedit]'); if(rea){ if(rea.dataset.replyedit==='save') saveReplyEdit(); else { const id=replyEditFor; replyEditFor=null; animRender([id]); } return; }
   const er=e.target.closest('[data-editresend]'); if(er){ resendFor=+er.dataset.editresend; animRender([sel]); const t=document.getElementById('resendText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length,t.value.length); } return; }
