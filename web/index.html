@@ -280,6 +280,7 @@ ul.kids.ghosts{margin-left:14px}
 .row.summary .txt{font-style:italic;color:var(--summary)}
 .row.sel{background:var(--accent-soft);border-color:var(--accent)}
 .row.sel .txt{-webkit-line-clamp:6}
+.row .txt.ptext{display:grid;-webkit-line-clamp:none;overflow:visible}
 .row.dim{opacity:.35;cursor:not-allowed}
 .row.target{border-color:var(--accent);border-style:dashed}
 .row.target:hover{background:var(--accent-soft)}
@@ -349,7 +350,8 @@ ul.branches input:hover,ul.branches input:focus{border-color:var(--line);backgro
 ul.branches .btn{font-size:.75rem;padding:3px 8px}
 .coBtn{width:16px;height:16px;border-radius:50%;border:2px solid var(--accent);background:transparent;cursor:pointer;padding:0}
 .coBtn[aria-pressed="true"]{background:var(--accent)}
-.viewbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+.viewbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;font-size:.82rem;color:var(--muted)}
+.viewbar .vgroup{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .viewbar span{margin-right:4px}
 .seg{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:3px 11px;cursor:pointer;font-size:.8rem}
 .seg[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
@@ -448,7 +450,7 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .rbody a{color:var(--accent)}
 .reply.resend{display:grid;gap:8px;border-left-color:var(--accent)}
 .reply.resend .who{color:var(--accent)}
-.shell.simple aside,.shell.simple .viewbar,.shell.simple .ops > .bar,.shell.simple .ops > .hint,.shell.simple .alsohint,.shell.simple .rfoot .stale{display:none}
+.shell.simple aside,.shell.simple .ops > .bar,.shell.simple .ops > .hint,.shell.simple .alsohint,.shell.simple .rfoot .stale{display:none}
 .shell.simple .app{grid-template-columns:minmax(0,1fr) !important}
 .shell.simple .wrap{max-width:860px}
 .shell.simple .ops{border:0;background:none;padding:0;margin-left:20px}
@@ -1262,7 +1264,9 @@ function component(id){
   while(st.length){ const c=st.pop(); for(const x of [...S.nodes[c].parents, ...kids(c).map(k=>k.id)]) if(S.nodes[x] && !out.has(x)){ out.add(x); st.push(x); } }
   return out;
 }
-const convTitle = r => convMeta(convKey(r)).title || ((r.kind==='summary' ? 'Rerooted: ' : '') + clip(r.text || 'Untitled', 80));
+/* Markdown read as one plain line, for titles and the short preview on each prompt */
+const plainText = t => String(t||'').replace(/```[\s\S]*?(```|$)/g,' [code] ').replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm,' ').replace(/\s*\|\s*/g,' · ').replace(/^\s*#{1,6}\s+/gm,'').replace(/\*\*|__|`|\$\$?/g,'').replace(/(\s*·\s*)+/g,' · ').replace(/^[\s·]+|[\s·]+$/g,'').replace(/[ \t]+/g,' ').trim();
+const convTitle = r => convMeta(convKey(r)).title || ((r.kind==='summary' ? 'Rerooted: ' : '') + clip(plainText(r.text) || 'Untitled', 80));
 function moveConversation(rootId, to){
   const comp=component(rootId), title=convTitle(S.nodes[rootId]);
   let target=to;
@@ -2365,23 +2369,33 @@ function rowHTML(id, pathSet){
   const fold = foldable ? `<button class="rtog fold" data-fold="${id}" title="Fold away the prompts below this one">fold</button>` : (pick||isM ? '' : '<span class="rtog fold ph" aria-hidden="true">fold</span>');
   const star = isM || pick ? '' : `<button class="star ${n.star?'on':''}" data-star="${id}" aria-pressed="${!!n.star}" aria-label="${n.star?'Unstar':'Star'} #${id}" title="${n.star?'Starred. Click to unstar.':'Star this prompt'}">${n.star?'★':'☆'}</button>`;
   const tog = n.reply && !liveGen(id) ? `<button class="rtog" data-rtog="${id}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} Claude\u2019s reply">${shown?'▾':'▸'} reply</button>` : '';
-  const txt = isM ? `<span class="txt">Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b></span>` : `<span class="txt">${n.pending && !n.text ? '<em class="thinking">Claude is summarizing…</em>' : esc(n.text)}</span>`;
-  const txtF = n.files && n.files.length ? txt.replace('<span class="txt">','<span class="txt">'+fileChips(n.files)) : txt;
+  /* the selected prompt is shown in full and formatted (tables, math, code) when it has more than plain text */
+  const rich = !isM && id===sel && !pick && !(n.pending && !n.text) && RICH_RE.test(n.text||'');
+  const txt = isM ? `<span class="txt">Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b></span>`
+    : rich ? `<div class="txt rbody ptext">${md(n.text)}</div>`
+    : `<span class="txt">${n.pending && !n.text ? '<em class="thinking">Claude is summarizing…</em>' : esc(RICH_RE.test(n.text||'') ? plainText(n.text) : n.text)}</span>`;
+  const txtF = n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
   let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${tog}${fold}${star}</span></div>`;
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
   return h;
 }
+/* which replies are open; Simple view keeps its own choice, Context path unless you pick another, so it reads like a chat */
+const repliesMode = () => opts.simple ? (opts.repliesSimple || 'path') : opts.replies;
+function setRepliesMode(m){ if(opts.simple) opts.repliesSimple=m; else opts.replies=m; openReplies.clear(); save(); }
+/* long replies away from the selected prompt are shortened unless Length is set to Full; each reply's own Show all / Shorten flips just that one */
+const replyFull = id => id===sel || ((set('replyLen')==='full') !== fullReplies.has(id));
+const RICH_RE=/\n|[|$`*#_\\]|^\s*([-*+]|\d+[.)])\s/;
 function replyShown(id, pathSet){
   const n=S.nodes[id];
-  if(opts.simple && n.kind!=='merge' && n.reply && pathSet.has(id) && !openReplies.has(-id)) return true;
   if(n.kind==='merge') return false;
   if(liveGen(id)) return true;
   if(!n.reply) return id===sel;
   if(openReplies.has(id)) return true;
   if(openReplies.has(-id)) return false;
-  return id===sel || opts.replies==='all' || (opts.replies==='path' && pathSet.has(id));
+  const m=repliesMode();
+  return id===sel || m==='all' || (m==='path' && pathSet.has(id));
 }
 function replyFoot(id){
   const vs=versions(id), i=vs.indexOf(id);
@@ -2418,7 +2432,7 @@ function replyHTML(id){
     const btn = sampleState==='ready' && id===sel ? `<button class="btn primary sm" data-genreply="${id}">Get reply</button>` : '';
     return `<div class="reply empty" data-key="r${id}"><span class="who">Claude</span><p>${msg}</p>${note}${btn}${replyFoot(id)}</div>`;
   }
-  const full = id===sel || fullReplies.has(id);
+  const full = replyFull(id);
   const long = n.reply.length>320 || n.reply.includes('```');
   const more = id!==sel&&long ? `<button class="rmore" data-rfull="${id}">${full?'Shorten':'Show all'}</button>` : '';
   if(resendFor===id) return resendHTML(id);
@@ -2464,14 +2478,15 @@ function renderTree(){
   if(pick && pick.op==='also') h+=`<div class="pickBanner" data-key="pick"><span>Reply to several: tap the prompts to reply to · <b>${alsoTargets.size+1} picked</b></span><button class="btn" data-cancel>Done <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
   else if(pick){ const o=OPS[pick.op], who=refsAt(pick.src).map(refName)[0]; h+=`<div class="pickBanner" data-key="pick"><span>${o.label.replace('…','')} ${who?esc(who)+' (#'+pick.src+')':'#'+pick.src}: ${o.pick}</span><button class="btn" data-cancel>Cancel <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`; }
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
-  if(shown.length) h+=`<div class="viewbar" role="group" aria-label="Show replies" data-key="viewbar"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${opts.replies===v}">${l}</button>`).join('')}</div>`;
+  if(shown.length){ const rm=repliesMode(), rl=set('replyLen');
+    h+=`<div class="viewbar" data-key="viewbar"><div class="vgroup" role="group" aria-label="Show replies"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}">${l}</button>`).join('')}</div><div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div></div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
   if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New conversation</p>':`<p class="emptyhead">Start a conversation in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a conversation here from another space with its Move button.</p>`}${composerHTML('root')}</section>`;
   const offN=rs.length-shown.length;
   if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} conversations in this space are hidden. Choose which to show from the conversation list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
   for(const r of shown){
     const size=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1, k=convKey(r);
-    const est=60+size*44+(opts.replies==='all'?size*140:0);
+    const est=60+size*44+(repliesMode()==='all'?size*140:0);
     h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a space in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
   }
   if(offN && shown.length) h+=`<p class="offnote" data-key="offnote">${offN} more conversation${offN===1?'':'s'} in this space ${offN===1?'is':'are'} hidden.<button class="linkbtn" data-showall>Show all</button></p>`;
@@ -2718,7 +2733,7 @@ function openConv(key){
 /* Which conversations are on the page:
    select - you decide. Click a hidden conversation to show it; click the one you're in again to hide or show the others.
    focus  - only the one you're in, and the focus follows you as you open other conversations */
-const VIS_LABEL={select:'Show some', focus:'Show one'};
+const VIS_LABEL={select:'Selection', focus:'Focus'};
 const VIS_HINT={select:'Click a hidden conversation to show it. Click the one you\u2019re in again to hide or show the others.', focus:'Only the conversation you\u2019re in. Open another and it takes its place.'};
 const visMode = () => (S && S.vis==='focus') ? 'focus' : 'select';
 function applyVis(){
@@ -3252,7 +3267,8 @@ treeEl.addEventListener('click', e=>{
   const rt=e.target.closest('[data-rtog]');
   if(rt){ const id=+rt.dataset.rtog, open=rt.getAttribute('aria-expanded')==='true'; openReplies.delete(id); openReplies.delete(-id); openReplies.add(open?-id:id); Motion.run(treeEl, renderTree, [id]); return; }
   const rf=e.target.closest('[data-rfull]'); if(rf){ const id=+rf.dataset.rfull; fullReplies.has(id)?fullReplies.delete(id):fullReplies.add(id); Motion.run(treeEl, renderTree, [id]); return; }
-  const rm=e.target.closest('[data-rmode]'); if(rm){ opts.replies=rm.dataset.rmode; openReplies.clear(); save(); Motion.run(treeEl, renderTree, [sel]); return; }
+  const rm=e.target.closest('[data-rmode]'); if(rm){ setRepliesMode(rm.dataset.rmode); Motion.run(treeEl, renderTree, [sel]); return; }
+  const rl=e.target.closest('[data-rlen]'); if(rl){ opts.replyLen=rl.dataset.rlen; fullReplies.clear(); save(); Motion.run(treeEl, renderTree, [sel]); return; }
   if(e.target.closest('[data-cancel]')){ const src=pick&&pick.src, wasAlso=pick&&pick.op==='also'; pick=null; keepDraft(()=>animRender([src, sel])); if(wasAlso){ const t=document.getElementById('contText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length, t.value.length); } } return; }
   const cmp=e.target.closest('[data-compose]');
   if(cmp){ const a=cmp.dataset.compose;
@@ -3263,6 +3279,7 @@ treeEl.addEventListener('click', e=>{
     else { composeFor=null; renaming=false; animRender([sel]); }
     return; }
   const g=e.target.closest('[data-sel]'); if(g){ select(+g.dataset.sel); return; }
+  if(e.target.closest('.ptext a')) return;
   const row=e.target.closest('.row'); if(!row) return;
   const id=+row.dataset.id;
   if(pick && pick.op==='also'){ if(id!==pick.src && S.nodes[id].kind!=='merge'){ alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); } return; }
@@ -3505,7 +3522,7 @@ const ACCENTS={
 };
 const TEXT_SIZES={small:['Small',15], default:['Default',16], large:['Large',17.5], xl:['Larger',19]};
 const FONTS={plex:['Treechats', null], system:['System', '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif']};
-const SET_DEFAULTS={nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
+const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
 const set = k => opts[k]!=null ? opts[k] : SET_DEFAULTS[k];
 const darkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : {matches:false};
 const resolvedMode = () => set('theme')==='system' ? (darkMQ.matches?'dark':'light') : set('theme');
@@ -3626,7 +3643,8 @@ function renderSettings(){
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
       ${setRow('Default model','Also in the box under each prompt.',`<select data-setselect="model" aria-label="Default model">${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select>`)}
-      ${setRow('Show replies','', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
+      ${setRow('Show replies','Simple view remembers its own choice.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
+      ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['short','Shorten'],['full','Full']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, the merge note and summary requests.','<button class="btn" data-setprompts>Edit prompts</button>')}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
     h+=`<section class="setsec"><h3>Input</h3>
@@ -3672,6 +3690,7 @@ function afterSetting(key){
   save();
   if(['theme','palette','accent','textSize','font','density','motion'].includes(key)){ applyAppearance(); placeAside(); }
   if(key==='replies'){ openReplies.clear(); renderTree(); }
+  if(key==='replyLen'){ fullReplies.clear(); renderTree(); }
   if(key==='sendKey' || key==='model'){ renderTree(); }
   if(key==='opKeys' || key==='sendKey') renderOpsCard();
   if(key==='map') drawMap();
