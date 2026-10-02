@@ -3,12 +3,14 @@ import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { config, modelLabel, root } from './config.ts';
 import { openBrowser } from './proc.ts';
 import { provider, streamReply, type SampleRequest } from './claude.ts';
 import { cliStatus } from './cli.ts';
 import { getValue, putValue, snapshot, snapshots } from './store.ts';
 import { handleMcp } from './mcp.ts';
+import { attachPage, settle } from './relay.ts';
 import { loadState } from './context.ts';
 
 const app = new Hono();
@@ -81,6 +83,18 @@ app.post('/api/sample', async (c) => {
     'cache-control': 'no-store',
     'x-accel-buffering': 'no',
   });
+});
+
+/* the open page carries out agent commands (see server/relay.ts) */
+app.get('/api/agent/events', (c) => streamSSE(c, async (stream) => {
+  const detach = attachPage((data) => { stream.writeSSE({ data }).catch(() => {}); });
+  const ping = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }).catch(() => {}); }, 20000);
+  await new Promise<void>((resolve) => { stream.onAbort(() => resolve()); c.req.raw.signal.addEventListener('abort', () => resolve(), { once: true }); });
+  clearInterval(ping); detach();
+}));
+app.post('/api/agent/result', async (c) => {
+  let body; try { body = await c.req.json(); } catch { return c.json({ code: 'bad_request' }, 400); }
+  return settle(body) ? c.body(null, 204) : c.json({ code: 'unknown_command' }, 404);
 });
 
 /* MCP: lets Claude Code and other MCP clients read your spaces, conversations and context (see server/mcp.ts) */

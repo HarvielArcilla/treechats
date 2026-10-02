@@ -15,8 +15,11 @@ context tools for people, and build the server-side foundation once the agent in
 ## Phase 1: subagents prototype
 Test whether an orchestrating agent benefits from subagents whose context Treechats owns.
 - MCP tools `spawn` (new conversation from chosen context, a prompt and a model; returns the reply), `ask`
-  (continue it), `distill` (return a brief)
+  (continue it), `distill` (return a brief), and the operations that matter most for steering a subagent:
+  `fork`, `leave_out`, `edit_reply`, `regenerate`
 - Agent runs go into their own space; every turn an agent creates is labeled with the agent's name
+- Guardrails from day one: agents can only change their own run spaces; a cap on requests per run; agent
+  changes stay out of your Undo
 - Prototype shortcut: writes are carried out by the open Treechats page (the server relays them), so operations
   keep their single definition in the page for now; if the page isn't open, the tools say so
 - Try it on a real task, then decide what the agent interface should be before building more of it
@@ -38,7 +41,8 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 
 ## Phase 4: reuse and agents in full
 - Context blocks switched on per conversation, with instructions per conversation as one kind of block
-- Agent tools `fork`, `edit` (leave out, correct, pin, replay), `compare`/`judge`; a Runs view of agent runs
+- Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; pin,
+  replay and `compare`/`judge`; history per run with undo; a Runs view of agent runs
 - Import Claude Code sessions as trees (read-only import; writing sessions back is not a public interface)
 
 ## Later

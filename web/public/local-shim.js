@@ -30,13 +30,15 @@
     /* first run: carry over anything this browser saved before */
     try { var old = window.localStorage.getItem(KEY); if (old) { mem[KEY] = old; put(old); } } catch (e) {}
   }
-  var inflight = null, queued = null;
+  var inflight = null, queued = null, idle = [];
+  /* resolves once everything saved so far has reached the server */
+  window.TREECHATS_FLUSH = function () { return inflight || queued != null ? new Promise(function (r) { idle.push(r); }) : Promise.resolve(); };
   function put(body) {
     if (inflight) { queued = body; return; }
     inflight = fetch('/api/state', { method: 'PUT', headers: { 'content-type': 'text/plain' }, body: body, keepalive: body.length < 60000 })
       .then(function (r) { if (!r.ok) throw new Error('save ' + r.status); window.TREECHATS_SAVE_ERROR = null; })
       .catch(function (e) { window.TREECHATS_SAVE_ERROR = e; console.warn('Treechats could not save to the server:', e); })
-      .then(function () { inflight = null; if (queued != null) { var q = queued; queued = null; put(q); } });
+      .then(function () { inflight = null; if (queued != null) { var q = queued; queued = null; put(q); } else { var w = idle; idle = []; w.forEach(function (f) { f(); }); } });
   }
   var proto = Storage.prototype, oGet = proto.getItem, oSet = proto.setItem, oRemove = proto.removeItem;
   proto.getItem = function (k) { return this === window.localStorage && k === KEY ? (k in mem ? mem[k] : null) : oGet.call(this, k); };

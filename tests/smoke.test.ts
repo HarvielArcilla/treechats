@@ -169,7 +169,7 @@ test('MCP: Claude Code can list, search and read the context of a saved conversa
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['get_context', 'get_prompt', 'list_conversations', 'list_spaces', 'search']);
+  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_conversations', 'list_spaces', 'regenerate', 'search', 'spawn']);
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
 
   const full = (await call('get_context', { branch: 'main' })).content[0].text, ctx = full.slice(full.indexOf('<conversation>'));
@@ -188,4 +188,64 @@ test('MCP: Claude Code can list, search and read the context of a saved conversa
   /* other websites can't reach it */
   const r = await fetch(base + '/mcp', { method: 'POST', headers: { origin: 'https://example.com', 'content-type': 'application/json' }, body: '{}' });
   assert.equal(r.status, 403);
+});
+
+test('MCP subagents: commands go to the open page, results come back, and each run has a request budget', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { base } = await startServer({ TREECHATS_FAKE: '1', TREECHATS_AGENT_MAX_REQUESTS: '2' });
+  const client = new Client({ name: 'test', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
+  const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+
+  /* without the page open, agent tools say so and spend nothing */
+  const closed = await call('spawn', { run: 'r', prompt: 'hi' });
+  assert.equal(closed.isError, true);
+  assert.match(closed.content[0].text, /isn’t open in a browser/);
+
+  /* a stand-in for the page: reads commands from the event stream and answers them */
+  const seen: { op: string; args: Record<string, unknown> }[] = [];
+  const ctl = new AbortController();
+  const events = await fetch(base + '/api/agent/events', { signal: ctl.signal });
+  (async () => {
+    const reader = events.body!.getReader(), dec = new TextDecoder(); let buf = '';
+    try {
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i; while ((i = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          const data = chunk.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+          if (!data) continue;
+          const cmd = JSON.parse(data); seen.push(cmd);
+          const body = cmd.args.prompt === 'fail' ? { id: cmd.id, ok: false, error: 'There is no prompt #9 in this run.' } : { id: cmd.id, ok: true, result: { space: 'Run: r', conversation: 1, prompt: 1, branch: 'main', reply: 'Atomic, yes.' } };
+          await fetch(base + '/api/agent/result', { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        }
+      }
+    } catch {}
+  })();
+  await new Promise((r) => setTimeout(r, 300));
+
+  const ok = await call('spawn', { run: 'r', prompt: 'Is it atomic?', context: 'redis.call("INCR")', agent: 'tester' });
+  assert.equal(ok.isError, undefined, ok.content[0].text);
+  assert.match(ok.content[0].text, /Atomic, yes\./);
+  assert.match(ok.content[0].text, /1 request left in this run/);
+  assert.equal(seen[0].op, 'spawn');
+  assert.equal(seen[0].args.context, 'redis.call("INCR")');
+
+  /* a failure from the page comes back as an error and refunds the request */
+  const bad = await call('ask', { run: 'r', after: 1, prompt: 'fail' });
+  assert.equal(bad.isError, true);
+  assert.match(bad.content[0].text, /no prompt #9/);
+  await call('ask', { run: 'r', after: 1, prompt: 'again' });
+  const over = await call('ask', { run: 'r', after: 1, prompt: 'one too many' });
+  assert.equal(over.isError, true);
+  assert.match(over.content[0].text, /has used its 2 requests/);
+
+  /* copying context from a branch that doesn't exist is caught before anything is spent */
+  const missing = await call('spawn', { run: 'other', prompt: 'x', from: { branch: 'nope' } });
+  assert.equal(missing.isError, true);
+
+  ctl.abort();
+  await client.close();
 });

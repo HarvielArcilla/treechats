@@ -36,6 +36,8 @@ export const config = {
   open: process.env.TREECHATS_OPEN !== '0',
   /* TREECHATS_FAKE=1 answers with canned text instead of calling Claude: for tests and offline work */
   fake: process.env.TREECHATS_FAKE === '1',
+  /* how many model requests one agent run may spend through MCP (spawn, ask, fork, regenerate, distill) */
+  agentMaxRequests: num(process.env.TREECHATS_AGENT_MAX_REQUESTS, 60),
   /* milliseconds between pieces of a test reply, to watch streaming */
   fakeDelay: num(process.env.TREECHATS_FAKE_DELAY, 8),
 };

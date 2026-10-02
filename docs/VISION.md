@@ -18,6 +18,9 @@ that control. Agents are a second kind of user of the same controls, working und
 5. **AI actions are marked and reviewable.** ✦ marks tools where Claude does the work. Tools that rewrite your
    context show their result before it enters the tree.
 6. **Depth on demand.** Chat, then tree, then inspector, then automation. Each layer is optional.
+7. **Parity.** Anything you can do to a conversation, an agent can do through MCP, with the same code and the same
+   result. View conveniences (folding, Simple view, the map, themes) are for people only; notes and stars are for
+   both (notes make a good scratchpad for an agent).
 
 ## Agents
 
@@ -40,11 +43,19 @@ so the plan is not to reach into it, but to give it **subagents whose context Tr
   material passed to them. Tool-using work (reading files, running commands) stays with Claude Code's own
   subagents. Treechats manages context; it does not execute tools.
 
+How the tools are offered: a few high-level verbs as their own tools (spawn, ask, fork, distill, get context), and
+one `operate` tool that runs any other operation by name (branch, merge, rebase, splice, leave out, edit reply,
+reroot, squash, regenerate, fan out, compare…), with a `describe` tool for its arguments. A long list of separate
+tools would make agents worse at choosing, and every tool definition costs context on every request. Each
+operation takes all its input as arguments (no "pick the next prompt" steps) and returns exactly what changed.
+
 Rules that keep the person in control:
-- Agents work on branches and in their own spaces; they never change your conversations in place unless allowed.
-- Every change is attributed (you, Claude in a chat, or a named agent) and undoable, with a history of what
-  agents did.
-- Permissions per space: read only, suggest (writes go to branches or a review queue), or write.
+- **Scope:** agents work in their own run spaces by default. Your spaces need permission, and even then agents
+  work on branches; they never change your conversations in place.
+- **Budget:** ✦ operations spend model requests, so each run has a cap on requests (and later tokens).
+- **Attribution and history:** every change says who made it (you, Claude in a chat, or a named agent). Agent
+  operations stay out of your Undo; each run has its own history you can inspect and undo as a whole.
+- **Permissions per space:** read only, suggest (writes go to branches or a review queue), or write.
 
 ## Architecture this implies
 

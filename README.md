@@ -65,10 +65,25 @@ Treechats serves an MCP server at `/mcp`, so Claude Code can read your conversat
 claude mcp add --transport http --scope user treechats http://localhost:5178/mcp
 ```
 
-Then, in Claude Code, ask for things like "get the context of the main branch of my rate limiter conversation from
+**Reading.** Ask for things like "get the context of the main branch of my rate limiter conversation from
 treechats". It can list spaces and conversations, search them, and pull the context of a branch or prompt: the
-same text as **Copy as a prompt** in the app. It only reads, and Treechats must be running. Attached files appear
-by name only, since their contents are kept in the browser.
+same text as **Copy as a prompt** in the app. Attached files appear by name only, since their contents are kept
+in the browser.
+
+**Subagents.** Claude Code can also run subagents in Treechats, conversations whose context you can see and
+steer: `spawn` (start one with exactly the context it should have), `ask`, `fork`, `leave_out`, `edit_reply`,
+`regenerate` and `distill` (get back a short brief instead of the whole conversation). For example: "use
+treechats to spawn three subagents that each review this design from a different angle, then distill each".
+
+- Each piece of work is a run with its own space, **Run: <name>**, where you can watch and step in. Agents can't
+  change anything outside their run spaces, and their changes stay out of your Undo.
+- Everything an agent adds is labeled with its name (⚙).
+- Each run may spend 60 model requests (`TREECHATS_AGENT_MAX_REQUESTS` in `.env`; the count resets when
+  Treechats restarts).
+- Subagents have no tools: they answer from the context they're given.
+- For now the open Treechats page carries the changes out, so keep it open in your browser while an agent works.
+
+Treechats must be running for any of this.
 
 ## Your data
 

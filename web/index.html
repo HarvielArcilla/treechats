@@ -434,6 +434,7 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .fname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dropzone{border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;font-size:.82rem;color:var(--muted)}
 .dropping,.composer.dropping{outline:2px dashed var(--accent);outline-offset:4px;border-radius:8px}
+.tag.agenttag{color:var(--l3);border-color:currentColor}
 .edtag{font:.7rem var(--mono);color:var(--merge);border:1px solid currentColor;border-radius:9px;padding:0 6px;margin-left:8px;white-space:nowrap}
 .codewrap{border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .codehead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 6px 3px 12px;background:var(--code-bg);border-bottom:1px solid var(--line);font:.72rem var(--mono);color:var(--muted)}
@@ -1272,6 +1273,8 @@ function restore(e){
     const was=DB.spaces;
     Object.assign(DB, JSON.parse(e.s));
     for(const sid of Object.keys(DB.spaces)) if(was[sid]) keepReplies(was[sid].tree, DB.spaces[sid].tree);
+    /* agent run spaces are the agent's: your Undo leaves them exactly as they are */
+    for(const [sid, sp] of Object.entries(was)) if(sp.agentRun){ DB.spaces[sid]=sp; if(!DB.order.includes(sid)) DB.order.unshift(sid); }
     enterSpace(DB.spaces[DB.current] ? DB.current : spaceIds()[0]);
     reconcileReplies();
     save(); render(true); Motion.swap(treeEl); return;
@@ -1812,15 +1815,19 @@ const queuedGen=id=>genQueue.some(q=>q.sid===DB.current && q.id===id);
 const replyBusy=id=>!!liveGen(id) || queuedGen(id);
 const busyCount=()=>gens.size+genQueue.length;
 /* ask Claude to answer these prompts in the current space */
-function wantReplies(ids){
+function wantReplies(ids, sid=DB.current){
   if(sampleState!=='ready' || !sampleFn) return;
-  const sid=DB.current;
+  const t=treeOf(sid);
   for(const id of ids){
-    const n=S.nodes[id]; if(!n || n.kind==='merge' || replyBusy(id)) continue;
+    const n=t && t.nodes[id]; if(!n || n.kind==='merge' || gens.has(gkey(sid,id)) || genQueue.some(q=>q.sid===sid && q.id===id)) continue;
     genQueue.push({id, sid}); delete genNotes[gkey(sid,id)];
   }
-  pumpReplies(); refreshWaiting();
+  pumpReplies(); if(sid===DB.current) refreshWaiting();
 }
+/* for agents: resolves when the reply to a prompt is written (or fails, or is stopped) */
+const replyWaiters=new Map();
+function awaitReply(sid, id){ return new Promise(res=>{ const k=gkey(sid,id); replyWaiters.set(k, [...(replyWaiters.get(k)||[]), res]); }); }
+function settleReply(sid, id, result){ const k=gkey(sid,id), ws=replyWaiters.get(k); if(!ws) return; replyWaiters.delete(k); for(const w of ws) w(result); }
 const generate=id=>wantReplies([id]);
 /* the prompt above this one that still has a reply or summary on the way, if any */
 function waitingOn(q){
@@ -1834,7 +1841,7 @@ function waitingOn(q){
 function pumpReplies(){
   for(let i=0; i<genQueue.length && gens.size<MAX_PAR;){
     const q=genQueue[i], w=waitingOn(q);
-    if(w==='gone'){ genQueue.splice(i,1); continue; }
+    if(w==='gone'){ genQueue.splice(i,1); settleReply(q.sid, q.id, {error:'The prompt was deleted before its reply was written.'}); continue; }
     if(w!=null){ i++; continue; }
     genQueue.splice(i,1); startReply(q.sid, q.id);
   }
@@ -1867,6 +1874,7 @@ function finishGen(g, text, tier, note){
     delete n.askTier;
     save();
   }
+  settleReply(g.sid, g.id, n && text ? {reply:n.reply, note} : {error: note || 'No reply came back.'});
   /* stopping a reply also cancels the prompts below it that were waiting for it */
   if(g.stopped) dropWaiting(g.sid, g.id);
   pumpReplies();
@@ -1881,7 +1889,7 @@ function finishGen(g, text, tier, note){
 }
 function dropWaiting(sid, id){
   const t=treeOf(sid);
-  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i]; if(q.sid===sid && (q.id===id || (t && t.nodes[q.id] && withTree(t, ()=>path(q.id)).includes(id)))) genQueue.splice(i,1); }
+  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i]; if(q.sid===sid && (q.id===id || (t && t.nodes[q.id] && withTree(t, ()=>path(q.id)).includes(id)))){ genQueue.splice(i,1); settleReply(q.sid, q.id, {error:'The reply was cancelled.'}); } }
 }
 function stopReply(id){
   const g=liveGen(id);
@@ -1892,7 +1900,7 @@ function stopReply(id){
 /* after undo, deleting or moving prompts: forget replies whose prompt is gone */
 function reconcileReplies(){
   for(const g of [...gens.values()]){ const t=treeOf(g.sid); if(!t || !t.nodes[g.id]){ g.stopped=true; g.ctl.abort(); } }
-  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i], t=treeOf(q.sid); if(!t || !t.nodes[q.id]) genQueue.splice(i,1); }
+  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i], t=treeOf(q.sid); if(!t || !t.nodes[q.id]){ genQueue.splice(i,1); settleReply(q.sid, q.id, {error:'The prompt was deleted before its reply was written.'}); } }
   pumpReplies();
 }
 function showLive(id){
@@ -2203,6 +2211,137 @@ async function useDistill(how){
     toast('The brief is in a new conversation. Write your question under it and send.');
   }
 }
+/* ---- Agents (Phase 1: subagents over MCP) ----
+   The server relays commands from MCP clients (server/relay.ts); this page carries them out. Agents only ever work
+   in their own run spaces, never in yours. Their changes skip your Undo, and every prompt they add carries their
+   name. Operations wait for Claude's reply and return it. */
+const Agent=(()=>{
+  const tierOf = m => TIERS.some(t=>t[0]===m) ? m : null;
+  function runSpace(run, create){
+    let sid=Object.keys(DB.spaces).find(k=>DB.spaces[k].agentRun===run);
+    if(!sid && create){
+      sid='s'+(DB.nextSpace++);
+      DB.spaces[sid]={id:sid, name:uniqueSpaceName('Run: '+run), tree:emptyTree(), agentRun:run};
+      DB.order.unshift(sid);
+    }
+    if(!sid) throw new Error(`There is no run named "${run}" yet. Start one with spawn.`);
+    return sid;
+  }
+  /* changes go straight into the run space's tree, outside commit(), so they never enter your Undo */
+  function change(sid, fn){
+    const t=DB.spaces[sid].tree, out=withTree(t, fn);
+    undoStack=undoStack.filter(e=>e.sid!==sid); redoStack=redoStack.filter(e=>e.sid!==sid);
+    save(); if(sid===DB.current){ render(); } else renderSpaces();
+    return out;
+  }
+  const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
+  function addTurn(t, parent, text, by, tier){
+    const nid=t.nextId++; t.nodes[nid]={id:nid, parents: parent==null ? [] : [parent], text, by};
+    if(tier) t.nodes[nid].askTier=tier;
+    return nid;
+  }
+  async function reply(sid, id, base){
+    if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
+    const wait=awaitReply(sid, id); wantReplies([id], sid);
+    const r=await wait;
+    if(r.error) throw new Error(`#${id} got no reply: ${r.error}`);
+    return {...base, prompt:id, reply:r.reply, note:r.note||undefined};
+  }
+  const where = (sid, id) => withTree(DB.spaces[sid].tree, ()=>({space:DB.spaces[sid].name, conversation:chain(id)[0], branch:refsAt(id).map(refName)[0]}));
+  const ops={
+    async spawn(a){
+      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
+      const sid=runSpace(a.run, true), by=a.agent||'agent';
+      const text=(a.context ? `${a.context.trim()}\n\n---\n\n` : '')+a.prompt;
+      const id=change(sid, ()=>{
+        const nid=addTurn(S, null, text, by, tierOf(a.model));
+        const rid=newRef('main', nid); S.head=rid;
+        if(a.title) S.convs[nid]={title:String(a.title).slice(0,80)};
+        return nid;
+      });
+      return reply(sid, id, {...where(sid,id), message:'Started a subagent'});
+    },
+    async ask(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
+      let after=a.after;
+      if(after==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); after=r.tip; }
+      if(after==null) throw new Error('Say where to continue: after (a prompt number) or branch.');
+      need(t, after);
+      const id=change(sid, ()=>{
+        const nid=addTurn(S, after, a.prompt, by, tierOf(a.model));
+        const rids=refsAt(after); if(rids.length) S.refs[rids[0]].tip=nid; else newRef(autoName(convOf(after)), nid);
+        return nid;
+      });
+      return reply(sid, id, {...where(sid,id), message:'Asked'});
+    },
+    async fork(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
+      need(t, a.at);
+      const id=change(sid, ()=>{
+        const nid=addTurn(S, a.at, a.prompt, by, tierOf(a.model));
+        const name = a.name && NAME_RE.test(a.name) && !namesIn(convOf(a.at)).has(a.name) ? a.name : slugName(a.name || 'fork', convOf(a.at));
+        newRef(name, nid);
+        return nid;
+      });
+      return reply(sid, id, {...where(sid,id), message:`Forked after #${a.at}`});
+    },
+    async leave_out(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt), on=a.left_out!==false;
+      change(sid, ()=>{ if(on) n.skip=true; else delete n.skip; });
+      return {...where(sid,a.prompt), prompt:a.prompt, message: on ? `#${a.prompt} is left out of what later prompts send` : `#${a.prompt} is included again`};
+    },
+    async edit_reply(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
+      change(sid, ()=>{ n.reply=String(a.reply); n.replyEdited=true; n.editedBy=a.agent||'agent'; });
+      return {...where(sid,a.prompt), prompt:a.prompt, message:`Replaced the reply to #${a.prompt}; prompts after it see this version`};
+    },
+    async regenerate(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt), by=a.agent||'agent';
+      const id=change(sid, ()=>{
+        const gid=n.alt ?? n.id; n.alt=gid;
+        const nid=S.nextId++;
+        S.nodes[nid]={id:nid, parents:[...n.parents], text:n.text, alt:gid, by};
+        if(n.files) S.nodes[nid].files=clone(n.files);
+        const tier=tierOf(a.model)||n.model; if(tier) S.nodes[nid].askTier=tier;
+        S.active[gid]=nid;
+        for(const rid of refsAt(n.id)) S.refs[rid].tip=nid;
+        return nid;
+      });
+      return reply(sid, id, {...where(sid,id), replaced:a.prompt, message:`New version of #${a.prompt} (the old one is kept)`});
+    },
+    async distill(a){
+      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree;
+      let id=a.prompt;
+      if(id==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); id=r.tip; }
+      if(id==null) throw new Error('Say what to distill: prompt (a number) or branch.');
+      need(t, id);
+      const convo=withTree(t, ()=>turnsFor(id, true)).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n');
+      const r=await sampleFn(fillPrompt('distill', {conversation:convo}), {modelTier:opts.model, cache:false});
+      const brief=r.text.trim();
+      if(a.save_as_note) change(sid, ()=>{ const n=S.nodes[id]; n.note=(n.note&&n.note.trim()?n.note.trim()+'\n\n':'')+brief; });
+      return {...where(sid,id), prompt:id, brief, message:'Distilled'};
+    },
+  };
+  async function handle(cmd){
+    const f=ops[cmd.op]; if(!f) throw new Error(`Unknown operation "${cmd.op}".`);
+    const out=await f(cmd.args||{});
+    /* saved before answering, so the agent can read its changes straight back */
+    if(saveTimer) writeStore();
+    if(window.TREECHATS_FLUSH) await window.TREECHATS_FLUSH();
+    return out;
+  }
+  function connect(){
+    if(!window.TREECHATS_LOCAL || window.TREECHATS_LOCAL.offline || typeof EventSource==='undefined') return;
+    const es=new EventSource('/api/agent/events');
+    es.onmessage=e=>{
+      let cmd; try{ cmd=JSON.parse(e.data); }catch(err){ return; }
+      handle(cmd).then(result=>({id:cmd.id, ok:true, result}), err=>({id:cmd.id, ok:false, error:String(err && err.message || err)}))
+        .then(body=>fetch('/api/agent/result', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)}).catch(()=>{}));
+    };
+  }
+  return {connect, handle, runSpace};
+})();
 /* ---- Copy context as a prompt ----
    Exactly what the next request from a prompt would send (standing instructions, space files, merge notes, every
    turn and reply, minus what's left out), as one block to paste into Claude anywhere and ask your question after. */
@@ -2550,7 +2689,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const tags = (opts.simple && !pick ? forkHTML(id) : '')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(id===sel&&editingNow&&!pick?'<span class="tag editing">editing</span>':'')+refs+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
+  const tags = (opts.simple && !pick ? forkHTML(id) : '')+(n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(id===sel&&editingNow&&!pick?'<span class="tag editing">editing</span>':'')+refs+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
   const shown=replyShown(id, pathSet);
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !S.fold[id];
   const nBelow = foldable ? [...desc(id)].filter(x=>S.nodes[x].kind!=='merge').length : 0;
@@ -4507,7 +4646,7 @@ window.addEventListener('scroll', onScroll, {passive:true});
 Files.init().then(()=>render(true));
 load(); applyAppearance(); applyLayout(); applySimple(); renderOpsCard();
 document.getElementById('io').open = opts.open['card-io'] ?? CARD_DEFAULT_OPEN.io;
-render(true); onScroll(); placeAside(); connectModel();
+render(true); onScroll(); placeAside(); connectModel(); Agent.connect();
 </script>
 </body>
 </html>

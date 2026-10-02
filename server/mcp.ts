@@ -1,6 +1,14 @@
-/* An MCP server at /mcp, so Claude Code (or any MCP client) can read your Treechats: list spaces and conversations,
-   search them, and pull the context of a branch or prompt into a session. It only reads; nothing here changes your
-   tree. Add it to Claude Code with:
+/* An MCP server at /mcp, so Claude Code (or any MCP client) can use Treechats.
+
+   Reading: list spaces and conversations, search them, and pull the context of a branch or prompt into a session.
+   These never change anything.
+
+   Subagents (Phase 1, see docs/VISION.md): an agent can start conversations whose context Treechats owns, continue
+   and fork them, leave turns out, correct replies, regenerate, and distill what they found. Agents only ever change
+   their own run spaces ("Run: <name>"); everything they add is labeled with the agent's name, stays out of your
+   Undo, and each run has a cap on model requests. The open Treechats page carries the changes out (server/relay.ts).
+
+   Add it to Claude Code with:
 
      claude mcp add --transport http --scope user treechats http://localhost:5178/mcp
 
@@ -9,6 +17,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import { contextPrompt, loadState, TreeView, turnsFor, type Tree } from './context.ts';
+import { pageOpen, refund, relay, RelayError, spend } from './relay.ts';
 
 type State = NonNullable<ReturnType<typeof loadState>>;
 const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] });
@@ -39,10 +48,48 @@ function convTip(v: TreeView, rootId: number) {
   for (;;) { const k = v.all().filter((n) => n.parents[0] === cur && v.visible(n)); if (!k.length) return cur; cur = k[0].id; }
 }
 
+type Pick = { space?: string; conversation?: string; branch?: string; prompt?: number };
+/* the prompt a request means: by number, by branch name, by conversation (where it's checked out), else the selection */
+function pick(s: State, a: Pick): { error: string } | { sp: State['db']['spaces'][string]; t: Tree; v: TreeView; id: number } {
+  const sp = space(s, a.space); if (!sp) return { error: `No space matches "${a.space}".` };
+  const t: Tree = sp.tree, v = new TreeView(t);
+  let id: number | null = null;
+  const conv = conversation(v, a.conversation);
+  if (a.conversation && !conv) return { error: `No conversation in ${sp.name} matches "${a.conversation}".` };
+  if (a.prompt != null) {
+    if (!t.nodes[a.prompt]) return { error: `There is no prompt #${a.prompt} in ${sp.name}.` };
+    id = a.prompt;
+  } else if (a.branch) {
+    const bs = v.branches(conv?.id).filter((b) => b.name === a.branch);
+    if (!bs.length) return { error: `No branch named "${a.branch}"${conv ? ` in "${v.title(conv)}"` : ` in ${sp.name}`}.` };
+    if (bs.length > 1) return { error: `Several conversations have a branch named "${a.branch}". Say which conversation:\n` + bs.map((b) => `- "${v.title(v.rootOf(b.tip))}"`).join('\n') };
+    id = bs[0].tip;
+  } else if (conv) id = convTip(v, conv.id);
+  else {
+    const selId = sp.sel;
+    id = selId != null && t.nodes[selId] ? selId : t.head && t.refs[t.head] ? t.refs[t.head].tip : null;
+    if (id == null) { const r = v.roots()[0]; if (r) id = convTip(v, r.id); }
+  }
+  if (id == null) return { error: `${sp.name} has no conversations yet.` };
+  if (t.nodes[id].kind === 'merge') id = t.nodes[id].parents[0];
+  return { sp, t, v, id };
+}
+
+type Done = { space: string; conversation?: number; prompt?: number; branch?: string; reply?: string; note?: string; brief?: string; replaced?: number; message?: string };
+/* what a subagent operation did, as text for the orchestrator */
+function report(d: Done, left?: number) {
+  const where = [`space "${d.space}"`, d.conversation != null ? `conversation #${d.conversation}` : '', d.prompt != null ? `prompt #${d.prompt}` : '', d.branch ? `branch ${d.branch}` : ''].filter(Boolean).join(', ');
+  return [d.message ? `${d.message} (${where})` : where,
+    d.note ? `Note: ${d.note}` : '',
+    d.reply != null ? `\nReply:\n${d.reply}` : '',
+    d.brief != null ? `\nBrief:\n${d.brief}` : '',
+    left != null ? `\n(${left} request${left === 1 ? '' : 's'} left in this run)` : ''].filter(Boolean).join('\n');
+}
+
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching conversations with Claude, organised into spaces. Use list_conversations or search to find one, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a space. These tools only read.' },
+    { instructions: 'Treechats keeps branching conversations with Claude, organised into spaces. Reading: use list_conversations or search to find a conversation, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a space. Subagents: spawn starts a conversation in a run space whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
@@ -79,28 +126,9 @@ export function buildMcpServer(read: () => State | null) {
       prompt: z.number().int().optional().describe('Prompt number, such as 12 for #12.'),
       format: z.enum(['prompt', 'messages']).optional().describe('"prompt" (default): one block to read. "messages": the user/assistant turns as JSON.'),
     },
-  }, withState((s, a: { space?: string; conversation?: string; branch?: string; prompt?: number; format?: 'prompt' | 'messages' }) => {
-    const sp = space(s, a.space); if (!sp) return fail(`No space matches "${a.space}".`);
-    const t: Tree = sp.tree, v = new TreeView(t);
-    let id: number | null = null;
-    const conv = conversation(v, a.conversation);
-    if (a.conversation && !conv) return fail(`No conversation in ${sp.name} matches "${a.conversation}".`);
-    if (a.prompt != null) {
-      if (!t.nodes[a.prompt]) return fail(`There is no prompt #${a.prompt} in ${sp.name}.`);
-      id = a.prompt;
-    } else if (a.branch) {
-      const bs = v.branches(conv?.id).filter((b) => b.name === a.branch);
-      if (!bs.length) return fail(`No branch named "${a.branch}"${conv ? ` in "${v.title(conv)}"` : ` in ${sp.name}`}.`);
-      if (bs.length > 1) return fail(`Several conversations have a branch named "${a.branch}". Say which conversation:\n` + bs.map((b) => `- "${v.title(v.rootOf(b.tip))}"`).join('\n'));
-      id = bs[0].tip;
-    } else if (conv) id = convTip(v, conv.id);
-    else {
-      const selId = sp.sel;
-      id = selId != null && t.nodes[selId] ? selId : t.head && t.refs[t.head] ? t.refs[t.head].tip : null;
-      if (id == null) { const r = v.roots()[0]; if (r) id = convTip(v, r.id); }
-    }
-    if (id == null) return fail(`${sp.name} has no conversations yet.`);
-    if (t.nodes[id].kind === 'merge') id = t.nodes[id].parents[0];
+  }, withState((s, a: Pick & { format?: 'prompt' | 'messages' }) => {
+    const r = pick(s, a); if ('error' in r) return fail(r.error);
+    const { sp, t, v, id } = r;
     const where = `Space "${sp.name}", conversation "${v.title(v.rootOf(id))}", up to prompt #${id}`;
     return a.format === 'messages' ? text(where + '\n\n' + JSON.stringify(turnsFor(s, t, id), null, 2)) : text(`(${where})\n\n` + contextPrompt(s, t, id));
   }));
@@ -141,6 +169,51 @@ export function buildMcpServer(read: () => State | null) {
         n.note ? `\nNote (never sent to Claude):\n${n.note}` : '',
       ].filter(Boolean).join('\n'));
     }));
+
+  /* ---- subagents ---- */
+  const run = z.string().min(1).max(60).describe('A short name for this piece of work, such as "auth-review". Each run gets its own space ("Run: auth-review"); use the same name to keep working in it.');
+  const agent = z.string().max(40).optional().describe('Your name, shown on everything you add. Defaults to "agent".');
+  const model = z.enum(['quick', 'default', 'complex']).optional().describe('Which model answers: quick, default or complex. Defaults to the model chosen in Treechats.');
+  const promptNo = z.number().int().describe('A prompt number in the run space, as returned by spawn, ask or fork.');
+  const act = (op: string, spends: boolean) => async (a: Record<string, unknown>) => {
+    let left: number | undefined;
+    try {
+      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
+      if (spends) left = spend(String(a.run));
+      const d = await relay(op, a);
+      return text(report(d as Done, left));
+    } catch (e) {
+      if (left != null) refund(String(a.run)); /* nothing was spent on a request that failed */
+      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+    }
+  };
+
+  server.registerTool('spawn', {
+    title: 'Start a subagent',
+    description: 'Start a subagent: a new conversation in your run space, with exactly the context you give it, and get its reply. Context can be text you pass (a brief, notes, file contents) and/or the context of an existing Treechats branch or prompt (copied in, the original is not changed). Returns the conversation, its first prompt number and the reply.',
+    inputSchema: {
+      run, agent, model,
+      prompt: z.string().min(1).describe('What to ask the subagent.'),
+      title: z.string().max(80).optional().describe('A title for the subagent conversation.'),
+      context: z.string().optional().describe('Material the subagent should have before your prompt: a brief, notes, code, file contents.'),
+      from: z.object({ space: z.string().optional(), conversation: z.string().optional(), branch: z.string().optional(), prompt: z.number().int().optional() }).optional()
+        .describe('Copy in the context of an existing Treechats branch or prompt, picked like get_context.'),
+    },
+  }, async (a) => {
+    let ctx = a.context || '';
+    if (a.from) {
+      const s = read(); if (!s) return fail('Treechats has nothing saved yet.');
+      const r = pick(s, a.from); if ('error' in r) return fail(r.error);
+      ctx = contextPrompt(s, r.t, r.id) + (ctx ? '\n\n' + ctx : '');
+    }
+    return act('spawn', true)({ ...a, context: ctx });
+  });
+  server.registerTool('ask', { title: 'Continue a subagent', description: 'Send a follow-up to a subagent, continuing after a prompt (or at the end of a branch), and get the reply.', inputSchema: { run, agent, model, after: promptNo.optional().describe('Continue after this prompt number.'), branch: z.string().optional().describe('Or continue at the end of this branch.'), prompt: z.string().min(1) } }, act('ask', true));
+  server.registerTool('fork', { title: 'Fork a subagent', description: 'Try an alternative: start a new branch after any prompt of a subagent, with a different follow-up, and get the reply. The original line is kept.', inputSchema: { run, agent, model, at: promptNo.describe('Branch off after this prompt number.'), prompt: z.string().min(1), name: z.string().max(40).optional().describe('A name for the new branch.') } }, act('fork', true));
+  server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
+  server.registerTool('edit_reply', { title: 'Correct a reply', description: 'Replace what the subagent said at a prompt. Prompts after it see your version. Marked as edited.', inputSchema: { run, agent, prompt: promptNo, reply: z.string() } }, act('edit_reply', false));
+  server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));
+  server.registerTool('distill', { title: 'Distill a subagent', description: 'Have Claude write a short brief (goal, decisions, facts, open questions) of a subagent conversation up to a prompt, so only the brief needs to enter your own context.', inputSchema: { run, agent, prompt: promptNo.optional(), branch: z.string().optional(), save_as_note: z.boolean().optional().describe('Also keep the brief as a note on that prompt.') } }, act('distill', true));
 
   return server;
 }

@@ -11,7 +11,8 @@ server/index.ts         HTTP server (Hono): serves the page and the API, localho
 server/proc.ts          starting and stopping other programs the same way on Windows, macOS and Linux
 server/claude.ts        turns → Messages API request; streaming; prompt caching; error codes
 server/cli.ts           the same through `claude -p` (Claude Code, e.g. with a subscription)
-server/mcp.ts           MCP server for Claude Code: list, search, get context (read-only)
+server/mcp.ts           MCP server for Claude Code: read (list, search, get context) and subagents (spawn, ask, fork…)
+server/relay.ts         passes subagent commands to the open page and waits for results; request budget per run
 server/context.ts       reads the saved tree on the server; builds context the same way the page does
 server/store.ts         SQLite: the app state document and rolling snapshots
 server/config.ts        .env settings
@@ -24,7 +25,9 @@ server/config.ts        .env settings
 | `GET /api/config` | Which provider is active and ready, model labels for each tier, limits |
 | `GET /api/state`, `PUT /api/state` | Load and save the app state (one JSON document) |
 | `GET /api/snapshots`, `GET /api/snapshots/:id` | Earlier saved states |
-| `POST /mcp` | MCP (streamable HTTP, stateless): `list_spaces`, `list_conversations`, `get_context`, `search`, `get_prompt` |
+| `POST /mcp` | MCP (streamable HTTP, stateless). Read: `list_spaces`, `list_conversations`, `get_context`, `search`, `get_prompt`. Subagents: `spawn`, `ask`, `fork`, `leave_out`, `edit_reply`, `regenerate`, `distill` |
+| `GET /api/agent/events` | Server-sent events: subagent commands for the open page to carry out |
+| `POST /api/agent/result` | The page's answer to a command: `{id, ok, result}` or `{id, ok:false, error}` |
 | `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |
 
 ## Why the app is still one file
