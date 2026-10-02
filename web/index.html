@@ -2434,9 +2434,9 @@ function rowHTML(id, pathSet){
   if(fan && fan.id===id) h+=fanHTML();
   return h;
 }
-/* which replies are open; Simple view keeps its own choice, Context path unless you pick another, so it reads like a chat */
-const repliesMode = () => opts.simple ? (opts.repliesSimple || 'path') : opts.replies;
-function setRepliesMode(m){ if(opts.simple) opts.repliesSimple=m; else opts.replies=m; openReplies.clear(); save(); }
+/* which replies are open; Simple view is one thread, so it shows every reply in it */
+const repliesMode = () => opts.simple ? 'path' : opts.replies;
+function setRepliesMode(m){ opts.replies=m; openReplies.clear(); save(); }
 /* long replies away from the selected prompt are shortened unless Length is set to Full; each reply's own Show all / Shorten flips just that one */
 const lenMode = () => opts.simple ? (opts.replyLenSimple || 'full') : set('replyLen');
 const replyFull = id => id===sel || ((lenMode()==='full') !== fullReplies.has(id));
@@ -2576,7 +2576,9 @@ function renderTree(){
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
   const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
   if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
-    h+=`<div class="viewbar" data-key="viewbar"><div class="vgroup" role="group" aria-label="Show replies"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}">${l}</button>`).join('')}</div><div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div></div>`; }
+    const showGroup=`<div class="vgroup" role="group" aria-label="Show replies"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}">${l}</button>`).join('')}</div>`;
+    const lenGroup=`<div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div>`;
+    h+=`<div class="viewbar" data-key="viewbar">${simpleNow?'':showGroup}${lenGroup}</div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
   if(simpleNow) h+=simpleHTML();
   else {
@@ -3753,7 +3755,7 @@ function renderSettings(){
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
       ${setRow('Default model','Also in the box under each prompt.',`<select data-setselect="model" aria-label="Default model">${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select>`)}
-      ${setRow('Show replies','Simple view remembers its own choice.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
+      ${setRow('Show replies','Simple view always shows every reply in the conversation.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['short','Shorten'],['full','Full']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, the merge note and summary requests.','<button class="btn" data-setprompts>Edit prompts</button>')}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
