@@ -532,17 +532,15 @@ ul.thread .row:hover ~ .uacts > *,ul.thread .uacts:hover > *,ul.thread .uacts:fo
 @media (hover:none){.uacts > *,.ractrow .act{opacity:1}}
 .uacts .fork{margin-left:4px}
 /* Chat | Editor */
-.viewsw{display:inline-flex;align-items:center;gap:8px;flex:none}
-.viewlbl{font:500 .7rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.vtrack{position:relative;display:grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:999px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)}
-.vthumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:999px;background:var(--surface);box-shadow:0 1px 3px var(--shadow), 0 0 0 1px var(--line);transition:transform .22s cubic-bezier(.2,.75,.2,1)}
+.viewsw{display:inline-flex;align-items:center;flex:none}
+.vtrack{position:relative;display:grid;grid-template-columns:1fr 1fr;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.vthumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:4px;background:var(--surface);box-shadow:0 1px 2px var(--shadow), 0 0 0 1px var(--line);transition:transform .22s cubic-bezier(.2,.75,.2,1)}
 .viewsw[data-view="editor"] .vthumb{transform:translateX(100%)}
-.vtrack button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;background:none;border-radius:999px;padding:5px 14px;font:inherit;font-size:.84rem;color:var(--muted);cursor:pointer}
+.vtrack button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;background:none;border-radius:4px;padding:4px 11px;font:inherit;font-size:.85rem;color:var(--muted);cursor:pointer}
 .vtrack button[aria-checked="true"]{color:var(--fg)}
 .vtrack button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .vtrack svg{width:15px;height:15px;flex:none}
-@container main (max-width:900px){.viewlbl{display:none}}
-@container main (max-width:620px){.vtrack .vtxt{display:none}.vtrack button{padding:5px 10px}}
+@container main (max-width:620px){.vtrack .vtxt{display:none}.vtrack button{padding:4px 9px}}
 @media (prefers-reduced-motion:reduce){.vthumb{transition:none}}
 /* Chat view: titles together, the input bar pinned to the bottom like any chat */
 .shell.simple header.top{display:none}
@@ -877,10 +875,10 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="tb-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M6 9c0 4 12 2 12 7" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="4" r="2.4" fill="var(--accent)"/><circle cx="6" cy="20" r="2.4" fill="var(--accent)"/><circle cx="18" cy="17" r="2.4" fill="var(--l1)"/></svg><span>Treechats</span></div>
   <button class="btn" id="spacesBtn" aria-controls="side"><span class="lbl">Projects</span><span class="ico" aria-hidden="true">☰</span></button>
   <button class="btn" id="convsBtn" aria-controls="convs" aria-label="Chats"><span class="ico" aria-hidden="true">☰</span><span class="lbl">Chats</span></button>
+  <div class="viewsw" id="viewSw" role="radiogroup" aria-label="View" data-view="chat"><span class="vtrack"><span class="vthumb" aria-hidden="true"></span><button role="radio" aria-checked="true" data-viewsw="chat" title="Chat view: one chat, read like any chat app"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="vtxt">Chat</span></button><button role="radio" aria-checked="false" data-viewsw="editor" title="Editor view: the whole tree, with the inspector and every tool"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11M4 6c0 3 8 1.5 8 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="4" cy="2.5" r="1.4" fill="currentColor"/><circle cx="4" cy="13.5" r="1.4" fill="currentColor"/><circle cx="12" cy="11.5" r="1.4" fill="currentColor"/></svg><span class="vtxt">Editor</span></button></span></div>
   <span class="tb-spacer"></span>
   <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘ Z)" aria-label="Undo"><span class="ico" aria-hidden="true">↶</span><span class="lbl">Undo</span></button>
   <button class="btn" id="redoBtn" title="Redo (Ctrl/⌘ Shift Z)" aria-label="Redo"><span class="ico" aria-hidden="true">↷</span><span class="lbl">Redo</span></button>
-  <div class="viewsw" id="viewSw" role="radiogroup" aria-label="View" data-view="chat"><span class="viewlbl">View</span><span class="vtrack"><span class="vthumb" aria-hidden="true"></span><button role="radio" aria-checked="true" data-viewsw="chat" title="Chat view: one chat, read like any chat app"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="vtxt">Chat</span></button><button role="radio" aria-checked="false" data-viewsw="editor" title="Editor view: the whole tree, with the inspector and every tool"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11M4 6c0 3 8 1.5 8 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="4" cy="2.5" r="1.4" fill="currentColor"/><circle cx="4" cy="13.5" r="1.4" fill="currentColor"/><circle cx="12" cy="11.5" r="1.4" fill="currentColor"/></svg><span class="vtxt">Editor</span></button></span></div>
   <button class="btn" id="mapBtn" aria-haspopup="dialog" aria-label="Branch map" title="Branch map (M)"><span class="ico" aria-hidden="true">⑂</span><span class="lbl">Map</span></button>
   <button class="btn" id="paletteBtn" aria-haspopup="dialog" aria-label="Commands" title="Commands"><span class="lbl">Commands</span><kbd class="tbk" id="palKbd">⌘K</kbd><span class="ico" aria-hidden="true">⌘</span></button>
   <button class="btn" id="settingsBtn" aria-haspopup="dialog" aria-label="Settings" title="Settings"><span class="lbl">Settings</span><span class="ico" aria-hidden="true">⚙</span></button>
@@ -3133,7 +3131,7 @@ function renderSpaceFiles(){
     ${fs.length ? `<ul class="flist">${fs.map((m,i)=>`<li><span class="fkind">TXT</span><span class="fname" title="${esc(m.name)}">${esc(m.name)}</span><span class="meta">${fmtSize(m.size)}</span><button class="btn xs danger" data-rmspacefile="${i}">Remove</button></li>`).join('')}</ul>` : ''}
     <div class="dropzone" data-dropspace>Drop files here, or <button class="linkbtn" data-attachspace style="color:var(--accent)">choose files</button></div>`;
 }
-function render(forceEditor){ renderSpaces(); renderSpaceFiles(); renderHeader(); Motion.run(convListEl, renderConvs); renderTree(); renderEditor(forceEditor); renderCtx(); renderBranches(); renderNotes(); refreshRunButtons(); }
+function render(forceEditor){ renderSpaces(); renderSpaceFiles(); renderHeader(); if(morphingTools) renderConvs(); else Motion.run(convListEl, renderConvs); renderTree(); renderEditor(forceEditor); renderCtx(); renderBranches(); renderNotes(); refreshRunButtons(); }
 
 /* which field has focus, so a redraw can put focus and the caret back in the same place */
 const FOCUS_ATTRS=['vtext','ftitle','fprompt'];
@@ -3341,13 +3339,15 @@ function pickToggle(k){
   commit(`${hide?'Hid':'Showing'} “${clip(convTitle(r),40)}”`, ()=>setOff(k, hide), {touch:false, hidden:true});
 }
 /* entering or leaving a list mode: the tools area grows or shrinks smoothly, its contents fade in, and the rows below glide */
+let morphingTools=false;
 function morphTools(update, o={}){
   const el=document.getElementById('cvTools');
   if(Motion.reduced()){ update(); return; }
   const h0=el.getBoundingClientRect().height;
   const pill0=el.querySelector('.vmpill'), p0=pill0 ? pill0.getBoundingClientRect().left : null;
-  /* only the panel's height animates; the rows below simply follow it, so nothing moves twice */
-  update();
+  /* only the panel's height animates; the rows below simply follow it, so nothing moves twice (the list's own
+     animation is held off while this runs) */
+  morphingTools=true; try{ update(); } finally{ morphingTools=false; }
   const h1=el.getBoundingClientRect().height;
   const pill1=el.querySelector('.vmpill');
   if(pill1 && p0!=null){ const dx=p0-pill1.getBoundingClientRect().left; if(Math.abs(dx)>.5) pill1.animate([{transform:`translateX(${dx}px)`},{transform:'none'}], {duration:260, easing:'cubic-bezier(.2,.75,.2,1)'}); }
@@ -3538,25 +3538,35 @@ const closeSide = closeDrawers;
 function showPanel(which){ if(narrow()){ openDrawer(which); return; } opts.collapsed[which]=false; applyLayout(); save(); }
 function hidePanel(which){ if(narrow()){ closeDrawers(); return; } opts.collapsed[which]=true; applyLayout(); save(); }
 document.getElementById('spacesBtn').onclick=()=>showPanel('spaces');
-/* Switching layouts (Chat and Editor, Selection and Focus) changes nearly everything on the page, so instead of
-   flying elements between two unrelated layouts, the prompt you were looking at stays where it was on screen and
-   the new layout fades in around it. */
+/* Switching layouts (Chat and Editor, Selection and Focus) changes nearly everything on the page. Flying every element
+   between two unrelated layouts would be noise, so the prompt you were looking at (and its reply) stays at the same
+   height on screen and glides sideways into its new place, while everything around it fades in. */
 function swapView(update){
   const top=66, vis=r=>r.bottom>top && r.top<innerHeight;
   let a=sel!=null ? treeEl.querySelector(`.row[data-id="${sel}"]`) : null;
   if(!a || !vis(a.getBoundingClientRect())) a=[...treeEl.querySelectorAll('.row[data-id]')].find(r=>vis(r.getBoundingClientRect())) || null;
-  const id=a ? a.dataset.id : null, y0=a ? a.getBoundingClientRect().top : 0;
+  const replyOf=row=>{ const li=row && row.closest('li'); return li ? li.querySelector(':scope > .reply') : null; };
+  const id=a ? a.dataset.id : null, r0=a ? a.getBoundingClientRect() : null, ra=replyOf(a), q0=ra ? ra.getBoundingClientRect() : null;
   update();
   const b=id!=null ? treeEl.querySelector(`.row[data-id="${id}"]`) : null;
   /* chats render lazily with an estimated height; lay out the anchor's chat and the ones above it for real, or the
      anchor moves once the browser gets to them */
   for(let sec=b && b.closest('section.conv'); sec; sec=sec.previousElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
-  if(b) window.scrollBy(0, b.getBoundingClientRect().top-y0);
-  if(!Motion.reduced()){
-    const o={duration:200, easing:'cubic-bezier(.2,.75,.2,1)'};
-    treeEl.animate([{opacity:0},{opacity:1}], o);
-    const aside=document.querySelector('aside'); if(aside && aside.offsetParent) aside.animate([{opacity:0},{opacity:1}], o);
+  if(b) window.scrollBy(0, b.getBoundingClientRect().top-r0.top);
+  if(Motion.reduced()) return !!b;
+  const ease='cubic-bezier(.2,.75,.2,1)', moving=new Set();
+  const glide=(el, was)=>{ if(!el || !was) return; const r=el.getBoundingClientRect(), dx=was.left-r.left, dy=was.top-r.top;
+    moving.add(el); if(Math.abs(dx)>.5 || Math.abs(dy)>.5) el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}], {duration:300, easing:ease}); };
+  glide(b, r0); glide(replyOf(b), q0);
+  /* the column clips while they glide, so they never slide across the inspector */
+  if(moving.size){ treeEl.style.overflowX='clip'; clearTimeout(swapView.t); swapView.t=setTimeout(()=>{ treeEl.style.overflowX=''; }, 320); }
+  /* everything else on screen fades in; only blocks near the viewport, so a long chat stays cheap */
+  const near=r=>r.bottom>-60 && r.top<innerHeight+60, fade={duration:220, easing:ease};
+  for(const el of treeEl.querySelectorAll('.chathead, .convHead, .row, .reply, .uacts, .pacts, .ractrow, .foldnote, .ops, .simpleops, .mergebox, .composer, .seam')){
+    if(moving.has(el) || [...moving].some(m=>el.contains(m)) || (el.parentElement && el.parentElement.closest('.mergebox')) || !near(el.getBoundingClientRect())) continue;
+    el.animate([{opacity:0},{opacity:1}], fade);
   }
+  const aside=document.querySelector('aside'); if(aside && aside.offsetParent) aside.animate([{opacity:0},{opacity:1}], fade);
   return !!b;
 }
 function setView(chat){
@@ -4128,6 +4138,12 @@ function renderSettings(){
   const mod=IS_MAC?'⌥⇧':'Alt+Shift+';
   let h='';
   if(tab==='look'){
+    h+=`<section class="setsec"><h3>Text and layout</h3>
+      ${setRow('Text size','',segs('textSize',Object.entries(TEXT_SIZES).map(([k,v])=>[k,v[0]]),'Text size'))}
+      ${setRow('Font','System uses your device’s own font.',segs('font',Object.entries(FONTS).map(([k,v])=>[k,v[0]]),'Font'))}
+      ${setRow('Density','Compact fits more prompts on screen.',segs('density',[['comfortable','Comfortable'],['compact','Compact']],'Density'))}
+      ${setRow('Motion','Reduced turns off animations.',segs('motion',[['system','System'],['reduced','Reduced']],'Motion'))}
+      ${setRow('Branch map in the panel','A small graph of the chat\u2019s branches under the chat list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
     h+=`<section class="setsec"><h3>Theme</h3>${setRow('Mode', set('theme')==='system'?`Following your device: ${resolvedMode()}`:'', segs('theme',[['system','System'],['light','Light'],['dark','Dark']],'Mode'))}</section>`;
     const mine=Object.keys(customThemes()), activeMine=!!themeFor(set('palette'));
     h+=`<section class="setsec"><h3>Palette</h3><div class="palettes">${[...Object.keys(PALETTES),...mine].map(palCard).join('')}<button class="pal newpal" data-tnew><span class="plus" aria-hidden="true">+</span><span>New theme</span></button></div>
@@ -4136,12 +4152,6 @@ function renderSettings(){
     </section>`;
     h+=themeEditorHTML();
     if(!activeMine) h+=`<section class="setsec"><h3>Accent color</h3><p class="note">Used for buttons, the selected prompt and the main branch line.</p><div class="accents">${Object.entries(ACCENTS).map(([k,a])=>`<button class="acc" data-set="accent" data-val="${k}" aria-pressed="${set('accent')===k}" aria-label="${a.name}" title="${a.name}" style="background:${a[shownMode()]}"></button>`).join('')}</div></section>`;
-    h+=`<section class="setsec"><h3>Text and layout</h3>
-      ${setRow('Text size','',segs('textSize',Object.entries(TEXT_SIZES).map(([k,v])=>[k,v[0]]),'Text size'))}
-      ${setRow('Font','System uses your device’s own font.',segs('font',Object.entries(FONTS).map(([k,v])=>[k,v[0]]),'Font'))}
-      ${setRow('Density','Compact fits more prompts on screen.',segs('density',[['comfortable','Comfortable'],['compact','Compact']],'Density'))}
-      ${setRow('Motion','Reduced turns off animations.',segs('motion',[['system','System'],['reduced','Reduced']],'Motion'))}
-      ${setRow('Branch map in the panel','A small graph of the chat\u2019s branches under the chat list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
       <p class="note">${AI}marks tools where Claude does the work, such as Distill or Fan out. Each use sends a request.</p>
