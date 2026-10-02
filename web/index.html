@@ -3539,14 +3539,13 @@ function showPanel(which){ if(narrow()){ openDrawer(which); return; } opts.colla
 function hidePanel(which){ if(narrow()){ closeDrawers(); return; } opts.collapsed[which]=true; applyLayout(); save(); }
 document.getElementById('spacesBtn').onclick=()=>showPanel('spaces');
 /* Switching layouts (Chat and Editor, Selection and Focus) changes nearly everything on the page. Flying every element
-   between two unrelated layouts would be noise, so the prompt you were looking at (and its reply) stays at the same
-   height on screen and glides sideways into its new place, while everything around it fades in. */
+   between two unrelated layouts would be noise, so the prompt you were looking at stays at the same height on screen
+   and glides sideways into its new place, while everything around it (its reply included) fades in. */
 function swapView(update){
   const top=66, vis=r=>r.bottom>top && r.top<innerHeight;
   let a=sel!=null ? treeEl.querySelector(`.row[data-id="${sel}"]`) : null;
   if(!a || !vis(a.getBoundingClientRect())) a=[...treeEl.querySelectorAll('.row[data-id]')].find(r=>vis(r.getBoundingClientRect())) || null;
-  const replyOf=row=>{ const li=row && row.closest('li'); return li ? li.querySelector(':scope > .reply') : null; };
-  const id=a ? a.dataset.id : null, r0=a ? a.getBoundingClientRect() : null, ra=replyOf(a), q0=ra ? ra.getBoundingClientRect() : null;
+  const id=a ? a.dataset.id : null, r0=a ? a.getBoundingClientRect() : null;
   update();
   const b=id!=null ? treeEl.querySelector(`.row[data-id="${id}"]`) : null;
   /* chats render lazily with an estimated height; lay out the anchor's chat and the ones above it for real, or the
@@ -3557,8 +3556,8 @@ function swapView(update){
   const ease='cubic-bezier(.2,.75,.2,1)', moving=new Set();
   const glide=(el, was)=>{ if(!el || !was) return; const r=el.getBoundingClientRect(), dx=was.left-r.left, dy=was.top-r.top;
     moving.add(el); if(Math.abs(dx)>.5 || Math.abs(dy)>.5) el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}], {duration:300, easing:ease}); };
-  glide(b, r0); glide(replyOf(b), q0);
-  /* the column clips while they glide, so they never slide across the inspector */
+  glide(b, r0);
+  /* the column clips while it glides, so it never slides across the inspector */
   if(moving.size){ treeEl.style.overflowX='clip'; clearTimeout(swapView.t); swapView.t=setTimeout(()=>{ treeEl.style.overflowX=''; }, 320); }
   /* everything else on screen fades in; only blocks near the viewport, so a long chat stays cheap */
   const near=r=>r.bottom>-60 && r.top<innerHeight+60, fade={duration:220, easing:ease};
