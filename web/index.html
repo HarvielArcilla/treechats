@@ -477,7 +477,21 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .shell.simple ul.thread .row.mergept{margin:0 auto;background:none;border:0;padding:0;font-size:.8rem;color:var(--muted)}
 .shell.simple ul.thread .reply{margin:10px 0 0;border-left:0;background:none;padding:2px 2px 0;border-radius:0;font-size:.95rem}
 .shell.simple ul.thread .reply .rhead .who{display:none}
+.shell.simple ul.thread .reply .rhead{position:absolute;top:-2px;right:0;z-index:1}
+.shell.simple ul.thread .reply.live .rhead,.shell.simple ul.thread .reply.empty .rhead{position:static}
+.mergebox .fork{display:none}
+.mergebox .mmeta{font-weight:400}
 .shell.simple .simpleops{margin:22px 0 0;border:0;background:none;padding:0}
+.mergebox{border:1px dashed var(--line);border-radius:12px;background:var(--surface)}
+.mergebox > summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:8px 14px;cursor:pointer;list-style:none;font-size:.88rem}
+.mergebox > summary::-webkit-details-marker{display:none}
+.mergebox > summary::after{content:"Show";margin-left:auto;font-size:.78rem;color:var(--accent)}
+.mergebox[open] > summary::after{content:"Hide"}
+.mergebox .mic{color:var(--merge);font-weight:700}
+.mergebox .mmeta{font-size:.78rem;color:var(--muted)}
+.mergebox .mbody{padding:0 14px 14px;display:grid;gap:12px}
+.mergebox .mbody .note{margin:0}
+.mergebox .seamq{margin:0;padding:6px 10px;border-left:3px solid var(--merge);color:var(--muted);font-size:.85rem;white-space:pre-wrap}
 .fork{display:inline-flex;align-items:center;gap:2px;font:.74rem var(--mono);color:var(--muted);white-space:nowrap}
 .fork button{border:0;background:none;color:inherit;cursor:pointer;padding:0 4px;font-size:1rem;line-height:1}
 .fork button:hover:not(:disabled){color:var(--fg)}
@@ -2144,7 +2158,7 @@ function paletteCommands(q){
     const n=S.nodes[sel], g=`Prompt #${sel}`;
     if(n.kind!=='merge') add(g, 'Continue from here', ()=>{ select(sel); setTimeout(()=>{ const t=document.getElementById('contText'); if(t) t.focus(); }, 30); });
     for(const [k,o] of Object.entries(OPS)){ if(k==='cont' || !available(k,sel)) continue; if(k==='regen' && sampleState!=='ready') continue; add(g, opLabel(k,sel).replace('…',''), ()=>run(k, sel), opts.opKeys===false?'':kk(o.key)); }
-    add(g, S.fold[sel] ? 'Unfold the prompts below' : 'Fold the prompts below', ()=>toggleFold(sel));
+    add(g, S.fold[sel] ? 'Show the prompts below' : 'Hide the prompts below', ()=>toggleFold(sel));
     if(n.kind!=='merge') add(g, n.star ? 'Unstar' : 'Star', ()=>toggleStar(sel));
     add(g, 'Copy this path as Markdown', ()=>copyText(pathMarkdown(sel)));
     add(g, 'Copy this path as messages JSON', ()=>copyText(JSON.stringify(turnsFor(sel,true),null,2)));
@@ -2404,7 +2418,8 @@ function rowHTML(id, pathSet){
   const tags = (opts.simple && !pick ? forkHTML(id) : '')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(id===sel&&editingNow&&!pick?'<span class="tag editing">editing</span>':'')+refs+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
   const shown=replyShown(id, pathSet);
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !S.fold[id];
-  const fold = foldable ? `<button class="rtog fold" data-fold="${id}" title="Fold away the prompts below this one">fold</button>` : (pick||isM ? '' : '<span class="rtog fold ph" aria-hidden="true">fold</span>');
+  const nBelow = foldable ? [...desc(id)].filter(x=>S.nodes[x].kind!=='merge').length : 0;
+  const fold = foldable ? `<button class="rtog fold" data-fold="${id}" title="Collapse the ${nBelow} prompt${nBelow===1?'':'s'} below this one. Nothing is deleted.">▴ hide ${nBelow} below</button>` : (pick||isM ? '' : '<span class="rtog fold ph" aria-hidden="true">▴ hide 0 below</span>');
   const star = isM || pick ? '' : `<button class="star ${n.star?'on':''}" data-star="${id}" aria-pressed="${!!n.star}" aria-label="${n.star?'Unstar':'Star'} #${id}" title="${n.star?'Starred. Click to unstar.':'Star this prompt'}">${n.star?'★':'☆'}</button>`;
   const tog = n.reply && !liveGen(id) ? `<button class="rtog" data-rtog="${id}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} Claude\u2019s reply">${shown?'▾':'▸'} reply</button>` : '';
   /* the selected prompt is shown in full and formatted (tables, math, code) when it has more than plain text */
@@ -2491,7 +2506,7 @@ function runHTML(id, lane, pathSet){
     if(cur===sel && !pick) h+=opsHTML(cur);
     if(S.fold[cur]){
       const below=[...desc(cur)].filter(x=>S.nodes[x].kind!=='merge').length;
-      h+=`<div class="foldnote" data-key="fd${cur}"><button class="linkbtn" data-unfold="${cur}">${below} prompt${below===1?'':'s'} folded · Show</button></div>`;
+      h+=`<div class="foldnote" data-key="fd${cur}"><button class="linkbtn" data-unfold="${cur}">▸ ${below} prompt${below===1?'':'s'} hidden below · Show</button></div>`;
       items.push([cur,h]); break;
     }
     const used=new Set([lane]);
@@ -2533,10 +2548,23 @@ function simpleHTML(){
   if(base==null){ const k=lastConvKey(), r=rs.find(x=>convKey(x)===k) || rs[0]; base=r ? convTip(r) : null; }
   if(base==null) return '';
   const tip=threadTip(base); simpleTip=tip;
-  const p=path(tip), pathSet=new Set(p), r=S.nodes[chain(tip)[0]];
-  const items=p.map(id=>`<li class="g" data-key="n${S.nodes[id].alt ?? id}">${rowHTML(id, pathSet)}</li>`).join('');
+  const c=chain(tip), pathSet=new Set(path(tip)), r=S.nodes[c[0]];
+  /* the thread follows this conversation's own line; what a merge brings in folds into one line at the merge */
+  const items=c.map(id=>`<li class="g" data-key="n${S.nodes[id].alt ?? id}">${S.nodes[id].kind==='merge' ? mergeBoxHTML(id, pathSet) : rowHTML(id, pathSet)}</li>`).join('');
   return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="convHead"><span class="ctitle">${esc(convTitle(r))}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
 }
+/* A merge in the thread: one line saying which branch came in, opening to the note Claude reads at the join
+   and the prompts and replies the branch brings, which Claude sees as part of this conversation. */
+const openMerges=new Set();
+function mergeBoxHTML(m, pathSet){
+  const n=S.nodes[m], seen=new Set(path(n.parents[0])), inn=[];
+  for(const q of n.parents.slice(1)) for(const x of path(q)) if(!seen.has(x)){ seen.add(x); if(S.nodes[x].kind!=='merge') inn.push(x); }
+  const from=n.from || '#'+n.parents[1], k=inn.length, open=openMerges.has(m) || inn.includes(sel);
+  return `<details class="mergebox" data-mergebox="${m}" ${open?'open':''}><summary><span class="mic" aria-hidden="true">⤵</span><span class="mwhat"><b>${esc(from)}</b> merged in here</span><span class="mmeta">${k} prompt${k===1?'':'s'} with replies · Claude sees ${k===1?'it':'them'} too</span></summary>
+    <div class="mbody"><p class="note">Claude reads this note, then the prompts below, as part of this conversation:</p><blockquote class="seamq">${esc(n.seam || promptText('seam'))}</blockquote>
+    <ul class="tree thread">${inn.map(x=>`<li class="g" data-key="n${S.nodes[x].alt ?? x}">${rowHTML(x, pathSet)}</li>`).join('')}</ul></div></details>`;
+}
+treeEl.addEventListener('toggle', e=>{ const d=e.target; if(d.dataset && d.dataset.mergebox!=null){ const m=+d.dataset.mergebox; d.open ? openMerges.add(m) : openMerges.delete(m); } }, true);
 function scrollThreadEnd(){ requestAnimationFrame(()=>{ if(treeEl.querySelector('.simpleops')) window.scrollTo(0, document.documentElement.scrollHeight); }); }
 function renderTree(){
   const pathSet=new Set(sel!=null&&S.nodes[sel]?path(sel):[]);
