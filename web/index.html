@@ -386,7 +386,7 @@ ul.tree, ul.kids, ul.tree li{min-width:0;max-width:100%}
 .rbody del{opacity:.7}
 .rbody code{font:.82em var(--mono);background:var(--code-bg);padding:1px 4px;border-radius:3px}
 .rbody pre{margin:0;background:var(--code-bg);border-radius:0 0 6px 6px;padding:10px 12px;overflow-x:auto;max-width:100%}
-.rbody pre code{background:none;padding:0;font-size:.78rem;line-height:1.5}
+.rbody pre code{background:none;padding:0;font-size:.78rem;line-height:1.5;tab-size:4}
 .reply.clamp .rbody{max-height:7.2em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
 .btn.sm{font-size:.78rem;padding:4px 10px;justify-self:start;margin-top:8px}
 .racts{display:flex;gap:12px}
@@ -456,7 +456,38 @@ ul.flist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:
 .shell.simple .ops{border:0;background:none;padding:0;margin-left:20px}
 .shell.simple .ops .composer{border-top:0;padding-top:0}
 .shell.simple .row .nid{visibility:hidden}
-#simpleBtn[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.shell.simple .top .eyebrow,.shell.simple .top .sub,.shell.simple #stats,.shell.simple .vismodes,.shell.simple .vishint,.shell.simple .contLabel{display:none}
+.shell.simple .cv.off{opacity:1}
+.shell.simple #cvTools{display:none}
+.shell.simple ul.thread .reply .racts{opacity:0;transition:opacity .12s}
+.shell.simple ul.thread .reply:hover .racts,.shell.simple ul.thread .reply:focus-within .racts{opacity:1}
+@media (hover:none){.shell.simple ul.thread .reply .racts{opacity:1}}
+.shell.simple section.conv.thread{background:none;border:0;padding:0;content-visibility:visible}
+.shell.simple .thread .convHead{margin-bottom:14px}
+.shell.simple ul.tree.thread{display:grid;gap:18px;padding:0;margin:0}
+.shell.simple ul.thread li.g::before{display:none}
+.shell.simple ul.thread li.g{padding:0}
+.shell.simple ul.thread .row{margin:0 0 0 auto;width:fit-content;max-width:min(85%,640px);background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:10px 16px;cursor:default;align-items:flex-start}
+.shell.simple ul.thread .row.sel{background:var(--surface);border-color:var(--line)}
+.shell.simple ul.thread .row .dot,.shell.simple ul.thread .row .nid{display:none}
+.shell.simple ul.thread .row .txt{-webkit-line-clamp:none;display:block;white-space:pre-wrap}
+.shell.simple ul.thread .row .txt.ptext{display:grid;white-space:normal}
+.shell.simple ul.thread .row .tags{max-width:none}
+.shell.simple ul.thread .row .tags > :not(.fork){display:none}
+.shell.simple ul.thread .row.mergept{margin:0 auto;background:none;border:0;padding:0;font-size:.8rem;color:var(--muted)}
+.shell.simple ul.thread .reply{margin:10px 0 0;border-left:0;background:none;padding:2px 2px 0;border-radius:0;font-size:.95rem}
+.shell.simple ul.thread .reply .rhead .who{display:none}
+.shell.simple .simpleops{margin:22px 0 0;border:0;background:none;padding:0}
+.fork{display:inline-flex;align-items:center;gap:2px;font:.74rem var(--mono);color:var(--muted);white-space:nowrap}
+.fork button{border:0;background:none;color:inherit;cursor:pointer;padding:0 4px;font-size:1rem;line-height:1}
+.fork button:hover:not(:disabled){color:var(--fg)}
+.fork button:disabled{opacity:.3;cursor:default}
+.switchbtn{display:inline-flex;align-items:center;gap:8px}
+.switchbtn .track{width:28px;height:16px;border-radius:999px;background:var(--line);position:relative;flex:none;transition:background .15s}
+.switchbtn .knob{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px var(--shadow);transition:transform .15s}
+.switchbtn[aria-checked="true"] .track{background:var(--accent)}
+.switchbtn[aria-checked="true"] .knob{transform:translateX(12px)}
+@media (prefers-reduced-motion:reduce){.switchbtn .track,.switchbtn .knob{transition:none}}
 .row.also{border-color:var(--accent);border-style:dashed;background:color-mix(in srgb, var(--accent-soft) 55%, transparent)}
 .tag.alsotag{color:var(--accent);background:var(--accent-soft)}
 .alsobar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
@@ -751,7 +782,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <span class="tb-spacer"></span>
   <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘ Z)" aria-label="Undo"><span class="ico" aria-hidden="true">↶</span><span class="lbl">Undo</span></button>
   <button class="btn" id="redoBtn" title="Redo (Ctrl/⌘ Shift Z)" aria-label="Redo"><span class="ico" aria-hidden="true">↷</span><span class="lbl">Redo</span></button>
-  <button class="btn" id="simpleBtn" aria-pressed="false" title="Hide the tools and side panels for a plain chat layout"><span class="lbl">Simple view</span><span class="ico" aria-hidden="true">◧</span></button>
+  <button class="btn switchbtn" id="simpleBtn" role="switch" aria-checked="false" title="One conversation as a plain chat, without the tree and tools"><span class="track" aria-hidden="true"><span class="knob"></span></span><span class="lbl">Simple view</span></button>
   <button class="btn" id="paletteBtn" aria-haspopup="dialog" aria-label="Commands" title="Commands"><span class="lbl">Commands</span><kbd class="tbk" id="palKbd">⌘K</kbd><span class="ico" aria-hidden="true">⌘</span></button>
   <button class="btn" id="settingsBtn" aria-haspopup="dialog" aria-label="Settings" title="Settings"><span class="lbl">Settings</span><span class="ico" aria-hidden="true">⚙</span></button>
   <button class="btn primary" id="newBtn" aria-label="New conversation">+<span class="lbl"> New conversation</span></button>
@@ -1612,6 +1643,7 @@ function addPrompt(parent, text){
     sel=created[0];
   });
   wantReplies(created);
+  if(opts.simple) scrollThreadEnd();
 }
 function takePending(){ const f=pendingFiles.length ? pendingFiles : null; pendingFiles=[]; return f; }
 const NAME_RE=/^[A-Za-z0-9._\/-]{1,40}$/;
@@ -1768,7 +1800,9 @@ function finishGen(g, text, tier, note){
   if(g.stopped) dropWaiting(g.sid, g.id);
   pumpReplies();
   if(g.sid===DB.current){
+    const end=atPageEnd();
     animRender([g.id], editorFor===g.id);
+    if(end) scrollThreadEnd();
     if(cmpFor!=null) renderCompare();
     if(n && n.reply) afterReplyNaming(g.id);
   }
@@ -1801,6 +1835,7 @@ function refreshWaiting(){
   if(sel==null || !S.nodes[sel] || liveGen(sel) || S.nodes[sel].reply) return;
   const slot=treeEl.querySelector(`[data-key="r${sel}"]`); if(slot) slot.outerHTML=replyHTML(sel);
 }
+const atPageEnd = () => opts.simple && innerHeight+scrollY >= document.documentElement.scrollHeight-140;
 /* streamed text is painted at most once a frame, however many replies are coming in */
 const paintDue=new Set(); let paintRaf=0;
 function paintGen(g){
@@ -1808,12 +1843,15 @@ function paintGen(g){
   if(paintRaf) return;
   paintRaf=requestAnimationFrame(()=>{
     paintRaf=0;
+    /* in Simple view, a reply coming in keeps the page at the bottom if you were there, as chat apps do */
+    const de=document.documentElement, atEnd=atPageEnd();
     for(const x of paintDue){
       if(x.sid!==DB.current || !gens.has(gkey(x.sid,x.id))) continue;
       const b=treeEl.querySelector(`.reply[data-gen="${x.id}"] .rbody`); if(b) b.innerHTML=md(x.text);
       const c=document.querySelector(`[data-cgen="${x.id}"]`); if(c) c.innerHTML=md(x.text);
     }
     paintDue.clear();
+    if(atEnd) window.scrollTo(0, de.scrollHeight);
   });
 }
 /* ---- Claude-written summaries (Reroot, Squash) ----
@@ -2117,7 +2155,7 @@ function paletteCommands(q){
   add('App', 'New space', ()=>createSpace());
   add('App', 'Undo', ()=>undo(), IS_MAC?'⌘Z':'Ctrl+Z');
   add('App', 'Redo', ()=>redo(), IS_MAC?'⌘⇧Z':'Ctrl+Shift+Z');
-  add('App', opts.simple?'Show tools':'Simple view', ()=>document.getElementById('simpleBtn').click());
+  add('App', opts.simple?'Turn off Simple view':'Turn on Simple view', ()=>document.getElementById('simpleBtn').click());
   add('App', 'Show all conversations', ()=>showAll());
   add('App', 'Import chats', ()=>openImport());
   for(const [f,l] of [['star','starred prompts'],['note','prompts with notes'],['skip','left-out prompts']]) add('Filter', `Show ${l}`, ()=>setFilter(f, true));
@@ -2311,7 +2349,7 @@ function composerHTML(forId){
     ${also}
     <textarea id="contText" placeholder="Your next prompt" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
     ${fileChips(pendingFiles, true)}
-    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:'Continue'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
+    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:opts.simple?'Send':'Continue'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
     ${replyBusy(forId)?'<p class="note">You can send now. Claude answers it as soon as the reply above is done.</p>':''}
     ${sampleState==='off'?'<p class="note">To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats. Prompts still get added.</p>':''}</div>`;
 }
@@ -2363,19 +2401,19 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const tags = (alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(id===sel&&editingNow&&!pick?'<span class="tag editing">editing</span>':'')+refs+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
+  const tags = (opts.simple && !pick ? forkHTML(id) : '')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(id===sel&&editingNow&&!pick?'<span class="tag editing">editing</span>':'')+refs+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
   const shown=replyShown(id, pathSet);
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !S.fold[id];
   const fold = foldable ? `<button class="rtog fold" data-fold="${id}" title="Fold away the prompts below this one">fold</button>` : (pick||isM ? '' : '<span class="rtog fold ph" aria-hidden="true">fold</span>');
   const star = isM || pick ? '' : `<button class="star ${n.star?'on':''}" data-star="${id}" aria-pressed="${!!n.star}" aria-label="${n.star?'Unstar':'Star'} #${id}" title="${n.star?'Starred. Click to unstar.':'Star this prompt'}">${n.star?'★':'☆'}</button>`;
   const tog = n.reply && !liveGen(id) ? `<button class="rtog" data-rtog="${id}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} Claude\u2019s reply">${shown?'▾':'▸'} reply</button>` : '';
   /* the selected prompt is shown in full and formatted (tables, math, code) when it has more than plain text */
-  const rich = !isM && id===sel && !pick && !(n.pending && !n.text) && RICH_RE.test(n.text||'');
+  const rich = !isM && (id===sel || opts.simple) && !pick && !(n.pending && !n.text) && RICH_RE.test(n.text||'');
   const txt = isM ? `<span class="txt">Merged <b>${esc(n.from||'#'+n.parents[1])}</b> into <b>${esc(n.into||'#'+n.parents[0])}</b></span>`
     : rich ? `<div class="txt rbody ptext">${md(n.text)}</div>`
     : `<span class="txt">${n.pending && !n.text ? '<em class="thinking">Claude is summarizing…</em>' : esc(RICH_RE.test(n.text||'') ? plainText(n.text) : n.text)}</span>`;
   const txtF = n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
-  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${tog}${fold}${star}</span></div>`;
+  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${tags}${tog}${fold}${star}</span></div>`;
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
@@ -2385,7 +2423,8 @@ function rowHTML(id, pathSet){
 const repliesMode = () => opts.simple ? (opts.repliesSimple || 'path') : opts.replies;
 function setRepliesMode(m){ if(opts.simple) opts.repliesSimple=m; else opts.replies=m; openReplies.clear(); save(); }
 /* long replies away from the selected prompt are shortened unless Length is set to Full; each reply's own Show all / Shorten flips just that one */
-const replyFull = id => id===sel || ((set('replyLen')==='full') !== fullReplies.has(id));
+const lenMode = () => opts.simple ? (opts.replyLenSimple || 'full') : set('replyLen');
+const replyFull = id => id===sel || ((lenMode()==='full') !== fullReplies.has(id));
 const RICH_RE=/\n|[|$`*#_\\]|^\s*([-*+]|\d+[.)])\s/;
 function replyShown(id, pathSet){
   const n=S.nodes[id];
@@ -2470,6 +2509,35 @@ function runHTML(id, lane, pathSet){
   /* rows are keyed by version group, so flipping reply versions keeps the row and swaps the reply */
   return items.map(([nid,h],i)=>`<li class="g ${i===0?'first ':''}${i===items.length-1?'last':''}" data-key="n${S.nodes[nid].alt ?? nid}">${h}</li>`).join('');
 }
+/* ---- Simple view ----
+   One conversation, read top to bottom like a chat: the line from its start to the tip of the branch you're on,
+   with Claude's replies in full and the input box at the end. Where the conversation branches, ‹ 1 / 3 › on the
+   prompt switches between the branches, the way Claude switches between edits. Nothing about the tree changes. */
+let simpleTip=null;
+function threadTip(id){
+  if(simpleTip!=null && S.nodes[simpleTip] && path(simpleTip).includes(id)) return simpleTip;
+  const h=headTip(); if(h!=null && path(h).includes(id)) return h;
+  const rid=refsThrough(id)[0]; return rid ? S.refs[rid].tip : leafOf(id);
+}
+const composeParent = () => opts.simple && !pick && simpleTip!=null && S.nodes[simpleTip] ? simpleTip : sel;
+function forkHTML(id){
+  const n=S.nodes[id], p=n.parents[0]; if(p==null || n.kind==='merge') return '';
+  const sib=vKids(p).filter(k=>k.kind!=='merge'); if(sib.length<2) return '';
+  const i=sib.findIndex(k=>k.id===id); if(i<0) return '';
+  const go=j=>sib[j] ? `data-forkgo="${sib[j].id}"` : 'disabled';
+  return `<span class="fork" title="This conversation branches here"><button ${go(i-1)} aria-label="Previous branch">‹</button><span>${i+1} / ${sib.length}</span><button ${go(i+1)} aria-label="Next branch">›</button></span>`;
+}
+function simpleHTML(){
+  const rs=orderedRoots();
+  let base = sel!=null && S.nodes[sel] ? sel : null;
+  if(base==null){ const k=lastConvKey(), r=rs.find(x=>convKey(x)===k) || rs[0]; base=r ? convTip(r) : null; }
+  if(base==null) return '';
+  const tip=threadTip(base); simpleTip=tip;
+  const p=path(tip), pathSet=new Set(p), r=S.nodes[chain(tip)[0]];
+  const items=p.map(id=>`<li class="g" data-key="n${S.nodes[id].alt ?? id}">${rowHTML(id, pathSet)}</li>`).join('');
+  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="convHead"><span class="ctitle">${esc(convTitle(r))}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
+}
+function scrollThreadEnd(){ requestAnimationFrame(()=>{ if(treeEl.querySelector('.simpleops')) window.scrollTo(0, document.documentElement.scrollHeight); }); }
 function renderTree(){
   const pathSet=new Set(sel!=null&&S.nodes[sel]?path(sel):[]);
   for(const x of pathSet) if(x!==sel && S.fold[x]) delete S.fold[x];
@@ -2478,9 +2546,12 @@ function renderTree(){
   if(pick && pick.op==='also') h+=`<div class="pickBanner" data-key="pick"><span>Reply to several: tap the prompts to reply to · <b>${alsoTargets.size+1} picked</b></span><button class="btn" data-cancel>Done <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
   else if(pick){ const o=OPS[pick.op], who=refsAt(pick.src).map(refName)[0]; h+=`<div class="pickBanner" data-key="pick"><span>${o.label.replace('…','')} ${who?esc(who)+' (#'+pick.src+')':'#'+pick.src}: ${o.pick}</span><button class="btn" data-cancel>Cancel <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`; }
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
-  if(shown.length){ const rm=repliesMode(), rl=set('replyLen');
+  const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
+  if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
     h+=`<div class="viewbar" data-key="viewbar"><div class="vgroup" role="group" aria-label="Show replies"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}">${l}</button>`).join('')}</div><div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div></div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
+  if(simpleNow) h+=simpleHTML();
+  else {
   if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New conversation</p>':`<p class="emptyhead">Start a conversation in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a conversation here from another space with its Move button.</p>`}${composerHTML('root')}</section>`;
   const offN=rs.length-shown.length;
   if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} conversations in this space are hidden. Choose which to show from the conversation list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
@@ -2490,6 +2561,7 @@ function renderTree(){
     h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a space in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Conversation options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
   }
   if(offN && shown.length) h+=`<p class="offnote" data-key="offnote">${offN} more conversation${offN===1?'':'s'} in this space ${offN===1?'is':'are'} hidden.<button class="linkbtn" data-showall>Show all</button></p>`;
+  }
   const fk=focusKey();
   treeEl.innerHTML=h;
   restoreFocus(fk);
@@ -2701,6 +2773,14 @@ function showSelection(prevSel){ animRender([sel, prevSel], true); }
 function openConv(key){
   closeDrawers();
   const r=vRoots().find(x=>convKey(x)===+key); if(!r) return;
+  if(opts.simple){
+    const m=convMeta(+key).sel;
+    composeFor=null; pick=null; renaming=false; simpleTip=null;
+    sel = m!=null && S.nodes[m] && convKeyOf(m)===+key ? m : convTip(r);
+    setActivePath(sel); syncHead(); save();
+    render(true); Motion.swap(treeEl); scrollThreadEnd();
+    return;
+  }
   /* clicking the conversation you're in again switches between All and Focus */
   if(composeFor!=='root' && convKeyOf(sel)===+key && !isHidden(r)){
     if(visMode()==='focus'){ setVisMode('select'); return; }
@@ -3037,7 +3117,7 @@ const narrow = () => window.matchMedia('(max-width:1099px)').matches;
 /* docked panels collapse on wide screens; on narrow screens they are drawers */
 function applySimple(){
   shellEl.classList.toggle('simple', !!opts.simple);
-  const b=document.getElementById('simpleBtn'); b.setAttribute('aria-pressed', !!opts.simple); b.querySelector('.lbl').textContent = opts.simple ? 'Show tools' : 'Simple view';
+  document.getElementById('simpleBtn').setAttribute('aria-checked', !!opts.simple);
 }
 function applyLayout(){
   shellEl.classList.toggle('hide-spaces', !!opts.collapsed.spaces);
@@ -3050,9 +3130,9 @@ function showPanel(which){ if(narrow()){ openDrawer(which); return; } opts.colla
 function hidePanel(which){ if(narrow()){ closeDrawers(); return; } opts.collapsed[which]=true; applyLayout(); save(); }
 document.getElementById('spacesBtn').onclick=()=>showPanel('spaces');
 document.getElementById('simpleBtn').onclick=()=>{
-  opts.simple=!opts.simple; save();
+  opts.simple=!opts.simple; simpleTip=null; pick=null; save();
   Motion.run(treeEl, ()=>{ applySimple(); render(true); }, [sel]);
-  toast(opts.simple ? 'Simple view: tools and side panels are tucked away. Show tools brings them back.' : 'Tools are back.');
+  if(opts.simple) scrollThreadEnd();
 };
 document.getElementById('convsBtn').onclick=()=>showPanel('convs');
 for(const b of document.querySelectorAll('[data-panelclose]')) b.onclick=()=>hidePanel(b.dataset.panelclose);
@@ -3268,23 +3348,25 @@ treeEl.addEventListener('click', e=>{
   if(rt){ const id=+rt.dataset.rtog, open=rt.getAttribute('aria-expanded')==='true'; openReplies.delete(id); openReplies.delete(-id); openReplies.add(open?-id:id); Motion.run(treeEl, renderTree, [id]); return; }
   const rf=e.target.closest('[data-rfull]'); if(rf){ const id=+rf.dataset.rfull; fullReplies.has(id)?fullReplies.delete(id):fullReplies.add(id); Motion.run(treeEl, renderTree, [id]); return; }
   const rm=e.target.closest('[data-rmode]'); if(rm){ setRepliesMode(rm.dataset.rmode); Motion.run(treeEl, renderTree, [sel]); return; }
-  const rl=e.target.closest('[data-rlen]'); if(rl){ opts.replyLen=rl.dataset.rlen; fullReplies.clear(); save(); Motion.run(treeEl, renderTree, [sel]); return; }
+  const rl=e.target.closest('[data-rlen]'); if(rl){ if(opts.simple) opts.replyLenSimple=rl.dataset.rlen; else opts.replyLen=rl.dataset.rlen; fullReplies.clear(); save(); Motion.run(treeEl, renderTree, [sel]); return; }
   if(e.target.closest('[data-cancel]')){ const src=pick&&pick.src, wasAlso=pick&&pick.op==='also'; pick=null; keepDraft(()=>animRender([src, sel])); if(wasAlso){ const t=document.getElementById('contText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length, t.value.length); } } return; }
   const cmp=e.target.closest('[data-compose]');
   if(cmp){ const a=cmp.dataset.compose;
     if(a==='add-root') addPrompt(null, document.getElementById('composeText').value);
-    else if(a==='cont') addPrompt(sel, document.getElementById('contText').value);
+    else if(a==='cont') addPrompt(composeParent(), document.getElementById('contText').value);
     else if(a==='renbranch'){ const v=document.getElementById('branchName').value; renaming=false; renameRef(S.head, v); animRender([sel]); }
     else if(a==='cancel-root'){ composeFor=null; animRender([sel]); }
     else { composeFor=null; renaming=false; animRender([sel]); }
     return; }
   const g=e.target.closest('[data-sel]'); if(g){ select(+g.dataset.sel); return; }
   if(e.target.closest('.ptext a')) return;
+  const fg=e.target.closest('[data-forkgo]'); if(fg){ const k=+fg.dataset.forkgo, rid=refsThrough(k)[0]; simpleTip=null; select(rid ? S.refs[rid].tip : leafOf(k)); return; }
+  if(String(window.getSelection ? getSelection() : '') && e.target.closest('.row')) return;
   const row=e.target.closest('.row'); if(!row) return;
   const id=+row.dataset.id;
   if(pick && pick.op==='also'){ if(id!==pick.src && S.nodes[id].kind!=='merge'){ alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); } return; }
   if(!pick && sel!=null && id!==sel && (e.metaKey || e.ctrlKey || e.shiftKey)){ alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); return; }
-  if(!pick && id===sel){ deselect(); return; }
+  if(!pick && id===sel){ if(!opts.simple) deselect(); return; }
   if(pick){ if(id===pick.src) return; if(validTarget(pick.op,pick.src,id)) finishPick(id); else toast(pick.op==='merge' ? 'That prompt is already on the same line as this branch, so there is nothing to merge.' : 'That prompt can’t be used here. It would create a loop or change nothing.'); return; }
   select(id);
 });
@@ -3304,7 +3386,7 @@ treeEl.addEventListener('focusin', e=>{ const b=e.target.closest('[data-hint]');
 treeEl.addEventListener('keydown', e=>{
   const send = e.key==='Enter' && !e.isComposing && e.keyCode!==229 && (opts.sendKey==='mod' ? (e.metaKey||e.ctrlKey) : (!e.shiftKey && !e.altKey));
   if(e.target.id==='composeText' && send){ e.preventDefault(); addPrompt(null, e.target.value); }
-  if(e.target.id==='contText' && send){ e.preventDefault(); addPrompt(sel, e.target.value); }
+  if(e.target.id==='contText' && send){ e.preventDefault(); addPrompt(composeParent(), e.target.value); }
   if(e.target.dataset && e.target.dataset.vtext!=null && send){ e.preventDefault(); sendVariants(); }
   if(fan && fan.status==='ready' && e.key==='Enter' && (e.metaKey||e.ctrlKey) && e.target.closest && e.target.closest('.fan')){ e.preventDefault(); fanCreate(); }
   if(e.target.id==='resendText' && send){ e.preventDefault(); const v=e.target.value.trim(); if(v) regenerate(resendFor, v); }
@@ -3479,7 +3561,7 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Escape' && shellEl.matches('.open-spaces,.open-convs')){ closeDrawers(); return; }
   if(e.key==='Escape' && variants){ variants=null; animRender([sel]); return; }
   if(e.key==='Escape' && fan){ closeFan(); return; }
-  if(e.key==='Escape'){ if(pick||composeFor!=null||renaming){ const src=pick&&pick.src; pick=null; composeFor=null; renaming=false; animRender([src, sel]); } else if(typing) e.target.blur(); else if(sel!=null) deselect(); return; }
+  if(e.key==='Escape'){ if(pick||composeFor!=null||renaming){ const src=pick&&pick.src; pick=null; composeFor=null; renaming=false; animRender([src, sel]); } else if(typing) e.target.blur(); else if(sel!=null && !opts.simple) deselect(); return; }
   if(!typing && opts.opKeys!==false && e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && /^Key[A-Z]$/.test(e.code)){
     if(e.repeat || pick || sel==null) return;
     const op=Object.keys(OPS).find(k=>OPS[k].key===e.code.slice(3).toLowerCase());
