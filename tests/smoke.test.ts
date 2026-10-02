@@ -3,7 +3,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -12,19 +12,25 @@ const isWin = process.platform === 'win32';
 const servers: ChildProcess[] = [];
 after(() => { for (const s of servers) s.kill(); });
 
-async function startServer(env: Record<string, string>) {
-  const port = 5400 + Math.floor(Math.random() * 500);
+/* Starts the server on a random free-looking port; if that port turns out to be taken (or the process dies
+   for any other reason before it answers), it tries again on another one. */
+async function startServer(env: Record<string, string>, attempts = 4): Promise<{ base: string; child: ChildProcess; data: string }> {
+  const port = 5400 + Math.floor(Math.random() * 2000);
   const data = mkdtempSync(join(tmpdir(), 'treechats-data-'));
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'server/start.ts'], {
     cwd: root, env: { ...process.env, TREECHATS_PORT: String(port), TREECHATS_DATA_DIR: data, TREECHATS_OPEN: '0', ANTHROPIC_API_KEY: '', ...env }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   servers.push(child);
-  let log = ''; child.stdout!.on('data', (d) => { log += d; }); child.stderr!.on('data', (d) => { log += d; });
+  let log = '', exited = false;
+  child.stdout!.on('data', (d) => { log += d; }); child.stderr!.on('data', (d) => { log += d; });
+  child.on('exit', () => { exited = true; });
   const base = `http://localhost:${port}`;
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 150 && !exited; i++) {
     try { const r = await fetch(base + '/api/config'); if (r.ok) return { base, child, data }; } catch {}
     await new Promise((r) => setTimeout(r, 200));
   }
+  child.kill();
+  if (attempts > 1) return startServer(env, attempts - 1);
   throw new Error('server did not start:\n' + log);
 }
 
@@ -113,12 +119,15 @@ test('Claude Code mode: runs the CLI with tools off, streams its reply, and Stop
   assert.match(sent.message.content.at(-1).text, /<assistant>\nHello!\n<\/assistant>/);
 
   /* Stop: the reply is cut off and the CLI process is ended, not left running */
+  const pidFile = join(dir, 'pid');
+  rmSync(pidFile, { force: true }); /* so the pid read below is the slow run's, not the first run's */
   const ctl = new AbortController();
   const res = await post(base, { input: 'SLOW please' }, ctl.signal);
   const reader = res.body!.getReader();
   await reader.read();
   ctl.abort();
-  const pid = Number(readFileSync(join(dir, 'pid'), 'utf8'));
+  for (let i = 0; i < 50 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100));
+  const pid = Number(readFileSync(pidFile, 'utf8'));
   let alive = true;
   for (let i = 0; i < 50 && alive; i++) {
     await new Promise((r) => setTimeout(r, 200));
