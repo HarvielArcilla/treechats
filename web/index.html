@@ -2877,6 +2877,19 @@ const Agent=(()=>{
       return c.slice(i);
     });
   }
+  /* what judge and combine work on: the follow-ups of after, or prompts named anywhere (their shared context) */
+  function pickedSet(t, a){
+    if(a.prompts && a.prompts.length){ for(const x of a.prompts) need(t, x); return {ids:a.prompts, parent: a.after ?? withTree(t, ()=>sharedParent(a.prompts))}; }
+    if(a.after==null) throw new Error('Say which prompts: after (their shared prompt) or prompts (a list).');
+    need(t, a.after); return {parent:a.after, ids:withTree(t, ()=>cmpKids(a.after).map(k=>k.id))};
+  }
+  /* the prompts from one to another along a line, both included, skipping merge points */
+  function stretch(t, from, until){
+    const c=withTree(t, ()=>chain(until)), i=c.indexOf(from);
+    if(i<0) throw new Error(`#${from} isn’t on the line up to #${until}.`);
+    return c.slice(i).filter(x=>t.nodes[x].kind!=='merge');
+  }
+  const replayLine = (t, a) => a.until!=null ? (()=>{ const c=withTree(t, ()=>chain(a.until)), i=c.indexOf(a.prompt); if(i<0) throw new Error(`#${a.prompt} isn’t on the line up to #${a.until}.`); return c.slice(i); })() : agentLine(t, a.prompt, a.branch);
   const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
   /* model settings an agent asks for on spawn or fork: they apply to that prompt and the ones after it */
   function agentSettings(a){
@@ -2941,9 +2954,11 @@ const Agent=(()=>{
       return reply(sid, id, {...where(sid,id), message:`Forked after #${a.at}`});
     },
     async leave_out(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt), on=a.left_out!==false;
-      change(sid, ()=>{ if(on) n.skip=true; else delete n.skip; });
-      return {...where(sid,a.prompt), prompt:a.prompt, message: on ? `#${a.prompt} is left out of what later prompts send` : `#${a.prompt} is included again`};
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, on=a.left_out!==false; need(t, a.prompt);
+      const ids = a.until!=null ? stretch(t, a.prompt, a.until) : [a.prompt];
+      change(sid, ()=>{ for(const x of ids){ const n=S.nodes[x]; if(on) n.skip=true; else delete n.skip; } });
+      const which = ids.length>1 ? `#${ids[0]}–#${ids[ids.length-1]} (${ids.length} prompts) are` : `#${a.prompt} is`;
+      return {...where(sid,a.prompt), prompt:a.prompt, message: on ? `${which} left out of what later prompts send` : `${which} included again`};
     },
     async edit_reply(a){
       const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
@@ -2968,13 +2983,13 @@ const Agent=(()=>{
        versions; onto carries it under another prompt (to continue after a stop), first_prompt replaces the first */
     replay_plan(a){
       const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt); if(a.onto!=null) need(t, a.onto);
-      const line=agentLine(t, a.prompt, a.branch), n=withTree(t, ()=>replayCount(line));
+      const line=replayLine(t, a), n=withTree(t, ()=>replayCount(line));
       return {count: n + (a.on_mismatch==='ignore' ? 0 : Math.max(0, n-1) + (a.onto!=null ? 1 : 0))};
     },
     async replay(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
       const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt); if(a.onto!=null) need(t, a.onto);
-      const line=agentLine(t, a.prompt, a.branch);
+      const line=replayLine(t, a);
       const r={sid, from:a.prompt, onto:a.onto ?? null, line, by:a.agent||'agent', firstText:a.first_prompt ?? null,
         mode: a.on_mismatch==='rewrite' ? 'rewrite' : a.on_mismatch==='ignore' ? 'off' : 'stop', done:false};
       const out=await runReplay(r, {apply:fn=>change(sid, fn), pause:()=>Promise.resolve(null), update(){}});
@@ -3045,6 +3060,7 @@ const Agent=(()=>{
         else if(op==='delete'){ want(a.prompt); const del=new Set([a.prompt]), d=[...desc(a.prompt)]; let grew=true; while(grew){ grew=false; for(const x of d) if(!del.has(x) && S.nodes[x].parents.every(p=>del.has(p))){ del.add(x); grew=true; } } const up=S.nodes[a.prompt].parents[0]; for(const x of del) delete S.nodes[x]; for(const m of all()) m.parents=m.parents.filter(p=>!del.has(p)); for(const r of Object.values(S.refs)) if(del.has(r.tip) && up!=null) r.tip=up; at=up; msg=`Deleted ${del.size} prompt${del.size===1?'':'s'} from #${a.prompt}`; }
         else if(op==='rebase'){ const n=want(a.prompt); want(a.onto, 'onto (the new parent)'); if(a.onto===a.prompt || desc(a.prompt).has(a.onto)) throw new Error('Can’t rebase a prompt onto itself or what follows it.'); n.parents=[...new Set([a.onto, ...n.parents.slice(1)])]; delete n.alt; msg=`Moved #${a.prompt} and what follows under #${a.onto}; their replies stay as they were (see get_prompt for context changes)`; }
         else if(op==='cherry_pick'){ const n=want(a.prompt); want(a.onto, 'onto (where the copy goes)'); const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[a.onto], text:n.text, by}; if(n.files) S.nodes[nid].files=clone(n.files); at=nid; msg=`Copied #${a.prompt}'s text under #${a.onto} as #${nid}, without a reply (ask regenerate for one)`; }
+        else if(op==='rename_chat'){ want(a.prompt); const name=String(a.name||'').trim(); if(!name) throw new Error('Give the new title as name.'); const k=convKeyOf(a.prompt); S.convs[k]=Object.assign(S.convs[k]||{}, {title:name.slice(0,80)}); msg=`Renamed the chat to "${name.slice(0,80)}"`; }
         else if(op==='model_settings'){ const n=want(a.prompt); if(a.value===false){ delete n.set; msg=`Cleared the model settings on #${a.prompt}`; } else { const st=agentSettings(a); if(!st) throw new Error('Give at least one of system, thinking, effort, temperature, max_tokens (or value: false to clear).'); n.set=Object.assign(n.set||{}, st); msg=`Model settings from #${a.prompt}: ${setSummary(n.set)}`; } }
         else throw new Error(`Unknown operation "${op}". Call describe to see them.`);
       });
@@ -3060,19 +3076,20 @@ const Agent=(()=>{
     /* the follow-ups of a prompt (or the ones named), judged or combined as in Compare */
     async judge(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.after);
-      const ids=a.prompts && a.prompts.length ? a.prompts : withTree(t, ()=>cmpKids(a.after).map(k=>k.id));
-      const r=await judgeCore(sid, a.after, ids, a.criteria);
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree;
+      const {parent, ids}=pickedSet(t, a);
+      const r=await judgeCore(sid, parent, ids, a.criteria);
       const lines=r.ids.map(i=>`#${i}${i===r.best?' (pick)':''}: ${r.reasons[i]||'no reason given'}`).join('\n');
-      return {...where(sid,a.after), prompt:r.best ?? undefined, message:`Judged ${r.ids.length} follow-ups to #${a.after} against "${r.criteria}". ${r.best?`Pick: #${r.best}.`:'No pick.'} ${r.summary}\n${lines}\nNothing was changed.`};
+      return {...where(sid, r.best ?? ids[0]), prompt:r.best ?? undefined, message:`Judged ${r.ids.length} ${parent!=null && a.after!=null ? `follow-ups to #${a.after}` : 'prompts'} against "${r.criteria}". ${r.best?`Pick: #${r.best}.`:'No pick.'} ${r.summary}\n${lines}\nNothing was changed.`};
     },
     async combine(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.after);
-      const ids=a.prompts && a.prompts.length ? a.prompts : withTree(t, ()=>cmpKids(a.after).map(k=>k.id));
-      const c=await combineCore(sid, a.after, ids, a.instructions);
-      const nid=change(sid, ()=>addCombined(a.after, c, a.agent||'agent'));
-      return {...where(sid,nid), prompt:nid, reply:c.reply, message:`Combined ${c.ids.map(x=>'#'+x).join(', ')} into #${nid}, a new follow-up to #${a.after}, marked as combined. Sources: ${Object.entries(c.sources).map(([k,v])=>`#${k} ${v}`).join('; ') || 'not given'}`};
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree;
+      const {parent, ids}=pickedSet(t, a);
+      if(parent==null) throw new Error('These prompts share no context, so there is nowhere to add a combined reply.');
+      const c=await combineCore(sid, parent, ids, a.instructions);
+      const nid=change(sid, ()=>addCombined(parent, c, a.agent||'agent'));
+      return {...where(sid,nid), prompt:nid, reply:c.reply, message:`Combined ${c.ids.map(x=>'#'+x).join(', ')} into #${nid}, a new follow-up to #${parent}, marked as combined. Sources: ${Object.entries(c.sources).map(([k,v])=>`#${k} ${v}`).join('; ') || 'not given'}`};
     },
     async distill(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');

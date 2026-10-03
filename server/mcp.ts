@@ -125,10 +125,19 @@ export function buildMcpServer(read: () => State | null) {
       branch: z.string().optional().describe('Branch name, such as main.'),
       prompt: z.number().int().optional().describe('Prompt number, such as 12 for #12.'),
       format: z.enum(['prompt', 'messages']).optional().describe('"prompt" (default): one block to read. "messages": the user/assistant turns as JSON.'),
+      from: z.number().int().optional().describe('Only the stretch from this prompt down to the chosen one (as Copy as a prompt on a selected stretch), instead of the whole context.'),
     },
-  }, withState((s, a: Pick & { format?: 'prompt' | 'messages' }) => {
+  }, withState((s, a: Pick & { format?: 'prompt' | 'messages'; from?: number }) => {
     const r = pick(s, a); if ('error' in r) return fail(r.error);
     const { sp, t, v, id } = r;
+    if (a.from != null) {
+      const c = v.chain(id), i = c.indexOf(a.from);
+      if (i < 0) return fail(`#${a.from} isn't on the line up to #${id}.`);
+      const turns = c.slice(i).map((x) => t.nodes[x]).filter((n) => n.kind !== 'merge').flatMap((n) => [{ role: 'user', content: n.text || '' }, ...(n.reply ? [{ role: 'assistant', content: n.reply }] : [])]);
+      const body = turns.map((x) => `<${x.role}>\n${x.content}\n</${x.role}>`).join('\n\n');
+      const w = `Project "${sp.name}", chat "${v.title(v.rootOf(id))}", #${a.from} to #${id} only`;
+      return a.format === 'messages' ? text(w + '\n\n' + JSON.stringify(turns, null, 2)) : text(`(${w})\n\nHere is part of an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`);
+    }
     const where = `Project "${sp.name}", chat "${v.title(v.rootOf(id))}", up to prompt #${id}`;
     return a.format === 'messages' ? text(where + '\n\n' + JSON.stringify(turnsFor(s, t, id), null, 2)) : text(`(${where})\n\n` + contextPrompt(s, t, id));
   }));
@@ -265,7 +274,7 @@ export function buildMcpServer(read: () => State | null) {
   });
   server.registerTool('ask', { title: 'Continue a subagent', description: 'Send a follow-up to a subagent, continuing after a prompt (or at the end of a branch), and get the reply.', inputSchema: { run, agent, model, after: promptNo.optional().describe('Continue after this prompt number.'), branch: z.string().optional().describe('Or continue at the end of this branch.'), prompt: z.string().min(1) } }, act('ask', true));
   server.registerTool('fork', { title: 'Fork a subagent', description: 'Try an alternative: start a new branch after any prompt of a subagent, with a different follow-up and optionally different settings (system prompt, thinking, effort, temperature, max_tokens), and get the reply. The original line is kept.', inputSchema: { run, agent, model, ...bset, at: promptNo.describe('Branch off after this prompt number.'), prompt: z.string().min(1), name: z.string().max(40).optional().describe('A name for the new branch.') } }, act('fork', true));
-  server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
+  server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, until: promptNo.optional().describe('Also every prompt down to this one (a stretch of the line).'), left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
   server.registerTool('edit_reply', { title: 'Correct a reply', description: 'Replace what the subagent said at a prompt. Prompts after it see your version. Marked as edited.', inputSchema: { run, agent, prompt: promptNo, reply: z.string() } }, act('edit_reply', false));
   server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));
   server.registerTool('replay', {
@@ -274,6 +283,7 @@ export function buildMcpServer(read: () => State | null) {
     inputSchema: {
       run, agent, prompt: promptNo.describe('The first prompt to re-send.'),
       branch: z.string().optional().describe('Follow this branch to its end. Defaults to the branch through the prompt.'),
+      until: promptNo.optional().describe('Stop after this prompt instead of going to the end of the branch (replay a stretch).'),
       on_mismatch: z.enum(['stop', 'rewrite', 'ignore']).optional().describe('Before each prompt after the first, a quick check asks whether it still makes sense after the new replies. stop (default): stop there and report why, with a suggested rewrite. rewrite: send the rewrite (marked as rewritten, original kept) and go on. ignore: no checks, send everything as written.'),
       onto: promptNo.optional().describe('Continue under this prompt instead of beside the originals: use it to carry on after a stop.'),
       first_prompt: z.string().optional().describe('Send this text instead of the first prompt (for example your fix after a stop).'),
@@ -330,18 +340,19 @@ export function buildMcpServer(read: () => State | null) {
     delete: 'prompt. Deletes it and everything after it',
     rebase: 'prompt; onto. Moves it and what follows under another prompt',
     cherry_pick: 'prompt; onto. Copies its text under another prompt, without a reply',
+    rename_chat: 'prompt (any prompt in the chat); name (the new title)',
     model_settings: 'prompt; system, thinking, effort, temperature, max_tokens (any of them); value: false clears. Applies from that prompt on',
   };
   server.registerTool('describe', { title: 'Describe operations', description: 'The operations operate can run, with the arguments each takes.', inputSchema: { op: z.string().optional() } },
     async (a) => text(a.op ? (OPS[a.op] ? `${a.op}: ${OPS[a.op]}` : `Unknown operation "${a.op}". Known: ${Object.keys(OPS).join(', ')}`) : 'Run these with operate. Every call needs run (and agent, for labels); none of them sends a request.\n\n' + Object.entries(OPS).map(([k, v]) => `- ${k}: ${v}`).join('\n')));
   server.registerTool('operate', {
     title: 'Run an operation',
-    description: 'Restructure or mark a subagent chat in your run, the way people do in the editor: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, model_settings. Call describe for the arguments. No requests are sent; changes stay out of the person’s Undo.',
+    description: 'Restructure or mark a subagent chat in your run, the way people do in the editor: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, model_settings, rename_chat. Call describe for the arguments. No requests are sent; changes stay out of the person’s Undo.',
     inputSchema: {
       run, agent, ...bset,
-      op: z.enum(['star', 'note', 'branch', 'rename_branch', 'make_mainline', 'merge', 'unmerge', 'reroot', 'squash', 'splice', 'delete', 'rebase', 'cherry_pick', 'model_settings']),
+      op: z.enum(['star', 'note', 'branch', 'rename_branch', 'make_mainline', 'merge', 'unmerge', 'reroot', 'squash', 'splice', 'delete', 'rebase', 'cherry_pick', 'model_settings', 'rename_chat']),
       prompt: z.number().int().optional(), until: z.number().int().optional(), onto: z.number().int().optional(),
-      branch: z.string().optional(), name: z.string().max(40).optional(), text: z.string().optional(), value: z.boolean().optional(), append: z.boolean().optional(),
+      branch: z.string().optional(), name: z.string().max(80).optional(), text: z.string().optional(), value: z.boolean().optional(), append: z.boolean().optional(),
     },
   }, act('operate', false));
   server.registerTool('review', {
@@ -352,12 +363,12 @@ export function buildMcpServer(read: () => State | null) {
   server.registerTool('judge', {
     title: 'Judge follow-ups',
     description: 'Best-of-n: Claude reads the context up to a prompt and each follow-up with its reply (all of them, or the ones you name), gives a reason for each against your criteria, and picks one. One request. Nothing is changed; continue on the pick yourself (ask after it).',
-    inputSchema: { run, agent, after: promptNo.describe('The prompt the alternatives follow (for example where you forked).'), prompts: z.array(z.number().int()).optional().describe('Only these follow-ups. Defaults to all of them.'), criteria: z.string().optional().describe('What to judge by, such as "correct, then shortest".') },
+    inputSchema: { run, agent, after: promptNo.optional().describe('The prompt the alternatives follow (or give prompts from anywhere, and their shared context is used)'), prompts: z.array(z.number().int()).optional().describe('These prompts: follow-ups of after, or any prompts (as Ctrl/⌘-click picks). Defaults to every follow-up of after.'), criteria: z.string().optional().describe('What to judge by, such as "correct, then shortest".') },
   }, act('judge', true));
   server.registerTool('combine', {
     title: 'Combine follow-ups',
     description: 'Claude writes one reply from the best parts of the follow-ups to a prompt, with the follow-up message it answers and which parts came from where. One request. It is added as a new follow-up marked as combined, on its own branch; the originals are kept.',
-    inputSchema: { run, agent, after: promptNo.describe('The prompt the alternatives follow.'), prompts: z.array(z.number().int()).optional().describe('Only these follow-ups. Defaults to all of them.'), instructions: z.string().optional().describe('How to combine them.') },
+    inputSchema: { run, agent, after: promptNo.optional().describe('The prompt the alternatives follow (or give prompts from anywhere, and their shared context is used)'), prompts: z.array(z.number().int()).optional().describe('These prompts: follow-ups of after, or any prompts that share context. Defaults to every follow-up of after.'), instructions: z.string().optional().describe('How to combine them.') },
   }, act('combine', true));
   server.registerTool('distill', { title: 'Distill a subagent', description: 'Have Claude write a short brief (goal, decisions, facts, open questions) of a subagent chat up to a prompt, so only the brief needs to enter your own context.', inputSchema: { run, agent, prompt: promptNo.optional(), branch: z.string().optional(), save_as_note: z.boolean().optional().describe('Also keep the brief as a note on that prompt.') } }, act('distill', true));
 

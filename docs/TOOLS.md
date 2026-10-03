@@ -118,10 +118,10 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 | operate, describe | Every other operation by name: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, model_settings | Power |
 | list_saved_prompts | Read your prompt library | Rare |
 | spawn, ask, fork | Subagent chats whose context the agent controls exactly; spawn and fork take model settings | Power |
-| leave_out, edit_reply, regenerate | Steer what a subagent sees | Power |
-| replay | Re-send after changing context; stops at a prompt that no longer fits, or rewrites it if asked | Power |
+| leave_out, edit_reply, regenerate | Steer what a subagent sees; leave_out takes a stretch (`until`) | Power |
+| replay | Re-send after changing context (to the end, or `until` a prompt for a stretch); stops at a prompt that no longer fits, or rewrites it if asked | Power |
 | review | A fresh-eyes check of a subagent's reply | Power |
-| judge, combine | Best-of-n across forks | Power |
+| judge, combine | Best-of-n across forks, or across any prompts (as Ctrl/⌘-click picks) | Power |
 | distill | Bring back only a brief | Power |
 
 ## Observations
