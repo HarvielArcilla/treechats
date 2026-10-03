@@ -91,6 +91,20 @@ Type `/` in the input box for commands, as in Claude Code:
   prompt; `/model`, `/compact`, `/review`, `/branch`, `/clear`, `/memory`, `/search`, `/export` and `/help` do what
   they say.
 
+## Folders and files
+
+**Attach ▾ › A folder…** (or **Project files › a folder**, or `/folder`) adds a folder's files to the project or to
+your next prompt. Treechats lists them with sizes against the request limit; `.gitignore` is respected, dependency
+and build folders are skipped, and lock files and `.env` files start unticked.
+- **Choose a folder** copies the files you tick.
+- **Link a folder on this computer** (type its path) keeps them tied to the folder: **Sync** re-reads files that
+  changed on disk, and replies written before the change say which file changed.
+
+Click any file (in Project files, on a prompt, or waiting in the input box) to open it: syntax colors and line numbers,
+Markdown and image previews, Copy and Download. **Edit** makes a new version of the file (Undo brings the old one
+back, and earlier replies are marked "context changed"). A linked file can also be saved back to disk; if the disk copy
+changed since Treechats read it, it is left alone unless you choose to overwrite it.
+
 ## Compare, judge and combine
 
 Open **Compare** on a prompt with several follow-ups to read them side by side. **✦ Judge** sends one request with

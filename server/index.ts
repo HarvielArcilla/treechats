@@ -13,6 +13,7 @@ import { getValue, putValue, snapshot, snapshots } from './store.ts';
 import { handleMcp } from './mcp.ts';
 import { attachPage, settle } from './relay.ts';
 import { loadState } from './context.ts';
+import { FolderError, listFolder, readFolderFiles, writeFolderFile } from './folders.ts';
 
 const app = new Hono();
 const STATE_KEY = 'treechats-v1';
@@ -99,6 +100,16 @@ app.post('/api/agent/result', async (c) => {
   let body; try { body = await c.req.json(); } catch { return c.json({ code: 'bad_request' }, 400); }
   return settle(body) ? c.body(null, 204) : c.json({ code: 'unknown_command' }, 404);
 });
+
+/* folders on this computer, for project files (see server/folders.ts) */
+const folderRoute = (fn: (b: any) => Promise<unknown>) => async (c: any) => {
+  let b; try { b = await c.req.json(); } catch { return c.json({ code: 'bad_request', message: 'Expected JSON.' }, 400); }
+  try { return c.json(await fn(b)); }
+  catch (e) { return e instanceof FolderError ? c.json({ code: e.code, message: e.message }, e.code === 'changed_on_disk' ? 409 : 400) : c.json({ code: 'failed', message: (e as Error).message }, 500); }
+};
+app.post('/api/folder/list', folderRoute((b) => listFolder(b.root)));
+app.post('/api/folder/read', folderRoute((b) => readFolderFiles(b.root, Array.isArray(b.paths) ? b.paths.map(String) : [])));
+app.post('/api/folder/write', folderRoute((b) => writeFolderFile(b.root, String(b.path || ''), String(b.text ?? ''), typeof b.mtime === 'number' ? b.mtime : null, !!b.force)));
 
 /* MCP: lets Claude Code and other MCP clients read your spaces, conversations and context (see server/mcp.ts) */
 app.all('/mcp', (c) => handleMcp(c.req.raw, () => loadState()));

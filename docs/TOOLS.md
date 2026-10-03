@@ -20,7 +20,9 @@ Claude does the work; each use sends a request.
 | Regenerate | Under the reply | Another reply to the same prompt, as a new version; ‹ › flips between them | A bad or unlucky reply | Core |
 | ‹ › version and branch switcher | Under the prompt | Moves between versions of a prompt and the branches from it | Navigating what Edit, Regenerate and forks create | Core |
 | Copy (prompt or reply) | Under each | Copies the text | Taking an answer elsewhere | Core |
-| Attach files | Input box | Text, code or images sent with the prompt | Giving Claude the material | Common |
+| Attach files | Input box (Attach ▾) | Text, code or images sent with the prompt | Giving Claude the material | Common |
+| Add a folder | Attach ▾, Project files, `/folder` | A folder's files, chosen in a list (.gitignore respected, lock and .env files unticked), to the project or the next prompt. Linked folders re-read changed files with Sync | Working on a codebase | Common |
+| File viewer and editor | Click any file | Read with syntax colors and line numbers, preview Markdown and images, copy, download, edit. An edit is a new version; linked files can be saved back to disk, never over a changed disk copy without asking | Checking what Claude sees, fixing a file before asking | Common |
 | Saved prompts | Input box, or `/` | Inserts a prompt from your library; what you typed fills its first `{placeholder}` | Reusing prompts that work: plan first, interview me, critique, … | Common |
 | Model picker | Input box | Quick, Default or Complex for the next reply | Cost against quality | Common |
 

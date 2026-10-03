@@ -87,5 +87,14 @@ function render(src) {
   }
 }
 
-window.TreechatsMarkdown = { render };
+/* a whole file's text with syntax colors, for the file viewer; the language comes from the file name */
+const EXT_LANG = { js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java', kt: 'kotlin', swift: 'swift', c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cs: 'csharp', php: 'php', sh: 'bash', bash: 'bash', zsh: 'bash', ps1: 'powershell', sql: 'sql', html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml', vue: 'xml', css: 'css', scss: 'scss', json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini', ini: 'ini', md: 'markdown', markdown: 'markdown', lua: 'lua', r: 'r', pl: 'perl', scala: 'scala', dart: 'dart', graphql: 'graphql', gql: 'graphql', dockerfile: 'dockerfile', makefile: 'makefile' };
+function highlightFile(text, name) {
+  const base = String(name || '').split('/').pop().toLowerCase(), ext = base.includes('.') ? base.split('.').pop() : base;
+  const lang = EXT_LANG[ext];
+  if (text.length > 200000) return esc(text);
+  try { return lang && hljs.getLanguage(lang) ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value : esc(text); } catch { return esc(text); }
+}
+
+window.TreechatsMarkdown = { render, highlightFile };
 window.dispatchEvent(new Event('treechats-markdown'));

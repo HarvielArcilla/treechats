@@ -78,3 +78,29 @@ test('branch settings: each model gets only the parameters it accepts', async ()
   assert.equal((budget.params as any).thinking.type, 'enabled');
   assert.ok((budget.params as any).max_tokens > (budget.params as any).thinking.budget_tokens);
 });
+
+test('folders: listing skips ignored and dependency files, reads stay inside the folder, writes refuse a changed disk copy', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { listFolder, readFolderFiles, writeFolderFile } = await import('../server/folders.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'tc-folder-'));
+  mkdirSync(join(dir, 'src')); mkdirSync(join(dir, 'node_modules')); mkdirSync(join(dir, 'dist'));
+  writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 1;\n');
+  writeFileSync(join(dir, 'node_modules', 'x.js'), 'x');
+  writeFileSync(join(dir, 'dist', 'out.js'), 'built');
+  writeFileSync(join(dir, 'debug.log'), 'log');
+  writeFileSync(join(dir, 'bin.dat'), Buffer.from([1, 0, 2]));
+  writeFileSync(join(dir, '.gitignore'), '*.log\n');
+  const l = await listFolder(dir);
+  assert.deepEqual(l.files.map((f) => f.path).sort(), ['.gitignore', 'bin.dat', 'src/a.ts']);
+  const r = await readFolderFiles(dir, ['src/a.ts', '../escape.txt', 'bin.dat']);
+  assert.equal(r[0].text, 'export const a = 1;\n');
+  assert.match(r[1].error!, /outside/);
+  assert.match(r[2].error!, /binary/);
+  const w = await writeFolderFile(dir, 'src/a.ts', 'export const a = 2;\n', r[0].mtime!, false);
+  assert.equal(readFileSync(join(dir, 'src', 'a.ts'), 'utf8'), 'export const a = 2;\n');
+  utimesSync(join(dir, 'src', 'a.ts'), new Date(), new Date(Date.now() + 60_000));
+  await assert.rejects(writeFolderFile(dir, 'src/a.ts', 'stale', w.mtime, false), /changed on disk/);
+  await assert.rejects(writeFolderFile(dir, '../x.txt', 'no', null, false), /outside/);
+});

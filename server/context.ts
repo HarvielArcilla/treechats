@@ -129,7 +129,7 @@ export function ctxSig(state: State, tree: Tree, id: number) {
   const instr = (prompts.instructions ?? '').trim();
   if (sys) at.push('y:' + h5(sys));
   if (instr) at.push('i:' + h5(instr));
-  if (tree.files && tree.files.length) at.push('f:' + h5(tree.files.map((f) => f.id + '/' + f.name).join('|')));
+  for (const f of tree.files || []) at.push('f' + h5(f.name) + ':' + h5(f.id));
   for (const e of v.entries(id, prompts.seam ?? SEAM)) {
     if (e.seam) { at.push('s' + e.merge + ':' + h5(e.text)); continue; }
     const n = tree.nodes[e.id];
@@ -148,7 +148,14 @@ export function ctxChanges(state: State, tree: Tree, id: number): string[] | nul
   const now = ctxSig(state, tree, id); if (now.h === n.ctx.h) return null;
   const map = (at: string) => new Map(at ? at.split(',').map((x) => { const i = x.indexOf(':'); return [x.slice(0, i), x.slice(i + 1)] as [string, string]; }) : []);
   const was = map(n.ctx.at), is = map(now.at), out: string[] = [];
-  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'f' ? 'project files' : k === 'y' ? 'system prompt' : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
+  const isFile = (k: string) => /^f[0-9a-z]{5}$/.test(k);
+  if (was.has('f')) {
+    const same = was.get('f') === h5((tree.files || []).map((f) => f.id + '/' + f.name).join('|'));
+    was.delete('f'); for (const k of [...is.keys()]) if (isFile(k)) is.delete(k);
+    if (!same) out.push('project files changed');
+  }
+  const fileName = (k: string) => (tree.files || []).find((f) => 'f' + h5(f.name) === k)?.name || 'a project file';
+  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'f' ? 'project files' : isFile(k) ? fileName(k) : k === 'y' ? 'system prompt' : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
   const num = (k: string) => /^\d+$/.test(k);
   for (const [k, val] of is) {
     if (!was.has(k)) { out.push(`${name(k)} ${num(k) ? 'back in' : 'added'}`); continue; }
