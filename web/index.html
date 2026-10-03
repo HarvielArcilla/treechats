@@ -3459,7 +3459,8 @@ function rowHTML(id, pathSet){
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
-  const nBelow = foldable || folded ? [...desc(id)].filter(x=>S.nodes[x].kind!=='merge').length : 0;
+  /* only the selected prompt (and a folded one) shows how many follow it; counting for every row is quadratic */
+  const nBelow = (foldable && id===sel) || folded ? [...desc(id)].filter(x=>S.nodes[x].kind!=='merge').length : 0;
   const fold = foldable ? `<button class="act" data-fold="${id}" title="Collapse the ${nBelow} prompt${nBelow===1?'':'s'} below this one. Nothing is deleted.">Hide ${nBelow} below</button>`
     : folded ? `<button class="act" data-unfold="${id}" title="Show the prompts below this one again">Show ${nBelow} below</button>` : '';
   const star = isM || pick ? '' : `<button class="star ${n.star?'on':''}" data-star="${id}" aria-pressed="${!!n.star}" aria-label="${n.star?'Unstar':'Star'} #${id}" title="${n.star?'Starred. Click to unstar.':'Star this prompt'}">${n.star?'★':'☆'}</button>`;
