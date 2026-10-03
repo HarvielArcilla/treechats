@@ -847,6 +847,10 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .rvlinks{display:inline-flex;gap:4px}
 .rvlinks .linkbtn{font-size:.8rem;padding:2px 6px}
 .fan.review .segs{margin:4px 0 8px}
+.row.inrange{background:var(--accent-soft);border-color:color-mix(in srgb, var(--accent) 35%, var(--line))}
+.rangebar{flex-wrap:wrap;background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+.rangebar .btn{background:var(--surface);color:var(--fg);border-color:var(--line)}
+.rgacts{display:flex;flex-wrap:wrap;gap:6px}
 .pinplace{margin-left:auto;font-size:.8rem}
 .rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .offbr{margin:2px 0 6px 18px}
@@ -1742,6 +1746,7 @@ function available(op, id){
 }
 function validTarget(op, src, t){
   if(op==='cherry') return true;
+  if(op==='replayonto') return !pick.line.includes(t) && S.nodes[t].kind!=='merge';
   if(op==='squash') return t!==src && S.nodes[t].kind!=='merge' && chain(src).includes(t);
   if(op==='merge') return t!==src && !path(src).includes(t) && !path(t).includes(src);
   const d = desc(src);
@@ -1808,7 +1813,8 @@ function run(op, id){
 }
 
 function finishPick(t){
-  const {op, src} = pick; pick=null;
+  const {op, src, line} = pick; pick=null;
+  if(op==='replayonto'){ askReplay(src, t, line); return; }
   const n=S.nodes[src];
   if(op==='graft') commit(`Rebased #${src} onto #${t}`, ()=>{ n.parents=[...new Set([t, ...n.parents.slice(1)])]; delete n.alt; });
   if(op==='merge'){
@@ -2234,6 +2240,56 @@ function regenerate(id, newText){
 }
 
 
+/* ---- Selecting a stretch of a line ----
+   Shift-click selects every prompt between the selected one and the clicked one, on the same line. A bar above the
+   tree offers the tools that need a stretch: Squash, Replay this stretch, Replay onto…, Copy as a prompt, Leave out,
+   Splice out. Ctrl/⌘-click picks prompts anywhere instead (Reply to several, Compare). */
+let range=null;
+function setRange(a, b){
+  const ca=chain(a), cb=chain(b);
+  const ids = cb.includes(a) ? cb.slice(cb.indexOf(a)) : ca.includes(b) ? ca.slice(ca.indexOf(b)) : null;
+  if(!ids){ toast('Shift-click a prompt on the same line to select everything between them. Ctrl/⌘-click picks prompts anywhere.'); return; }
+  range={ids}; alsoTargets.clear(); keepDraft(()=>animRender([b]));
+}
+function rangeBarHTML(){
+  const ids=range.ids, asks=ids.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge'), first=ids[0], last=ids[ids.length-1];
+  const allOut=asks.length && asks.every(x=>S.nodes[x].skip), hasMerge=asks.length!==ids.length, ready=sampleState==='ready';
+  const b=(k,l,t,dis)=>`<button class="btn" data-rg="${k}" title="${esc(t)}" ${dis?'disabled':''}>${l}</button>`;
+  return `<div class="pickBanner rangebar" data-key="range"><span><b>#${first}–#${last}</b> · ${asks.length} prompt${asks.length===1?'':'s'} selected</span>
+    <span class="rgacts">${b('copy','Copy as a prompt','These turns only, as one block to paste anywhere')}
+    ${b('skip', allOut?`Include ${asks.length}`:`Leave out ${asks.length}`, allOut?'Send them again from the prompts below':'Stop sending them from the prompts below. Nothing is deleted.')}
+    ${b('squash','Squash','Collapse the stretch into one prompt and reply', asks.length<2 || hasMerge)}
+    ${b('splice','Splice out','Remove these prompts; what follows attaches to the prompt before them', hasMerge)}
+    ${ready?b('replay',AI+'Replay this stretch','Re-send these prompts with the context as it is now, as new versions'):''}
+    ${ready?b('replayonto',AI+'Replay onto…','Re-send these prompts under another prompt, so they get replies in that context'):''}</span>
+    <button class="btn" data-rangeclear>Clear <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
+}
+function rangeAction(k){
+  const ids=range.ids.filter(x=>S.nodes[x]), asks=ids.filter(x=>S.nodes[x].kind!=='merge'), first=ids[0], last=ids[ids.length-1];
+  if(k==='copy'){
+    const body=asks.flatMap(x=>{ const n=S.nodes[x]; return [`<user>\n${n.text||''}\n</user>`, ...(n.reply?[`<assistant>\n${n.reply}\n</assistant>`]:[])]; }).join('\n\n');
+    copyText(`Here is part of an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`);
+    return;
+  }
+  if(k==='skip'){ const out=!asks.every(x=>S.nodes[x].skip); range=null; commit(out?`Left ${asks.length} prompts out of the context. They stay in the tree.`:`${asks.length} prompts are back in the context`, ()=>{ for(const x of asks){ if(out) S.nodes[x].skip=true; else delete S.nodes[x].skip; } }); return; }
+  if(k==='squash'){ range=null; pick={op:'squash', src:last}; finishPick(first); return; }
+  if(k==='splice'){
+    range=null;
+    commit(`Spliced out #${first}–#${last}`, ()=>{
+      for(const id of [...asks].reverse()){
+        const n=S.nodes[id]; if(!n) continue;
+        for(const kd of kids(id)){ const out=[]; for(const p of kd.parents){ if(p===id) out.push(...n.parents); else out.push(p); } kd.parents=[...new Set(out)]; }
+        for(const r of Object.values(S.refs)) if(r.tip===id) r.tip=n.parents[0] ?? r.tip;
+        delete S.nodes[id];
+      }
+      const p0=S.nodes[first] ? first : null; sel = p0 ?? (ids.map(x=>S.nodes[x]).find(Boolean)||{}).id ?? defaultSel();
+    });
+    return;
+  }
+  if(k==='replay'){ range=null; askReplay(first, null, ids); return; }
+  if(k==='replayonto'){ pick={op:'replayonto', src:first, line:ids}; range=null; composeFor=null; animRender([first]); return; }
+}
+
 /* ---- Replay ----
    Re-sends a run of prompts against the context as it is now: after you fix an early turn, edit a reply, or leave
    something out. Prompts go one at a time. Each is copied as a new version (the first one beside the original, the
@@ -2260,18 +2316,20 @@ function lineFrom(id){
 const replayCount = line => line.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge').length;
 /* from: replay `from` and the prompts below it. onto (optional): attach the copies under this prompt instead, for
    carrying the prompts below an edited prompt over to its new version. */
-function askReplay(from, onto=null){
+function askReplay(from, onto=null, only=null){
   if(sampleState!=='ready'){ toast('To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats.'); return; }
   if(replayRun && !replayRun.done){ toast('A replay is already running. Stop it first.'); return; }
-  const line = onto!=null ? lineFrom(from).slice(1) : lineFrom(from);
+  const line = only ? only.filter(x=>S.nodes[x]) : onto!=null ? lineFrom(from).slice(1) : lineFrom(from);
   if(!line.length) return;
-  replayAsk={at: onto ?? from, from, onto, line};
+  replayAsk={at: onto ?? from, from, onto, line, only:!!only};
   if(sel!==replayAsk.at) select(replayAsk.at); else animRender([replayAsk.at]);
   const b=treeEl.querySelector('[data-replaygo]'); if(b) b.focus({preventScroll:true});
 }
 function replayHTML(){
   const r=replayAsk, n=replayCount(r.line), first=r.line[0], last=r.line[r.line.length-1], m=fitMode();
-  const what = r.onto!=null
+  const what = r.only && r.onto!=null ? `Re-send ${n===1?`#${first}`:`#${first}–#${last}`} under #${r.onto}, one at a time, so ${n===1?'it gets a reply':'they get replies'} in that context.`
+    : r.only ? `Re-send #${first}${n>1?`–#${last}`:''} with the context as it is now, one at a time. The prompts after it stay on the original line.`
+    : r.onto!=null
     ? `Carry the ${n} prompt${n===1?'':'s'} that followed the original #${r.from} over to this version, and get new replies to ${n===1?'it':'them'}.`
     : `Re-send ${n===1?`#${first}`:n===2?`#${first} and #${last}`:`#${first} and the ${n-1} prompts below it (down to #${last})`} with the context as it is now, one at a time.`;
   const checks = m==='off' || n<2 ? 0 : n-1 + (r.onto!=null ? 1 : 0);
@@ -2316,7 +2374,7 @@ async function runReplay(r, io){
     if(parent!=null && !t.nodes[parent]){ stoppedAt=id; why='gone'; break; }
     let text=i===0 && r.firstText!=null ? r.firstText : o.text, rewrite=null;
     const lastAsk=[...made].reverse().find(x=>t.nodes[x] && t.nodes[x].kind!=='merge' && t.nodes[x].reply);
-    const prevOld = i>0 ? t.nodes[line[i-1]] : (r.onto!=null ? t.nodes[r.from] : null);
+    const prevOld = i>0 ? t.nodes[line[i-1]] : (r.onto!=null ? t.nodes[t.nodes[line[0]].parents[0]] : null);
     if(o.kind!=='merge' && r.mode!=='off' && (lastAsk!=null || (i===0 && r.onto!=null && t.nodes[r.onto] && t.nodes[r.onto].reply)) && !(i===0 && r.firstText!=null)){
       r.status={what:'checking', id}; io.update();
       const v=await checkFit(r.sid, lastAsk ?? r.onto, o, prevOld && prevOld.reply); requests++;
@@ -2518,21 +2576,38 @@ function fanCreate(){
 /* ---- Compare ----
    The follow-ups to one prompt side by side, with their replies. */
 const cmpEl=()=>document.getElementById('compare');
-let cmpFor=null, cmpReturn=null;
+let cmpFor=null, cmpReturn=null, cmpIds=null;
 function cmpKids(id){ return vKids(id).filter(k=>k.kind!=='merge'); }
-function openCompare(id){
-  if(cmpKids(id).length<2){ toast('Compare needs a prompt with two or more follow-ups.'); return; }
-  cmpFor=id; cmpReturn=document.activeElement; closeMenu && menuEl && closeMenu();
+/* Compare shows the follow-ups of one prompt, or prompts you picked with Ctrl/⌘-click (cmpIds) */
+const cmpList = () => cmpIds ? cmpIds.map(i=>S.nodes[i]).filter(n=>n && n.kind!=='merge') : cmpKids(cmpFor);
+const cmpKey = () => cmpIds ? 'p'+cmpIds.join(',') : cmpFor;
+/* the deepest prompt every picked one follows: their shared context (null when they're in different chats) */
+function sharedParent(ids){
+  const ps=ids.filter(i=>S.nodes[i]).map(i=>path(i)); if(!ps.length) return null;
+  const common=ps[0].filter(x=>!ids.includes(x) && ps.every(p=>p.includes(x)));
+  return common.length ? common[common.length-1] : null;
+}
+const cmpParent = () => cmpIds ? sharedParent(cmpIds) : cmpFor;
+function openCompareIds(ids){
+  ids=[...new Set(ids)].filter(i=>S.nodes[i] && S.nodes[i].kind!=='merge');
+  if(ids.length<2){ toast('Pick two or more prompts to compare.'); return; }
+  cmpIds=ids; cmpFor=ids[0]; cmpReturn=document.activeElement; closeMenu && menuEl && closeMenu();
   renderCompare(); cmpEl().hidden=false; document.body.style.overflow='hidden';
   const f=cmpEl().querySelector('[data-cmpclose]'); if(f) f.focus({preventScroll:true});
 }
-function closeCompare(){ cmpFor=null; cmpEl().hidden=true; document.body.style.overflow=''; if(cmpReturn && cmpReturn.focus && document.contains(cmpReturn)) cmpReturn.focus({preventScroll:true}); }
+function openCompare(id){
+  if(cmpKids(id).length<2){ toast('Compare needs a prompt with two or more follow-ups.'); return; }
+  cmpIds=null; cmpFor=id; cmpReturn=document.activeElement; closeMenu && menuEl && closeMenu();
+  renderCompare(); cmpEl().hidden=false; document.body.style.overflow='hidden';
+  const f=cmpEl().querySelector('[data-cmpclose]'); if(f) f.focus({preventScroll:true});
+}
+function closeCompare(){ cmpFor=null; cmpIds=null; cmpEl().hidden=true; document.body.style.overflow=''; if(cmpReturn && cmpReturn.focus && document.contains(cmpReturn)) cmpReturn.focus({preventScroll:true}); }
 function renderCompare(){
-  const el=cmpEl(); if(cmpFor==null || !S.nodes[cmpFor]){ if(!el.hidden) closeCompare(); return; }
-  const id=cmpFor, ks=cmpKids(id);
+  const el=cmpEl(); if(cmpFor==null || (!cmpIds && !S.nodes[cmpFor])){ if(!el.hidden) closeCompare(); return; }
+  const id=cmpFor, ks=cmpList(), par=cmpParent();
   if(ks.length<2){ closeCompare(); return; }
-  const p=S.nodes[id], missing=ks.filter(k=>!k.reply && !replyBusy(k.id)).length, running=ks.filter(k=>replyBusy(k.id)).length;
-  const verdict = cmpTool && cmpTool.for===id && cmpTool.judge && cmpTool.judge.result || null;
+  const p=S.nodes[id]||{}, missing=ks.filter(k=>!k.reply && !replyBusy(k.id)).length, running=ks.filter(k=>replyBusy(k.id)).length;
+  const verdict = cmpTool && cmpTool.key===cmpKey() && cmpTool.judge && cmpTool.judge.result || null;
   const cols=ks.map(k=>{
     const names=refsThrough(k.id).map(refName), main=onMain(k.id), below=desc(k.id).size, live=liveGen(k.id), note=genNotes[gkey(DB.current,k.id)];
     const reply = live ? `<div class="rbody" data-cgen="${k.id}">${live.text?md(live.text):'<p class="thinking">Writing…</p>'}</div><button class="btn xs" data-cstop="${k.id}">Stop</button>`
@@ -2548,9 +2623,9 @@ function renderCompare(){
   }).join('');
   /* what's typed in the tools survives a redraw (replies streaming in redraw Compare) */
   const keep=['judgeCriteria','combineInstr','combPrompt','combReply'].map(k=>{ const x=document.getElementById(k); return x ? [k, x.value, document.activeElement===x] : null; }).filter(Boolean);
-  el.querySelector('.cmpbox').innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="cmpTitle">Compare ${ks.length} follow-ups</h2><p class="note">to #${id}: ${esc(clip(p.text||'',140))}</p></div>
+  el.querySelector('.cmpbox').innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="cmpTitle">Compare ${ks.length} ${cmpIds?'picked prompts':'follow-ups'}</h2><p class="note">${cmpIds ? (par!=null ? `sharing the context up to #${par}: ${esc(clip(S.nodes[par].text||'',120))}` : 'from different chats, with no shared context') : `to #${id}: ${esc(clip(p.text||'',140))}`}</p></div>
     <div class="bar">${missing>1&&sampleState==='ready'?`<button class="btn" data-cgetall>Get ${missing} missing replies</button>`:''}${running>1?`<button class="btn" data-cstopall>Stop ${running} replies</button>`:''}<button class="btn" data-cmpclose>Done <kbd class="inv">Esc</kbd></button></div></div>
-    ${cmpToolsHTML(id)}
+    ${cmpToolsHTML()}
     <div class="ccols">${cols}</div>`;
   for(const [k,v,f] of keep){ const x=document.getElementById(k); if(x){ x.value=v; if(f) x.focus({preventScroll:true}); } }
 }
@@ -2623,7 +2698,7 @@ function compareMaterial(sid, parent, ids){
   return withTree(t, ()=>{
     const alts=ids.map(i=>S.nodes[i]).filter(n=>n && n.reply);
     if(alts.length<2) throw new Error('Needs at least two follow-ups with replies.');
-    const conversation=clip(turnsFor(parent, true).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 24000);
+    const conversation=parent==null ? '(They come from different chats, with no shared context.)' : clip(turnsFor(parent, true).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 24000);
     const alternatives=alts.map(n=>`#${n.id}\nFollow-up: ${clip(n.text||'',3000)}\nReply: ${clip(n.reply,9000)}`).join('\n\n---\n\n');
     return {conversation, alternatives, ids:alts.map(n=>n.id)};
   });
@@ -2654,10 +2729,12 @@ function addCombined(parent, c, by){
   return nid;
 }
 const combinedTitle = n => `Claude combined ${n.combined.from.map(x=>'#'+x).join(', ')} in Compare.${Object.entries(n.combined.sources||{}).map(([k,v])=>` #${k}: ${v}`).join('')}`;
-function cmpToolsHTML(id){
-  const t=cmpTool && cmpTool.for===id ? cmpTool : (cmpTool={for:id, criteria:opts.judgeCriteria||'', instructions:opts.combineInstructions||'', judge:null, combine:null});
+function cmpToolsHTML(){
+  const key=cmpKey(), par=cmpParent();
+  const t=cmpTool && cmpTool.key===key ? cmpTool : (cmpTool={key, parent:par, criteria:opts.judgeCriteria||'', instructions:opts.combineInstructions||'', judge:null, combine:null});
+  t.parent=par; const id=par;
   if(sampleState!=='ready') return '';
-  const withReplies=cmpKids(id).filter(k=>k.reply).length;
+  const withReplies=cmpList().filter(k=>k.reply).length;
   const j=t.judge, c=t.combine;
   const judgeBox = j && j.status==='loading' ? '<p class="note thinking">Claude is judging…</p>' : j && j.status==='error' ? `<p class="gnote">${esc(j.err)}</p>` : j && j.result ? `<div class="cverdict-sum"><b>${AI}Judge${j.result.best?`: #${j.result.best}`:''}</b> ${esc(j.result.summary||'')} <span class="note">· against “${esc(clip(j.result.criteria,80))}” · your call</span></div>` : '';
   const comboBox = c && c.status==='loading' ? '<p class="note thinking">Claude is combining…</p>' : c && c.status==='error' ? `<p class="gnote">${esc(c.err)}</p>` : c && c.draft ? `<div class="ccombine"><div class="fanhead"><b>${AI}Combined draft</b><span class="note">from ${c.draft.ids.map(x=>'#'+x).join(', ')} · edit before you add it</span></div>
@@ -2667,20 +2744,20 @@ function cmpToolsHTML(id){
       <div class="bar"><button class="btn primary" data-combadd>Add as a follow-up to #${id}</button><button class="btn" data-combagain>Write again</button><button class="btn" data-combdiscard>Discard</button></div></div>` : '';
   return `<div class="ctools">
     <div class="ctrow"><input id="judgeCriteria" placeholder="Criteria: ${esc(JUDGE_DEFAULT)}" value="${esc(t.criteria)}" aria-label="What to judge by"><button class="btn" data-judge ${withReplies<2||(j&&j.status==='loading')?'disabled':''} title="One request: Claude gives a reason for each follow-up and picks one against your criteria. Nothing changes.">${AI}Judge</button></div>
-    <div class="ctrow"><input id="combineInstr" placeholder="How to combine: ${esc(COMBINE_DEFAULT)}" value="${esc(t.instructions)}" aria-label="How to combine"><button class="btn" data-combine ${withReplies<2||(c&&c.status==='loading')?'disabled':''} title="One request: Claude writes one reply from the best parts, as a draft you review before adding it.">${AI}Combine</button></div>
+    <div class="ctrow"><input id="combineInstr" placeholder="How to combine: ${esc(COMBINE_DEFAULT)}" value="${esc(t.instructions)}" aria-label="How to combine"><button class="btn" data-combine ${withReplies<2||par==null||(c&&c.status==='loading')?'disabled':''} title="${par==null?'These prompts share no context, so there is no prompt to add a combined reply to.':'One request: Claude writes one reply from the best parts, as a draft you review before adding it.'}">${AI}Combine</button></div>
     ${judgeBox}${comboBox}</div>`;
 }
 async function runJudge(){
-  const t=cmpTool, id=t.for; t.criteria=document.getElementById('judgeCriteria').value.trim(); opts.judgeCriteria=t.criteria; save();
+  const t=cmpTool; t.criteria=document.getElementById('judgeCriteria').value.trim(); opts.judgeCriteria=t.criteria; save();
   t.judge={status:'loading'}; renderCompare();
-  try{ t.judge={status:'done', result:await judgeCore(DB.current, id, cmpKids(id).map(k=>k.id), t.criteria)}; }
+  try{ t.judge={status:'done', result:await judgeCore(DB.current, t.parent, cmpList().map(k=>k.id), t.criteria)}; }
   catch(e){ t.judge={status:'error', err: e && e.message && !/^[a-z_]+$/.test(e.message) ? e.message : 'Claude couldn’t judge them. Try again.'}; }
   if(cmpTool===t) renderCompare();
 }
 async function runCombine(){
-  const t=cmpTool, id=t.for; t.instructions=document.getElementById('combineInstr').value.trim(); opts.combineInstructions=t.instructions; save();
+  const t=cmpTool; t.instructions=document.getElementById('combineInstr').value.trim(); opts.combineInstructions=t.instructions; save();
   t.combine={status:'loading'}; renderCompare();
-  try{ t.combine={status:'done', draft:await combineCore(DB.current, id, cmpKids(id).map(k=>k.id), t.instructions)}; }
+  try{ t.combine={status:'done', draft:await combineCore(DB.current, t.parent, cmpList().map(k=>k.id), t.instructions)}; }
   catch(e){ t.combine={status:'error', err: e && e.message && !/^[a-z_]+$/.test(e.message) ? e.message : 'Claude couldn’t combine them. Try again.'}; }
   if(cmpTool===t) renderCompare();
 }
@@ -2690,7 +2767,9 @@ function addCombinedDraft(){
   if(!rp){ toast('The combined reply is empty.'); return; }
   const edited = pr!==d.prompt || rp!==d.reply;
   let nid;
-  commit(`Added the combined reply as #${S.nextId}, a new follow-up to #${t.for}`, ()=>{ nid=addCombined(t.for, {...d, prompt:pr||d.prompt, reply:rp}); if(edited) S.nodes[nid].replyEdited=true; sel=nid; });
+  if(t.parent==null) return;
+  commit(`Added the combined reply as #${S.nextId}, a new follow-up to #${t.parent}`, ()=>{ nid=addCombined(t.parent, {...d, prompt:pr||d.prompt, reply:rp}); if(edited) S.nodes[nid].replyEdited=true; sel=nid; });
+  if(cmpIds) cmpIds=[...cmpIds, nid];
   t.combine=null; renderCompare();
 }
 
@@ -3234,8 +3313,8 @@ function composerHTML(forId){
     : `Continue from #${forId}: ${vKids(forId).length?'forks here and starts':'starts'} <b>${esc(autoName(convOf(forId)))}</b>`;
   const many = alsoTargets.size>0;
   const also = many
-    ? `<div class="alsobar"><span class="fchip">#${forId}</span>${[...alsoTargets].map(x=>`<span class="fchip">#${x}<button class="fx" data-unalso="${x}" aria-label="Don\u2019t reply to #${x}">×</button></span>`).join('')}<button class="rmore" data-alsopick>+ Add more</button><button class="rmore" data-alsoclear>Clear</button></div>`
-    : `<p class="note alsohint"><button class="rmore" data-alsopick title="Send this message to other prompts too, each in its own branch">Reply to several…</button> or Ctrl/⌘- or Shift-click other prompts to send this to them too. <button class="rmore" data-variants title="${esc(OPS.variants.hint)}">Variants…</button></p>`;
+    ? `<div class="alsobar"><span class="fchip">#${forId}</span>${[...alsoTargets].map(x=>`<span class="fchip">#${x}<button class="fx" data-unalso="${x}" aria-label="Don\u2019t reply to #${x}">×</button></span>`).join('')}<button class="rmore" data-alsopick>+ Add more</button><button class="rmore" data-alsocompare title="Read these prompts and their replies side by side, with ✦ Judge and ✦ Combine">Compare these</button><button class="rmore" data-alsoclear>Clear</button></div>`
+    : `<p class="note alsohint"><button class="rmore" data-alsopick title="Send this message to other prompts too, each in its own branch">Reply to several…</button> or Ctrl/⌘-click other prompts to send this to them too (Shift-click selects a stretch of the line). <button class="rmore" data-variants title="${esc(OPS.variants.hint)}">Variants…</button></p>`;
   return `<div class="composer">
     <p class="contLabel">${many ? `Reply to <b>${alsoTargets.size+1} prompts</b>, each in its own branch` : label}</p>
     ${also}
@@ -3297,6 +3376,7 @@ function rowHTML(id, pathSet){
   else if(pick){ if(id===pick.src) cls.push('src'); else cls.push(validTarget(pick.op,pick.src,id)?'target':'dim'); }
   else if(id===sel) cls.push('sel');
   if(promptEditFor===id && !pick) cls.push('editing');
+  if(range && !pick && range.ids.includes(id)) cls.push('inrange');
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
@@ -3533,7 +3613,9 @@ function renderTree(){
   trunk = new Set(Object.values(S.refs).filter(r=>r.name==='main' && S.nodes[r.tip]).flatMap(r=>chain(r.tip)));
   let h='';
   if(pick && pick.op==='also') h+=`<div class="pickBanner" data-key="pick"><span>Reply to several: tap the prompts to reply to · <b>${alsoTargets.size+1} picked</b></span><button class="btn" data-cancel>Done <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
+  else if(pick && pick.op==='replayonto') h+=`<div class="pickBanner" data-key="pick"><span>${AI}Replay #${pick.line[0]}${pick.line.length>1?'–#'+pick.line[pick.line.length-1]:''} onto: choose the prompt to continue from</span><button class="btn" data-cancel>Cancel <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
   else if(pick){ const o=OPS[pick.op], who=refsAt(pick.src).map(refName)[0]; h+=`<div class="pickBanner" data-key="pick"><span>${o.label.replace('…','')} ${who?esc(who)+' (#'+pick.src+')':'#'+pick.src}: ${o.pick}</span><button class="btn" data-cancel>Cancel <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`; }
+  if(range && !pick && !opts.simple) h+=rangeBarHTML();
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
   const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
   if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
@@ -4478,6 +4560,9 @@ treeEl.addEventListener('click', e=>{
   const gr=e.target.closest('[data-genreply]'); if(gr){ generate(+gr.dataset.genreply); return; }
   const lm=e.target.closest('[data-linemode]'); if(lm){ const on=lm.dataset.linemode==='line'; if(!!opts.lineOnly!==on){ opts.lineOnly=on; save(); Motion.run(treeEl, renderTree, [sel]); } return; }
   const svm=e.target.closest('[data-savedmenu]'); if(svm){ savedMenu(svm, document.getElementById(svm.dataset.savedmenu)); return; }
+  const rgb=e.target.closest('[data-rg]'); if(rgb && range){ rangeAction(rgb.dataset.rg); return; }
+  if(e.target.closest('[data-rangeclear]')){ range=null; animRender([sel]); return; }
+  if(e.target.closest('[data-alsocompare]')){ openCompareIds([sel, ...alsoTargets]); return; }
   const rg=e.target.closest('[data-regen]'); if(rg){ regenerate(+rg.dataset.regen); return; }
   const rpa=e.target.closest('[data-replayask]'); if(rpa){ askReplay(+rpa.dataset.replayask); return; }
   if(e.target.closest('[data-replaygo]') && replayAsk){ const r=replayAsk; replay(r.from, r.onto, r.line); return; }
@@ -4511,7 +4596,9 @@ treeEl.addEventListener('click', e=>{
   const row=e.target.closest('.row'); if(!row) return;
   const id=+row.dataset.id;
   if(pick && pick.op==='also'){ if(id!==pick.src && S.nodes[id].kind!=='merge'){ alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); } return; }
-  if(!pick && sel!=null && id!==sel && (e.metaKey || e.ctrlKey || e.shiftKey)){ alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); return; }
+  if(!pick && !opts.simple && sel!=null && id!==sel && e.shiftKey && !e.metaKey && !e.ctrlKey){ setRange(sel, id); return; }
+  if(!pick && sel!=null && id!==sel && (e.metaKey || e.ctrlKey)){ range=null; alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); return; }
+  if(range && !pick){ range=null; }
   if(!pick && id===sel){ if(!opts.simple) deselect(); return; }
   if(pick){ if(id===pick.src) return; if(validTarget(pick.op,pick.src,id)) finishPick(id); else toast(pick.op==='merge' ? 'That prompt is already on the same line as this branch, so there is nothing to merge.' : 'That prompt can’t be used here. It would create a loop or change nothing.'); return; }
   select(id);
@@ -4679,6 +4766,7 @@ document.addEventListener('keydown', e=>{
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='z' && !typing){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
   /* Esc stops the reply you're looking at, unless you're typing or something else is open to close first */
   if(e.key==='Escape' && !typing && !pick && composeFor==null && !renaming && !variants && !fan && choosing==null && !pickingRows && !shellEl.matches('.open-spaces,.open-convs') && sel!=null && replyBusy(sel)){ stopReply(sel); return; }
+  if(e.key==='Escape' && range && !typing){ range=null; animRender([sel]); return; }
   if(e.key==='Escape' && sumGen && !typing){ sumGen.ctl.abort(); return; }
   if(e.key==='Escape' && choosing!=null){ finishChoosing(false); return; }
   if(e.key==='Escape' && pickingRows){ setPickingRows(false); return; }
@@ -4937,9 +5025,9 @@ cmpEl().addEventListener('click', e=>{
   const m=c('[data-cmain]'); if(m){ promote(+m.dataset.cmain); renderCompare(); return; }
   const pr=c('[data-cprune]'); if(pr){ run('prune', +pr.dataset.cprune); renderCompare(); return; }
   const g=c('[data-cget]'); if(g){ generate(+g.dataset.cget); return; }
-  if(c('[data-cgetall]')){ wantReplies(cmpKids(cmpFor).filter(k=>!k.reply).map(k=>k.id)); return; }
+  if(c('[data-cgetall]')){ wantReplies(cmpList().filter(k=>!k.reply).map(k=>k.id)); return; }
   const cs=c('[data-cstop]'); if(cs){ stopReply(+cs.dataset.cstop); renderCompare(); return; }
-  if(c('[data-cstopall]')){ for(const k of cmpKids(cmpFor)) stopReply(k.id); renderCompare(); return; }
+  if(c('[data-cstopall]')){ for(const k of cmpList()) stopReply(k.id); renderCompare(); return; }
   if(c('[data-judge]')){ runJudge(); return; }
   if(c('[data-combine]') || c('[data-combagain]')){ runCombine(); return; }
   if(c('[data-combdiscard]')){ cmpTool.combine=null; renderCompare(); return; }
