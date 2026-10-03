@@ -816,6 +816,9 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .rwnote{opacity:1 !important;margin-right:4px}
 .fitmodes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px}
 .fitmodes>span{font-size:.82rem;color:var(--muted);margin-right:4px}
+.rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.offbr{margin:2px 0 6px 18px}
+.offbr .linkbtn{font-size:.78rem;padding:3px 6px}
 .ctxwrap{display:inline-flex;align-items:baseline;gap:6px;margin-left:auto;font-size:.76rem;color:var(--muted)}
 .ctxmark{font:inherit;color:var(--muted)}
 .ctxwrap .linkbtn{font-size:inherit}
@@ -3041,7 +3044,7 @@ function rowHTML(id, pathSet){
 const repliesMode = () => opts.simple ? 'path' : opts.replies;
 function setRepliesMode(m){ opts.replies=m; openReplies.clear(); save(); }
 /* long replies away from the selected prompt are shortened unless Length is set to Full; each reply's own Show all / Shorten flips just that one */
-const lenMode = () => opts.simple ? (opts.replyLenSimple || 'full') : set('replyLen');
+const lenMode = () => opts.simple ? 'full' : set('replyLen');
 const replyFull = id => id===sel || ((lenMode()==='full') !== fullReplies.has(id));
 const RICH_RE=/\n|[|$`*#_\\]|^\s*([-*+]|\d+[.)])\s/;
 function replyShown(id, pathSet){
@@ -3136,19 +3139,21 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}"><div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${ed}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}"><div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow">${ed}<button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
 let trunk = new Set();
 function laneFor(startId, parentLane){ let l=1+(startId%3); if(l===parentLane) l=1+((startId+1)%3); return l; }
+let curLine=null;
 function runHTML(id, lane, pathSet){
   const items=[]; let cur=id;
   while(cur!=null){
-    const ks=vKids(cur), sk=vSec(cur);
+    let ks=vKids(cur), sk=vSec(cur), off=0;
+    if(curLine){ const k0=ks.length; ks=ks.filter(k=>curLine.has(k.id)); off=k0-ks.length; sk=sk.filter(k=>curLine.has(k.id)); }
     const straight = ks.find(k=>trunk.has(k.id)) || ks[0];
     const pk = straight ? [straight, ...ks.filter(k=>k!==straight)] : [];
     let h=rowHTML(cur, pathSet);
@@ -3160,6 +3165,7 @@ function runHTML(id, lane, pathSet){
       items.push([cur,h]); break;
     }
     if(cur===sel && !pick) h+=opsHTML(cur);
+    if(off) h+=`<div class="offbr" data-key="ob${cur}"><button class="linkbtn" data-linemode="all" title="Show every branch again">⑂ ${off} other branch${off===1?'':'es'} from here · Show</button></div>`;
     const used=new Set([lane]);
     for(const k of pk.slice(1)){
       let l=laneFor(k.alt ?? k.id, lane);
@@ -3206,7 +3212,7 @@ function simpleHTML(){
   const c=chain(tip), pathSet=new Set(path(tip)), r=S.nodes[c[0]];
   /* the thread follows this conversation's own line; what a merge brings in folds into one line at the merge */
   const items=c.map(id=>`<li class="g" data-key="n${S.nodes[id].alt ?? id}">${S.nodes[id].kind==='merge' ? mergeBoxHTML(id, pathSet) : rowHTML(id, pathSet)}</li>`).join('');
-  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="chathead" data-key="chathead"><button class="chatproj" data-projmenu aria-haspopup="menu" title="Project options">${esc(DB.spaces[DB.current].name)}</button><div class="chattitle"><h1>${esc(convTitle(r))}</h1><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div><div class="viewbar">${lenGroupHTML()}</div></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
+  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="chathead" data-key="chathead"><button class="chatproj" data-projmenu aria-haspopup="menu" title="Project options">${esc(DB.spaces[DB.current].name)}</button><div class="chattitle"><h1>${esc(convTitle(r))}</h1><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
 }
 /* A merge in the thread: one line saying which branch came in, opening to the note Claude reads at the join
    and the prompts and replies the branch brings, which Claude sees as part of this conversation. */
@@ -3231,20 +3237,25 @@ function renderTree(){
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
   const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
   if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
-    const showGroup=`<div class="vgroup" role="group" aria-label="Show replies"><span>Show replies</span>${[['selected','Selected'],['path','Context path'],['all','All']].map(([v,l])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}">${l}</button>`).join('')}</div>`;
+    const lineGroup=`<div class="vgroup" role="group" aria-label="Which prompts"><span>Prompts</span>${[['all','All','Every branch of each chat'],['line','This line','Only the line you\u2019re on: what the selected prompt sends, and the prompts after it. Other branches fold into a note where they split off']].map(([v,l,t])=>`<button class="seg" data-linemode="${v}" aria-pressed="${(v==='line')===!!opts.lineOnly}" title="${t}">${l}</button>`).join('')}</div>`;
+    const showGroup=`<div class="vgroup" role="group" aria-label="Which replies"><span>Replies</span>${[['selected','Selected','Only the selected prompt\u2019s reply'],['path','Context path','Replies the selected prompt sends'],['all','All','Every reply']].map(([v,l,t])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}" title="${t}">${l}</button>`).join('')}</div>`;
     const lenGroup=lenGroupHTML(rl);
-    if(!simpleNow) h+=`<div class="viewbar" data-key="viewbar">${showGroup}${lenGroup}</div>`; }
+    if(!simpleNow) h+=`<div class="viewbar" data-key="viewbar">${lineGroup}${showGroup}${lenGroup}</div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
   if(simpleNow) h+=simpleHTML();
   else {
   if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New chat</p>':`<p class="emptyhead">Start a chat in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a chat here from another project with its Move button.</p>`}${composerHTML('root')}</section>`;
   const offN=rs.length-shown.length;
   if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} chats in this project are hidden. Choose which to show from the chat list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
+  /* This line: in the selected prompt's chat, only the line it's on (with whatever merges bring in) */
+  const lineSet = opts.lineOnly && sel!=null && S.nodes[sel] ? new Set(path(threadTip(sel))) : null, lineRoot = lineSet ? chain(sel)[0] : null;
   for(const r of shown){
+    curLine = r.id===lineRoot ? lineSet : null;
     const size=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1, k=convKey(r);
     const est=60+size*44+(repliesMode()==='all'?size*140:0);
     h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a project in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
   }
+  curLine=null;
   if(offN && shown.length) h+=`<p class="offnote" data-key="offnote">${offN} more chat${offN===1?'':'s'} in this project ${offN===1?'is':'are'} hidden.<button class="linkbtn" data-showall>Show all</button></p>`;
   }
   const fk=focusKey();
@@ -4073,6 +4084,7 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-alsoclear]')){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
   const gr=e.target.closest('[data-genreply]'); if(gr){ generate(+gr.dataset.genreply); return; }
+  const lm=e.target.closest('[data-linemode]'); if(lm){ const on=lm.dataset.linemode==='line'; if(!!opts.lineOnly!==on){ opts.lineOnly=on; save(); Motion.run(treeEl, renderTree, [sel]); } return; }
   const rg=e.target.closest('[data-regen]'); if(rg){ regenerate(+rg.dataset.regen); return; }
   const rpa=e.target.closest('[data-replayask]'); if(rpa){ askReplay(+rpa.dataset.replayask); return; }
   if(e.target.closest('[data-replaygo]') && replayAsk){ const r=replayAsk; replay(r.from, r.onto, r.line); return; }
@@ -4089,7 +4101,7 @@ treeEl.addEventListener('click', e=>{
   if(rt){ const id=+rt.dataset.rtog, open=rt.getAttribute('aria-expanded')==='true'; openReplies.delete(id); openReplies.delete(-id); openReplies.add(open?-id:id); Motion.run(treeEl, renderTree, [id]); return; }
   const rf=e.target.closest('[data-rfull]'); if(rf){ const id=+rf.dataset.rfull; fullReplies.has(id)?fullReplies.delete(id):fullReplies.add(id); Motion.run(treeEl, renderTree, [id]); return; }
   const rm=e.target.closest('[data-rmode]'); if(rm){ setRepliesMode(rm.dataset.rmode); Motion.run(treeEl, renderTree, [sel]); return; }
-  const rl=e.target.closest('[data-rlen]'); if(rl){ if(opts.simple) opts.replyLenSimple=rl.dataset.rlen; else opts.replyLen=rl.dataset.rlen; fullReplies.clear(); save(); Motion.run(treeEl, renderTree, [sel]); return; }
+  const rl=e.target.closest('[data-rlen]'); if(rl){ opts.replyLen=rl.dataset.rlen; fullReplies.clear(); save(); Motion.run(treeEl, renderTree, [sel]); return; }
   if(e.target.closest('[data-cancel]')){ const src=pick&&pick.src, wasAlso=pick&&pick.op==='also'; pick=null; keepDraft(()=>animRender([src, sel])); if(wasAlso){ const t=document.getElementById('contText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length, t.value.length); } } return; }
   const cmp=e.target.closest('[data-compose]');
   if(cmp){ const a=cmp.dataset.compose;
