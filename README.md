@@ -71,6 +71,9 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
   new chat. The **branch map** (corner panel, or full size with **M**) draws the tree like a git graph.
 - **Editing makes a branch.** Editing a prompt sends your version as a new branch with its own reply; the original
   keeps its branch and everything after it. **Regenerate** adds another reply as a new version, one ‹ › away.
+- **Make replies easy to read.** Settings › Personalization › Claude’s replies sets the reply box apart from the
+  theme: Plain, Gray, Blue, Green, High contrast or a color you pick. The text color follows the box, and the
+  contrast ratio is shown.
 - **Undo everything** with Ctrl/⌘-Z. **Ctrl/⌘-K** opens a palette with every command for the selected prompt.
 - **Projects** group chats, and **Project files** are sent with every request in a project, like project knowledge in
   Claude. Search finds prompts and replies across a project, with filters for starred, noted and left-out prompts.
