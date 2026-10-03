@@ -617,6 +617,15 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 /* settings */
 .setwrap{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb, var(--fg) 28%, transparent)}
 .setwrap[hidden]{display:none}
+.mcpsnip{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.mcphead{display:flex;gap:8px;align-items:baseline;padding:6px 10px;background:var(--panel)}
+.mcphead .note{flex:1;font-size:.76rem}
+.mcpsnip pre{margin:0;padding:8px 10px;font:.76rem/1.4 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg)}
+
+.runout{margin:0;max-height:min(40vh,380px);overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:.76rem/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.runcard .fanhead code{font:600 .82rem var(--mono)}
+.gitline{font:.74rem var(--mono);color:var(--muted);white-space:nowrap}
+
 .proposals{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 2px;padding:8px 10px;border:1px solid color-mix(in srgb, var(--accent) 35%, var(--line));border-radius:8px;background:color-mix(in srgb, var(--accent) 6%, var(--surface))}
 .proposals .plabel{font:500 .66rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin-right:2px}
 .propfile{display:inline-flex;align-items:baseline;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 8px;cursor:pointer;font:.78rem var(--mono);color:var(--fg)}
@@ -1234,6 +1243,8 @@ const COMMANDS=[
   {name:'review', args:'[what to check]', desc:'A fresh chat reviews the last reply. Same as ✦ Review.'},
   {name:'branch', args:'name', need:true, desc:'Rename the branch you’re on, or name a new one from here.'},
   {name:'clear', desc:'Start a new chat. This one stays as it is.', root:true},
+  {name:'run', args:'command', need:true, desc:'Run a command in a linked folder (tests, a build, a script) and attach its output to your next prompt. Turn it on in Settings › System.'},
+  {name:'diff', args:'[working | staged | last | a commit]', desc:'Attach what changed in a linked folder, from git: not committed (the default), staged, the latest commit, or any commit.'},
   {name:'folder', desc:'Add files from a folder to the project or to your next prompt, or link a folder on this computer.', root:true},
   {name:'memory', desc:'Edit the standing instructions sent at the start of every request, and see the project’s files.', root:true},
   {name:'search', args:'words', need:true, desc:'Find prompts and replies in this project.', root:true},
@@ -1285,6 +1296,8 @@ function runCommand(name, arg, at){
   }
   if(name==='clear'){ closeDrawers(); pick=null; composeFor='root'; render(); const t=document.getElementById('composeText'); if(t) t.focus({preventScroll:true}); return; }
   if(name==='folder'){ openFolder('space'); return; }
+  if(name==='run'){ chooseRoot(document.getElementById('contText'), root=>startRun(root, arg, at)); return; }
+  if(name==='diff'){ chooseRoot(document.getElementById('contText'), root=>attachDiff(root, arg || 'working', at)); return; }
   if(name==='memory'){ openSettings('prompts'); setTimeout(()=>{ const f=document.querySelector('#settings textarea'); if(f) f.focus({preventScroll:true}); }, 50); if(S.files && S.files.length) toast(`This project also sends ${S.files.length} file${S.files.length===1?'':'s'} with every chat (Project files, in the sidebar).`); return; }
   if(name==='settings'){ openSettings(); return; }
   if(name==='search'){ convFilterEl.value=arg; convFilterEl.dispatchEvent(new Event('input', {bubbles:true})); convFilterEl.focus({preventScroll:true}); return; }
@@ -1305,6 +1318,7 @@ function panelHTML(forId){
   if(p.kind==='help') return `<div class="fan cmdcard" data-key="cmdhelp"><div class="fanhead"><b>Commands</b><span class="note">type / in the input box</span>${close}</div>
     <table class="cmdtable">${COMMANDS.map(c=>`<tr><td><code>/${c.name}</code>${c.args?` <span class="note">${esc(c.args)}</span>`:''}</td><td>${esc(c.desc)}</td></tr>`).join('')}</table>
     <p class="note">Your saved prompts are listed after the commands. Anything else that starts with / is sent as written.</p></div>`;
+  if(p.kind==='run') return runPanelHTML(p);
   if(at==null || !S.nodes[at]) return '';
   if(p.kind==='context'){
     const ents=contextEntries(at), parts=[], add=(label, text, extra='')=>{ if(text) parts.push({label, b:enc?enc.encode(text).length:text.length, t:Math.ceil(text.length/4), extra}); };
@@ -2334,6 +2348,92 @@ function proposalAnyMenu(anchor, id){
   const label=b=>`${b.path?b.path+' · ':''}${b.lang||'code'} · ${clip(b.body.split('\n').find(l=>l.trim())||'', 40)}`;
   openMenu(anchor, [{heading:'Which code block?'}, ...blocks.map(b=>({label:label(b), run:()=>setTimeout(()=>openMenu(anchor, [{heading:'Into which file?'}, ...ts.map(t=>({label:pathKey(t.m), run:()=>openProposal(id, b.i, t.where)}))]), 0)}))]);
 }
+
+/* ---- Run and git in linked folders ----
+   /run runs a command in a linked folder and shows its output above the input box, ready to attach to a prompt.
+   It is off until turned on in Settings › System, since a command runs on this computer with your permissions.
+   /diff attaches git's view of what changed (not committed, staged, the latest commit, or any commit) as a file. */
+const linkedRoots = () => [...new Set((S.files||[]).filter(m=>m.src && m.src.root).map(m=>m.src.root))];
+const rootName = r => r.split(/[\\/]/).filter(Boolean).pop() || r;
+async function flushState(){ if(saveTimer) writeStore(); if(window.TREECHATS_FLUSH) await window.TREECHATS_FLUSH(); }
+function chooseRoot(anchor, fn){
+  const rs=linkedRoots();
+  if(!hasServer()){ toast('This needs Treechats running on this computer.'); return; }
+  if(!rs.length){ toast('Link a folder to this project first.', false, {label:'Link a folder', fn:()=>openFolder('space')}); return; }
+  if(rs.length===1 || !anchor) return fn(rs[0]);
+  openMenu(anchor, [{heading:'In which folder?'}, ...rs.map(r=>({label:rootName(r), run:()=>fn(r)}))]);
+}
+async function startRun(root, command, at){
+  if(!set('allowCommands')){ toast('Running commands is off. Turn it on in Settings › System.', false, {label:'Open Settings', fn:()=>openSettings('system')}); return; }
+  if(cmdPanel && cmdPanel.kind==='run' && cmdPanel.ctl) cmdPanel.ctl.abort();
+  const p={kind:'run', at, root, command, status:'running', ctl:new AbortController(), started:Date.now()};
+  cmdPanel=p; paintCmds(at);
+  try{
+    await flushState();
+    const r=await fetch('/api/folder/run', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({root, command}), signal:p.ctl.signal});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.message || 'The command couldn’t run.');
+    Object.assign(p, d, {status:'done'});
+  }catch(e){ Object.assign(p, {status: e.name==='AbortError' ? 'stopped' : 'error', error:e.name==='AbortError' ? null : e.message}); }
+  p.ctl=null;
+  if(cmdPanel===p) paintCmds(p.at);
+  refreshGit(root);
+}
+function runPanelHTML(p){
+  const sec=s=>s<10 ? s.toFixed(1)+' s' : Math.round(s)+' s';
+  const meta = p.status==='running' ? `running in ${esc(rootName(p.root))}…` : p.status==='done' ? `${p.timedOut?'stopped at the time limit':p.code===0?'exit 0':`exit ${p.code ?? p.signal}`} · ${sec(p.ms/1000)} · in ${esc(rootName(p.root))}` : p.status==='stopped' ? 'stopped' : esc(p.error||'failed');
+  const acts = p.status==='running' ? '<button class="btn" data-runstop>Stop</button>' : `${p.output!=null?`<button class="btn" data-runattach title="Attach the command and its output to your next prompt">Attach to prompt</button><button class="btn" data-runcopy>Copy</button>`:''}<button class="btn" data-runagain>Run again</button><button class="btn" data-cmdclose>Close</button>`;
+  return `<div class="fan cmdcard runcard" data-key="cmdrun"><div class="fanhead"><b><code>$ ${esc(clip(p.command, 80))}</code></b><span class="note ${p.status==='done'&&p.code!==0?'err':''}">${meta}</span></div>
+    ${p.output!=null ? `<pre class="runout">${esc(p.output || '(no output)')}</pre>` : p.status==='running' ? '<p class="thinking note">Waiting for it to finish…</p>' : ''}
+    <div class="bar">${acts}</div></div>`;
+}
+function attachRunOutput(p){
+  const text=`$ ${p.command}\n(${p.timedOut?'stopped at the time limit':'exit '+(p.code ?? p.signal)}, ${rootName(p.root)})\n\n${p.output||''}`;
+  const id=newFileId(), name=`${p.command.replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'command'}-output.txt`, size=enc?enc.encode(text).length:text.length;
+  Files.put(id, {name, type:'text/plain', size, kind:'text', text});
+  pendingFiles=[...pendingFiles, {id, name, kind:'text', size}];
+  cmdPanel=null; paintCmds(p.at);
+  toast(`Attached the output of ${clip(p.command,40)} to your next prompt.`);
+}
+async function attachDiff(root, what, at){
+  try{
+    await flushState();
+    const d=await folderApi('/api/folder/diff', {root, what});
+    if(!d.text.trim() && !d.untracked.length){ toast(`No ${d.label} in ${rootName(root)}.`); return; }
+    const text=d.text+(d.untracked.length?`\n# Files not yet tracked by git: ${d.untracked.join(', ')}\n`:'');
+    const id=newFileId(), name=`${rootName(root)}-${what==='working'?'changes':what==='last'?'last-commit':what.replace(/[^\w.-]+/g,'-')}.diff`, size=enc?enc.encode(text).length:text.length;
+    Files.put(id, {name, type:'text/x-diff', size, kind:'text', text});
+    pendingFiles=[...pendingFiles, {id, name, kind:'text', size}];
+    keepDraft(()=>renderTree());
+    const idx=pendingFiles.length-1, lines=d.text.split('\n').length;
+    toast(`Attached ${d.label} in ${rootName(root)} (${lines.toLocaleString()} lines) to your next prompt.`, false, {label:'Open', fn:()=>openFileView('p:'+idx)});
+  }catch(e){ toast(e.message); }
+}
+function diffMenu(anchor, root){
+  openMenu(anchor, [{heading:`Attach from git · ${rootName(root)}`},
+    {label:'Changes not committed', run:()=>attachDiff(root, 'working')},
+    {label:'Staged changes', run:()=>attachDiff(root, 'staged')},
+    {label:'The latest commit', run:()=>attachDiff(root, 'last')},
+    {label:'A commit or branch…', run:()=>{ closeSpaceFiles(); const t=document.getElementById('contText'); if(t){ t.value='/diff '; t.dispatchEvent(new Event('input', {bubbles:true})); t.focus(); } }}]);
+}
+const gitInfo=new Map();
+async function refreshGit(root){
+  if(!hasServer()) return;
+  const was=gitInfo.get(root); if(was && was.loading) return;
+  gitInfo.set(root, {...(was||{}), loading:true});
+  try{ await flushState(); const d=await folderApi('/api/folder/git', {root}); gitInfo.set(root, {data:d, at:Date.now()}); }
+  catch(e){ gitInfo.set(root, {error:e.message, at:Date.now()}); }
+  if(!document.getElementById('spaceFiles').hidden) renderSpaceFiles();
+}
+function gitLine(root){
+  const g=gitInfo.get(root);
+  if(!g || (!g.loading && g.at && Date.now()-g.at>5000)) setTimeout(()=>refreshGit(root), 0); /* fresh each time the panel is looked at */
+  if(!g || (!g.data && !g.error)) return '';
+  if(g.error || !g.data.git) return '';
+  const d=g.data, n=d.changed.length;
+  return `<span class="gitline" title="${esc(n ? d.changed.slice(0,30).map(c=>`${c.status} ${c.path}`).join('\n') : 'Nothing changed since the last commit')}">⎇ ${esc(d.branch||'?')}${d.ahead?` ↑${d.ahead}`:''}${d.behind?` ↓${d.behind}`:''} · ${n ? `${n} changed` : 'clean'}</span>`;
+}
+function closeSpaceFiles(){ const el=document.getElementById('spaceFiles'); if(el && !el.hidden){ el.hidden=true; document.body.style.overflow=''; } }
 
 /* history */
 function commit(msg, fn, o={}){
@@ -3758,8 +3858,33 @@ function distillHTML(){
   const body = d.status==='loading'
     ? `<div class="rbody">${d.text?md(d.text):'<p class="thinking">Reading the chat…</p>'}</div>`
     : `${d.status==='error'?`<p class="gnote">${esc(d.err||'Claude couldn’t write the brief.')}</p>`:''}<textarea id="distillText" rows="${Math.min(22, Math.max(6, d.text.split('\n').length+1))}" aria-label="Brief">${esc(d.text)}</textarea>
-      <div class="bar"><button class="btn primary" data-dgo="new" ${n?'':'disabled'} title="A new chat whose first prompt starts with this brief">Start a new chat with it</button><button class="btn" data-dgo="file" ${n?'':'disabled'} title="Sent with every chat in this project">Add to project files</button><button class="btn" data-dgo="note" ${n?'':'disabled'} title="Kept on #${id}, never sent to Claude">Save as note</button><button class="btn" data-dgo="copy" ${n?'':'disabled'}>Copy</button><button class="btn" data-dgo="again">Write again</button></div>`;
+      <div class="bar"><button class="btn primary" data-dgo="new" ${n?'':'disabled'} title="A new chat whose first prompt starts with this brief">Start a new chat with it</button><button class="btn" data-dgo="file" ${n?'':'disabled'} title="Sent with every chat in this project">Add to project files</button><button class="btn" data-dgo="note" ${n?'':'disabled'} title="Kept on #${id}, never sent to Claude">Save as note</button><button class="btn" data-dgo="copy" ${n?'':'disabled'}>Copy</button>${hasServer() && linkedRoots().length ? `<button class="btn" data-dgo="repo" ${n?'':'disabled'} aria-haspopup="menu" title="Add it to CLAUDE.md or AGENTS.md in a linked folder, so coding agents start with it">Add to the repo ▾</button>` : ''}<button class="btn" data-dgo="again">Write again</button></div>`;
   return `<div class="fan distill" data-key="ds${id}">${head}${body}</div>`;
+}
+/* a brief written into the repo: appended to CLAUDE.md (read by Claude Code) or AGENTS.md (read by Codex and others)
+   in a linked folder, under a heading naming the chat, so coding agents start from what was worked out here */
+function repoMenu(anchor){
+  const d=distill; if(!d) return;
+  const t=document.getElementById('distillText'); if(t) d.text=t.value;
+  const items=[];
+  for(const r of linkedRoots()) for(const f of ['CLAUDE.md','AGENTS.md']) items.push({label:`Add to ${f} in ${rootName(r)}`, run:()=>briefToRepo(r, f, d.text.trim(), d.id)});
+  openMenu(anchor, items);
+}
+async function briefToRepo(root, file, text, id){
+  if(!text) return;
+  try{
+    await flushState();
+    const [cur]=await folderApi('/api/folder/read', {root, paths:[file]});
+    const exists=cur && cur.text!=null;
+    if(cur && cur.text==null && !/couldn’t be read/.test(cur.error||'')) throw new Error(`${file}: ${cur.error}`);
+    const title=convTitle(S.nodes[chain(id)[0]]), day=new Date().toISOString().slice(0,10);
+    const block=`## ${title}\n\n_From a Treechats chat, ${day}._\n\n${text.replace(/^#\s+/gm,'### ')}\n`;
+    const next=exists ? cur.text.replace(/\s*$/,'')+'\n\n'+block : block;
+    await folderApi('/api/folder/write', {root, path:file, text:next, mtime: exists ? cur.mtime : null});
+    distill=null; animRender([id]);
+    if((S.files||[]).some(m=>m.src && m.src.root===root && m.src.path===file)) syncFolder(root);
+    toast(`${exists?'Added the brief to':'Created'} ${file} in ${rootName(root)}.`);
+  }catch(e){ toast(e.message); }
 }
 async function useDistill(how){
   const d=distill; if(!d) return;
@@ -4953,7 +5078,7 @@ function renderSpaceFiles(){
   fs.forEach((m,i)=>{ if(m.src && m.src.root){ if(!groups.has(m.src.root)) groups.set(m.src.root, []); groups.get(m.src.root).push([m,i]); } else loose.push([m,i]); });
   const total=fs.reduce((a,m)=>a+(m.size||0),0);
   card.innerHTML=`<p class="note">Sent with every request in this project, like project knowledge in Claude. Text and code files only.${fs.length?` ${fs.length} file${fs.length===1?'':'s'}, ${fmtSize(total)}, ${Math.round(total/promptLimit*100)}% of the request limit.`:''}</p>
-    ${[...groups].map(([root, list])=>`<div class="fgroup"><div class="fghead"><span class="fgname" title="${esc(root)}">📁 ${esc(root.split(/[\\/]/).filter(Boolean).pop())}</span><span class="note">linked</span><button class="btn xs" data-syncfolder="${esc(root)}" title="Re-read files that changed on disk">Sync</button><button class="btn xs" data-addfolder="${esc(root)}" title="Choose which files from this folder are in the project">Files…</button><button class="btn xs" data-unlinkfolder="${esc(root)}" title="Keep the files as copies, no longer read from disk">Unlink</button></div><ul class="flist">${list.map(([m,i])=>row(m,i)).join('')}</ul></div>`).join('')}
+    ${[...groups].map(([root, list])=>`<div class="fgroup"><div class="fghead"><span class="fgname" title="${esc(root)}">📁 ${esc(root.split(/[\\/]/).filter(Boolean).pop())}</span><span class="note">linked</span>${gitLine(root)}<button class="btn xs" data-runfolder="${esc(root)}" title="Run a command in this folder (/run)">Run…</button><button class="btn xs" data-difffolder="${esc(root)}" aria-haspopup="menu" title="Attach a diff from git to your next prompt">Diff ▾</button><button class="btn xs" data-syncfolder="${esc(root)}" title="Re-read files that changed on disk">Sync</button><button class="btn xs" data-addfolder="${esc(root)}" title="Choose which files from this folder are in the project">Files…</button><button class="btn xs" data-unlinkfolder="${esc(root)}" title="Keep the files as copies, no longer read from disk">Unlink</button></div><ul class="flist">${list.map(([m,i])=>row(m,i)).join('')}</ul></div>`).join('')}
     ${loose.length ? `<ul class="flist">${loose.map(([m,i])=>row(m,i)).join('')}</ul>` : ''}
     <div class="dropzone" data-dropspace>Drop files here, or <button class="linkbtn" data-attachspace style="color:var(--accent)">choose files</button> or <button class="linkbtn" data-addfolder style="color:var(--accent)">a folder</button></div>`;
 }
@@ -5614,7 +5739,7 @@ treeEl.addEventListener('click', e=>{
   }
   if(distill && e.target.closest('.distill')){
     if(e.target.closest('[data-dcancel]')){ closeDistill(); return; }
-    const dg=e.target.closest('[data-dgo]'); if(dg){ useDistill(dg.dataset.dgo); return; }
+    const dg=e.target.closest('[data-dgo]'); if(dg){ if(dg.dataset.dgo==='repo') repoMenu(dg); else useDistill(dg.dataset.dgo); return; }
     return;
   }
   if(fan){
@@ -5650,6 +5775,10 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-sidekeep]')){ keepSide(); return; }
   if(e.target.closest('[data-sidecopy]')){ if(side) copyText(side.text, true).then(ok=>{ if(ok) toast('Copied the answer.'); }); return; }
   if(e.target.closest('[data-loopstop]')){ stopLoop(); return; }
+  if(e.target.closest('[data-runstop]')){ if(cmdPanel && cmdPanel.ctl) cmdPanel.ctl.abort(); return; }
+  if(e.target.closest('[data-runattach]')){ if(cmdPanel && cmdPanel.kind==='run') attachRunOutput(cmdPanel); return; }
+  if(e.target.closest('[data-runcopy]')){ if(cmdPanel && cmdPanel.output!=null) copyText(cmdPanel.output, true).then(ok=>{ if(ok) toast('Copied the output.'); }); return; }
+  if(e.target.closest('[data-runagain]')){ if(cmdPanel && cmdPanel.kind==='run') startRun(cmdPanel.root, cmdPanel.command, cmdPanel.at); return; }
   const ua2=e.target.closest('[data-unalso]'); if(ua2){ alsoTargets.delete(+ua2.dataset.unalso); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsoclear]')){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
@@ -5803,7 +5932,9 @@ document.getElementById('filesCard').addEventListener('click', e=>{
   if(e.target.closest('[data-attachspace]')){ openPicker('space'); return; }
   const fo=e.target.closest('[data-fileopen]'); if(fo){ openFileView(fo.dataset.fileopen); return; }
   const af=e.target.closest('[data-addfolder]'); if(af){ openFolder('space', af.dataset.addfolder || null); return; }
-  const sf=e.target.closest('[data-syncfolder]'); if(sf){ syncFolder(sf.dataset.syncfolder); return; }
+  const sf=e.target.closest('[data-syncfolder]'); if(sf){ syncFolder(sf.dataset.syncfolder); refreshGit(sf.dataset.syncfolder); return; }
+  const rf=e.target.closest('[data-runfolder]'); if(rf){ closeSpaceFiles(); const t=document.getElementById('contText'); if(t){ t.value='/run '; t.dispatchEvent(new Event('input', {bubbles:true})); t.focus(); } else toast('Open a chat, then type /run and the command.'); return; }
+  const df=e.target.closest('[data-difffolder]'); if(df){ diffMenu(df, df.dataset.difffolder); return; }
   const uf=e.target.closest('[data-unlinkfolder]'); if(uf){ unlinkFolder(uf.dataset.unlinkfolder); return; }
   const r=e.target.closest('[data-rmspacefile]'); if(r){ const i=+r.dataset.rmspacefile, m=S.files[i]; commit(`Removed ${m.name} from this project`, ()=>{ S.files.splice(i,1); }, {touch:false}); }
 });
@@ -5926,7 +6057,7 @@ const ACCENTS={
 };
 const TEXT_SIZES={small:['Small',15], default:['Default',16], large:['Large',17.5], xl:['Larger',19]};
 const FONTS={plex:['Treechats', null], system:['System', '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif']};
-const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, branchSettings:false, font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
+const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, branchSettings:false, allowCommands:false, font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
 const set = k => opts[k]!=null ? opts[k] : SET_DEFAULTS[k];
 const darkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : {matches:false};
 const resolvedMode = () => set('theme')==='system' ? (darkMQ.matches?'dark':'light') : set('theme');
@@ -6058,11 +6189,22 @@ function renderSettings(){
       ${setRow('Replies','Chat view always shows every reply in the chat.', segs('replies',[['all','All'],['path','Context path'],['selected','Selected']],'Replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['full','Full'],['short','Shorten']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, merge notes, and what every '+AI+'tool asks Claude.','<button class="btn" data-setprompts>Edit prompts</button>')}
+      ${setRow('Run commands','Lets /run run a command in a folder linked to a project (tests, a build, a script), so you can attach its output to a prompt. Commands run on this computer with your permissions, like in a terminal. Git diffs and reading files don’t need this.', segs('allowCommands',[['false','Off'],['true','On']],'Run commands'))}
       ${setRow('Model settings','Advanced. A system prompt, thinking, effort, temperature and reply length for a prompt and the ones after it, set from the inspector in Editor. Settings already made keep applying when this is off, and stay marked on their prompt.', segs('branchSettings',[['false','Off'],['true','On']],'Model settings'))}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
     h+=`<section class="setsec"><h3>Input</h3>
       ${setRow('Send with', set('sendKey')==='mod'?'Enter adds a new line.':'Shift+Enter adds a new line.', segs('sendKey',[['enter','Enter'],['mod',IS_MAC?'⌘ Enter':'Ctrl+Enter']],'Send with'))}
       ${setRow('Operation shortcuts',`${mod}letter runs an operation on the selected prompt.`, segs('opKeys',[['true','On'],['false','Off']],'Operation shortcuts'))}</section>`;
+    if(hasServer()){
+      const url=`${location.protocol}//localhost:${location.port||80}/mcp`;
+      const snip=(t, code, where)=>`<div class="mcpsnip"><div class="mcphead"><b>${t}</b><span class="note">${where}</span><button class="btn xs" data-copysnip="${esc(code)}">Copy</button></div><pre>${esc(code)}</pre></div>`;
+      h+=`<section class="setsec"><h3>Use from coding tools (MCP)</h3><p class="note">Coding tools can read your chats, pull the exact context of a prompt (including files from linked folders, read from disk), ask side questions, and run subagents here. Treechats must be running.</p>
+        ${snip('Claude Code', `claude mcp add --transport http --scope user treechats ${url}`, 'run once in a terminal')}
+        ${snip('Cursor', JSON.stringify({mcpServers:{treechats:{url}}}, null, 2), '~/.cursor/mcp.json, or .cursor/mcp.json in a project')}
+        ${snip('VS Code', JSON.stringify({servers:{treechats:{type:'http', url}}}, null, 2), '.vscode/mcp.json in a workspace, or MCP: Add Server')}
+        ${snip('Codex', `codex mcp add treechats --url ${url}`, 'run once in a terminal (or add [mcp_servers.treechats] with url = "…" to ~/.codex/config.toml)')}
+        <p class="note">Only tested with Claude Code so far; the others follow their documented formats.</p></section>`;
+    }
     const nb=numberedBranches().length, ready=sampleState==='ready';
     h+=`<section class="setsec"><h3>${AI}Naming</h3>${ready?'':'<p class="note">Naming by Claude needs replies to be working: an API key in .env, or Claude Code signed in. Until then the plain names are used.</p>'}
       ${setRow('Branches', set('nameBranches')?'Claude reads a new branch\u2019s first prompt and names it, like <code>token-bucket</code>. One quick request each.':'New branches are numbered: branch-1, branch-2…', segs('nameBranches',[['true','Claude names them'],['false','Numbered']],'Branch names'))}
@@ -6155,10 +6297,11 @@ setEl.addEventListener('click', e=>{
   if(e.target===setEl || e.target.closest('[data-setclose]')){ closeSettings(); return; }
   const t=e.target.closest('[data-settab]'); if(t){ opts.setTab=t.dataset.settab; save(); renderSettings(); setBodyEl.scrollTop=0; refocus(`[data-settab="${t.dataset.settab}"]`); return; }
   const b=e.target.closest('[data-set]');
-  if(b){ const key=b.dataset.set; let v=b.dataset.val; if(['opKeys','map','ctxMarks','branchSettings','nameBranches','nameConvs','nameSpaces'].includes(key)) v = v==='true';
+  if(b){ const key=b.dataset.set; let v=b.dataset.val; if(['opKeys','map','ctxMarks','branchSettings','allowCommands','nameBranches','nameConvs','nameSpaces'].includes(key)) v = v==='true';
     if(key==='palette' && editingTheme && v!==editingTheme){ editingTheme=null; previewMode=null; }
     opts[key]=v;
     if(key==='theme'){ previewMode=null; if(editingTheme){ editMode=resolvedMode(); previewMode=editMode; } } afterSetting(key); renderSettings(); refocus(`[data-set="${key}"][data-val="${b.dataset.val}"]`); return; }
+  const cs=e.target.closest('[data-copysnip]'); if(cs){ copyText(cs.dataset.copysnip, true).then(ok=>{ if(ok) toast('Copied.'); }); return; }
   if(e.target.closest('[data-namenow]')){ for(const rid of numberedBranches()) queueBranchName(rid, true); renderSettings(); toast('Claude is naming them. They update as each name arrives.'); return; }
   const qt=e.target.closest('[data-qtoggle]'); if(qt){ const k=qt.dataset.qtoggle, list=quickList().slice(); const i=list.indexOf(k); if(i>=0) list.splice(i,1); else list.push(k); opts.quick=list; afterQuick(); refocus(`[data-qtoggle="${k}"]`); return; }
   const qm=e.target.closest('[data-qmove]'); if(qm){ const k=qm.dataset.qmove, d=+qm.dataset.dir, list=quickList().slice(), i=list.indexOf(k), j=i+d; if(i<0||j<0||j>=list.length) return; [list[i],list[j]]=[list[j],list[i]]; opts.quick=list; afterQuick(); const b=setEl.querySelector(`[data-qmove="${k}"][data-dir="${d}"]`); (b && !b.disabled ? b : setEl.querySelector(`[data-qmove="${k}"]:not(:disabled)`))?.focus({preventScroll:true}); return; }

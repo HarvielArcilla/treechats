@@ -22,6 +22,8 @@ Claude does the work; each use sends a request.
 | Copy (prompt or reply) | Under each | Copies the text | Taking an answer elsewhere | Core |
 | Attach files | Input box (Attach ▾) | Text, code or images sent with the prompt | Giving Claude the material | Common |
 | Add a folder | Attach ▾, Project files, `/folder` | A folder's files, chosen in a list (.gitignore respected, lock and .env files unticked), to the project or the next prompt. Linked folders re-read changed files with Sync | Working on a codebase | Common |
+| Coding sessions | Import chats | Claude Code and Codex session logs on this computer as chats: tool calls summarized, rewinds as branches, compactions marked | Seeing where a coding agent's context went wrong, then forking or replaying | Power |
+| Proposed changes | Under a reply | Code for a project file shown as a change with +/− counts; Review opens a diff to keep or drop each part, edit, then save (and save to disk) | Taking Claude's code into your files without copy and paste | Common |
 | File viewer and editor | Click any file | Read with syntax colors and line numbers, preview Markdown and images, copy, download, edit. An edit is a new version; linked files can be saved back to disk, never over a changed disk copy without asking | Checking what Claude sees, fixing a file before asking | Common |
 | Saved prompts | Input box, or `/` | Inserts a prompt from your library; what you typed fills its first `{placeholder}` | Reusing prompts that work: plan first, interview me, critique, … | Common |
 | Model picker | Input box | Quick, Default or Complex for the next reply | Cost against quality | Common |
@@ -81,6 +83,9 @@ sent as written. They are also in the command palette (Ctrl/⌘-K).
 | `/review [what to check]` | ✦ Review, with your instructions | A second opinion | Common |
 | `/branch name` | Renames the branch you're on, or starts one here | Naming a line of work | Power |
 | `/clear` | A new chat; this one stays | Starting fresh | Common |
+| `/run command` | Runs it in a linked folder; output above the input box with Attach to prompt. Off until turned on in Settings › System | "Tests fail, ask about the failures" | Power |
+| `/diff [working\|staged\|last\|commit]` | Attaches a git diff from a linked folder | Code review, asking about a change | Common |
+| `/folder` | Add a folder's files, or link a folder | Working on a codebase | Common |
 | `/memory` | Settings › Prompts, at the standing instructions (Treechats' CLAUDE.md) | Instructions for every request | Rare |
 | `/search words`, `/settings`, `/export`, `/help` | Search, Settings, copy the line as Markdown, list commands | Getting around | Common |
 

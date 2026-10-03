@@ -2,8 +2,10 @@
    prompt would send. This mirrors how the page builds a request (path, merge notes, left-out prompts, standing
    instructions) so that "get context" here gives the same text as "Copy as a prompt" there.
 
-   One difference: attached and space files are kept in the browser, not in the saved state, so here they appear
-   by name only. */
+   One difference: attached and project files are kept in the browser, not in the saved state, so here they appear
+   by name only, except files from a linked folder, which are read from disk. */
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { resolve as resolvePath, sep as pathSep } from 'node:path';
 import { getValue } from './store.ts';
 
 type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string }; set?: Record<string, unknown>; usage?: { input: number; output: number; cost?: number }; thinking?: string; replyEdited?: boolean; combined?: { from: number[] }; reviewOf?: { id: number }; by?: string };
@@ -78,7 +80,22 @@ export class TreeView {
   }
 }
 
-const fileStub = (f: { name: string; kind?: string }) => f.kind === 'image' ? `[Attached image: ${f.name}]` : `<file name="${f.name}">\n(The contents of this file are kept in the browser, so they aren't included here.)\n</file>`;
+/* A file's contents live in the browser, except for files from a linked folder, which are read from disk here
+   (unless they were edited in Treechats and not saved, in which case the browser's copy is the true one). */
+function linkedText(f: { src?: { root?: string; path?: string }; dirty?: boolean }): string | null {
+  if (!f.src || !f.src.root || !f.src.path || f.dirty) return null;
+  try {
+    const root = realpathSync(f.src.root), abs = resolvePath(root, f.src.path);
+    if (!abs.startsWith(root + pathSep)) return null;
+    const st = statSync(abs); if (!st.isFile() || st.size > 300 * 1024) return null;
+    const buf = readFileSync(abs); return buf.includes(0) ? null : buf.toString('utf8');
+  } catch { return null; }
+}
+const fileStub = (f: { name: string; kind?: string; src?: { root?: string; path?: string }; dirty?: boolean }) => {
+  if (f.kind === 'image') return `[Attached image: ${f.name}]`;
+  const t = linkedText(f);
+  return t != null ? `<file name="${f.name}">\n${t}\n</file>` : `<file name="${f.name}">\n(The contents of this file are kept in the browser, so they aren't included here.)\n</file>`;
+};
 
 /* model settings in effect at a prompt (page: settingsFor) */
 const SET_FIELDS = ['system', 'thinking', 'effort', 'temperature', 'maxTokens'];

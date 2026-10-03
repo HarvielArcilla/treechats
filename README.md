@@ -105,6 +105,27 @@ Markdown and image previews, Copy and Download. **Edit** makes a new version of 
 back, and earlier replies are marked "context changed"). A linked file can also be saved back to disk; if the disk copy
 changed since Treechats read it, it is left alone unless you choose to overwrite it.
 
+## Coding tools
+
+- **Open a Claude Code or Codex session as a chat.** In **Import chats**, **Coding sessions on this computer…** lists
+  the sessions those tools have logged (or choose a `.jsonl` file). Each message you typed becomes a prompt; the
+  reply shows what the agent wrote and each tool call with an excerpt of its result, with usage and cost. Rewinds are
+  branches, and compactions are marked, since that is where the agent's context was rewritten. Read-only: nothing is
+  written back to those logs.
+- **Proposed changes.** When a reply has code for a project file (its path on the line before the block, in the
+  block's first line, or a unified diff), it shows under the reply with +/− counts. **Review** opens a diff where each
+  part can be kept or dropped, or the result edited, before it is saved as a new version of the file (and to disk,
+  for a linked folder). Any other code block can be applied to a file you choose. The note asking Claude to write
+  changes this way is under Settings › Prompts, and shown in `/context`.
+- **`/run npm test`** runs a command in a linked folder and shows the output above the input box, with **Attach to
+  prompt**. Off until you turn it on in Settings › System; commands run on this computer with your permissions.
+- **`/diff`** attaches git's view of changes in a linked folder: not committed (the default), `staged`, `last`
+  (the latest commit), or any commit. Linked folders also show their branch and how many files changed.
+- **Add to the repo:** **✦ Distill** can add the brief to `CLAUDE.md` or `AGENTS.md` in a linked folder, so the next
+  coding session starts from what you worked out here.
+- **Other tools over MCP:** Settings › System has the setup for Claude Code, Cursor, VS Code and Codex. Context from
+  MCP includes files from linked folders, read from disk.
+
 ## Compare, judge and combine
 
 Open **Compare** on a prompt with several follow-ups to read them side by side. **✦ Judge** sends one request with

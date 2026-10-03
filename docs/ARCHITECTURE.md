@@ -29,6 +29,10 @@ server/config.ts        .env settings
 | `GET /api/agent/events` | Server-sent events: subagent commands for the open page to carry out |
 | `POST /api/agent/result` | The page's answer to a command: `{id, ok, result}` or `{id, ok:false, error}` |
 | `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |
+| `POST /api/folder/list`, `/read`, `/write` | Linked folders (server/folders.ts): list files (git-aware), read them, write one back. Paths stay inside the folder; a write refuses a disk copy that changed since it was read |
+| `POST /api/folder/git`, `/diff` | Branch, changed files and diffs for a linked folder (server/run.ts) |
+| `POST /api/folder/run` | Runs a command in a linked folder; refused unless Settings › System allows it and the folder is linked, both checked against the saved state |
+| `POST /api/sessions/list`, `/read`, `/parse` | Claude Code and Codex session logs as chats (server/sessions.ts), read-only |
 
 ## Why the app is still one file
 

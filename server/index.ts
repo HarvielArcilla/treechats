@@ -15,6 +15,7 @@ import { attachPage, settle } from './relay.ts';
 import { loadState } from './context.ts';
 import { FolderError, listFolder, readFolderFiles, writeFolderFile } from './folders.ts';
 import { listSessions, parseSession, readSession, SessionError } from './sessions.ts';
+import { gitDiff, gitStatus, runCommand } from './run.ts';
 
 const app = new Hono();
 const STATE_KEY = 'treechats-v1';
@@ -110,6 +111,13 @@ const folderRoute = (fn: (b: any) => Promise<unknown>) => async (c: any) => {
 };
 app.post('/api/folder/list', folderRoute((b) => listFolder(b.root)));
 app.post('/api/folder/read', folderRoute((b) => readFolderFiles(b.root, Array.isArray(b.paths) ? b.paths.map(String) : [])));
+app.post('/api/folder/git', folderRoute((b) => gitStatus(loadState() as any, b.root)));
+app.post('/api/folder/diff', folderRoute((b) => gitDiff(loadState() as any, b.root, String(b.what || 'working'))));
+app.post('/api/folder/run', async (c) => {
+  let b: any; try { b = await c.req.json(); } catch { return c.json({ code: 'bad_request', message: 'Expected JSON.' }, 400); }
+  try { return c.json(await runCommand(loadState() as any, b.root, String(b.command || ''), Number(b.timeout) || 120, c.req.raw.signal)); }
+  catch (e) { return c.json({ code: e instanceof FolderError ? e.code : 'failed', message: (e as Error).message }, e instanceof FolderError && e.code === 'commands_off' ? 403 : 400); }
+});
 app.post('/api/folder/write', folderRoute((b) => writeFolderFile(b.root, String(b.path || ''), String(b.text ?? ''), typeof b.mtime === 'number' ? b.mtime : null, !!b.force)));
 
 /* coding sessions from Claude Code and Codex, for the import dialog (see server/sessions.ts) */

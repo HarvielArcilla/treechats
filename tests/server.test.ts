@@ -104,3 +104,68 @@ test('folders: listing skips ignored and dependency files, reads stay inside the
   await assert.rejects(writeFolderFile(dir, 'src/a.ts', 'stale', w.mtime, false), /changed on disk/);
   await assert.rejects(writeFolderFile(dir, '../x.txt', 'no', null, false), /outside/);
 });
+
+test('coding sessions: Claude Code logs become a tree of turns with tool steps; Codex rollouts become a line', async () => {
+  const { fromClaudeCode, fromCodex, parseSession } = await import('../server/sessions.ts');
+  const L = (o: object) => JSON.stringify(o);
+  const cc = [
+    L({ type: 'summary', summary: 'Fix the parser' }),
+    L({ type: 'user', uuid: 'u1', parentUuid: null, timestamp: '1', cwd: '/w', message: { role: 'user', content: '<system-reminder>time</system-reminder>Fix the parser' } }),
+    L({ type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2', message: { id: 'm1', model: 'claude-sonnet-5-5', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'src/p.ts' } }], usage: { input_tokens: 10, output_tokens: 5 } } }),
+    L({ type: 'attachment', uuid: 'x1', parentUuid: 'a1' }),
+    L({ type: 'user', uuid: 'r1', parentUuid: 'x1', timestamp: '3', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'const x = 1;' }] } }),
+    L({ type: 'assistant', uuid: 'a2', parentUuid: 'r1', timestamp: '4', message: { id: 'm2', model: 'claude-sonnet-5-5', content: [{ type: 'text', text: 'Fixed.' }] } }),
+    L({ type: 'user', uuid: 'u2', parentUuid: 'a2', timestamp: '5', message: { role: 'user', content: 'Now add tests' } }),
+    L({ type: 'user', uuid: 'u3', parentUuid: 'a2', timestamp: '6', message: { role: 'user', content: 'Actually, add docs' } }),
+    L({ type: 'user', uuid: 'u4', parentUuid: 'u3', timestamp: '7', isCompactSummary: true, message: { role: 'user', content: 'Summary of the session' } }),
+    'not json',
+  ].join('\n');
+  const s = parseSession(cc);
+  assert.equal(s.source, 'Claude Code');
+  assert.equal(s.title, 'Fix the parser');
+  assert.deepEqual(s.turns.map((t) => [t.text, t.parent]), [['Fix the parser', null], ['Now add tests', 0], ['Actually, add docs', 0], ['Summary of the session', 2]]);
+  assert.match(s.turns[0].reply!, /⚙ Read\*\* `src\/p.ts`[\s\S]*const x = 1;[\s\S]*Fixed\./);
+  assert.equal(s.turns[0].notes, 1);
+  assert.equal(s.turns[0].usage!.input, 10);
+  assert.equal(s.turns[3].tag, 'compaction summary');
+  assert.equal(s.mainLeaf, 3);
+  const cx = fromCodex([
+    { type: 'session_meta', payload: { cwd: '/r' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>x</environment_context>' }] } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Run the tests' }] } },
+    { type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: '{"command":["npm","test"]}', call_id: 'c1' } },
+    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: '{"output":"1 failing"}' } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'One test fails.' }] } },
+    { type: 'event_msg', payload: { type: 'user_message', message: 'Run the tests' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Fix it' }] } },
+  ]);
+  assert.deepEqual(cx.turns.map((t) => [t.text, t.parent]), [['Run the tests', null], ['Fix it', 0]]);
+  assert.match(cx.turns[0].reply!, /⚙ shell\*\* `npm test`[\s\S]*1 failing[\s\S]*One test fails\./);
+  assert.equal(fromClaudeCode([]).turns.length, 0);
+});
+
+test('commands and git: off until allowed, only in linked folders', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { execFileSync } = await import('node:child_process');
+  const { runCommand, gitStatus, gitDiff } = await import('../server/run.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'tc-run-'));
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  execFileSync('git', ['init', '-q'], { cwd: dir }); execFileSync('git', ['add', '.'], { cwd: dir });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init'], { cwd: dir });
+  const { realpathSync } = await import('node:fs');
+  const root = realpathSync(dir);
+  const state = (allow: boolean) => ({ db: { spaces: { s1: { tree: { files: [{ src: { root } }] } } } }, opts: { allowCommands: allow } });
+  const sig = new AbortController().signal;
+  await assert.rejects(runCommand(state(false), root, 'echo hi', 10, sig), /off/);
+  await assert.rejects(runCommand(state(true), tmpdir(), 'echo hi', 10, sig), /isn’t linked/);
+  const r = await runCommand(state(true), root, 'echo hi && echo err >&2 && exit 2', 10, sig);
+  assert.equal(r.code, 2); assert.match(r.output, /hi\s+err/);
+  writeFileSync(join(dir, 'a.txt'), 'two\n'); writeFileSync(join(dir, 'b.txt'), 'new\n');
+  const st = await gitStatus(state(false), root);
+  assert.equal(st.git, true); assert.equal(st.changed!.length, 2);
+  const d = await gitDiff(state(false), root, 'working');
+  assert.match(d.text, /-one\n\+two/); assert.deepEqual(d.untracked, ['b.txt']);
+  await assert.rejects(gitDiff(state(false), root, '--output=/tmp/x'), /Name a commit/);
+});
