@@ -617,6 +617,10 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 /* settings */
 .setwrap{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb, var(--fg) 28%, transparent)}
 .setwrap[hidden]{display:none}
+.ptop .edtag.warn{color:var(--danger);border-color:color-mix(in srgb, var(--danger) 40%, var(--line))}
+.ptop .edtag.star{color:var(--l2, #b8860b)}
+.ptop button.edtag.linkish{cursor:pointer;background:none;font:inherit}
+
 .newchat .newchatbody{flex:1;display:grid;align-content:center;justify-items:center;text-align:center;gap:6px;padding:12vh 16px 24px}
 .newchat .ncgreet{margin:0;font:600 1.5rem var(--display);letter-spacing:-.01em}
 .newchat .newchatbody .note{max-width:520px}
@@ -2831,7 +2835,8 @@ function run(op, id){
   if(op==='promote'){ promote(id); return; }
   if(op==='skip'){ const on=!S.nodes[id].skip; commit(on?`Left #${id} out of the context. It stays in the tree.`:`#${id} is back in the context`, ()=>{ if(on) S.nodes[id].skip=true; else delete S.nodes[id].skip; }); return; }
   if(op==='branch'){ const name=autoName(convOf(id)); commit(`Started ${name} at #${id}. Rename it any time.`, ()=>{ S.head=newRef(name, id); }); return; }
-  if(OPS[op].pick){ pick={op, src:id}; composeFor=null; animRender([id]); return; }
+  /* choosing a target needs the whole tree, so from Chat view this continues in Editor */
+  if(OPS[op].pick){ if(opts.simple){ setView(false); toast(`Switched to Editor to choose where: ${OPS[op].label.replace('…','')}.`); } pick={op, src:id}; composeFor=null; animRender([id]); return; }
   const n=S.nodes[id];
   if(op==='reroot'){
     const anc = path(id).slice(0,-1), byClaude = opts.summary && opts.rerootBy==='claude' && canSummarize();
@@ -4624,7 +4629,8 @@ function rowHTML(id, pathSet){
   const txtE = editingHere ? `<div class="txt pedit" data-key="pe${id}"><textarea id="promptEditText" rows="${Math.min(14, Math.max(2, (n.text||'').split('\n').length+1))}" aria-label="Edit prompt #${id}">${esc(n.text||'')}</textarea>
     <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Starts a new branch with your edit and gets a reply. The original stays on its branch with everything after it.">Send on a new branch <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>`}<button class="btn" data-pedit="cancel">Cancel</button>${opts.simple?'':'<button class="linkbtn pinplace" data-pedit="save" title="Change the text where it is, without a new reply. The reply and everything after it stay as they were, and they\u2019re marked as written for the old wording.">Save in place instead</button>'}</div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files, false, 'n'+id)) : txt;
-  const ptags=[n.rewritten?`<span class="edtag" title="${esc(rwTitle(n))}">rewritten</span>`:'', n.loop?`<span class="edtag" title="Sent by /loop">loop ${n.loop.i} of ${n.loop.of}</span>`:'', n.btw?'<span class="edtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':''].filter(Boolean).join(' ');
+  /* Chat view shows the marks that change what a prompt means or sends; versions and branches have the ‹ › switch */
+  const ptags=[n.star?'<span class="edtag star" title="Starred">★</span>':'', n.skip?'<span class="edtag warn" title="Left out: not sent to Claude from the prompts below">left out</span>':'', n.by?`<span class="edtag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'', n.imported?`<span class="edtag" title="From a ${esc(n.imported.from)} session">${esc(n.imported.from)}</span>`:'', n.imported&&n.imported.tag?`<span class="edtag" title="Here the agent’s context was compacted: everything before was replaced by this summary">${esc(n.imported.tag)}</span>`:'', n.kind==='summary'?'<span class="edtag">summary</span>':'', n.kind==='squash'?'<span class="edtag">squashed</span>':'', n.reviewOf?`<button class="edtag linkish" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply. Click to go to it.">review of #${n.reviewOf.id}</button>`:'', n.combined?`<span class="edtag" title="${esc(combinedTitle(n))}">combined</span>`:'', hasSettings(n.set)?`<span class="edtag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'', n.rewritten?`<span class="edtag" title="${esc(rwTitle(n))}">rewritten</span>`:'', n.loop?`<span class="edtag" title="Sent by /loop">loop ${n.loop.i} of ${n.loop.of}</span>`:'', n.btw?'<span class="edtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':''].filter(Boolean).join(' ');
   let h=opts.simple && !pick && ptags ? `<div class="ptop">${ptags}</div>` : '';
   h+=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
@@ -5824,7 +5830,7 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-runagain]')){ if(cmdPanel && cmdPanel.kind==='run') startRun(cmdPanel.root, cmdPanel.command, cmdPanel.at); return; }
   const ua2=e.target.closest('[data-unalso]'); if(ua2){ alsoTargets.delete(+ua2.dataset.unalso); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsoclear]')){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
-  if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
+  if(e.target.closest('[data-alsopick]')){ const base=composeParent(); if(opts.simple){ keepDraft(()=>setView(false)); if(base!=null) select(base); toast('Switched to Editor to pick the prompts to reply to.'); } pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
   const gr=e.target.closest('[data-genreply]'); if(gr){ generate(+gr.dataset.genreply); return; }
   const lm=e.target.closest('[data-linemode]'); if(lm){ const on=lm.dataset.linemode==='line'; if(!!opts.lineOnly!==on){ opts.lineOnly=on; save(); Motion.run(treeEl, renderTree, [sel]); } return; }
   const svm=e.target.closest('[data-savedmenu]'); if(svm){ savedMenu(svm, document.getElementById(svm.dataset.savedmenu)); return; }
