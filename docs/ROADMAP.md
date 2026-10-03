@@ -17,15 +17,17 @@ foundation once the agent interface has been tried on a real task, then everythi
   after saying what it can cost; a quick ✦ check before each prompt stops at one that no longer fits (or rewrites
   it, if chosen, marked and with the original kept); also carries the prompts below an edited prompt over to its
   new version
+- Branch settings (advanced, off by default): system prompt, thinking, effort, temperature and reply length for a
+  prompt and the ones after it; the server sends only what each model uses and says what it skipped
+- Token counts and cost on every reply, with a running total along the context path; thinking kept, folded
+- Compare: ✦ Judge (a reason for every follow-up and a pick, against your criteria; changes nothing) and ✦ Combine
+  (one reply from the best parts, as a draft you edit before adding; marked with its sources)
+- MCP: replay, judge and combine; spawn and fork take branch settings; get_prompt reports settings, usage and
+  context changes
 
 ## Next
-- **Branch settings:** a system prompt, temperature, thinking and max tokens per branch, so a fork can try the same
-  chat with a different setup; real token counts and cost from the API's usage numbers
-- **Pinned context:** reusable pieces of context (a spec, a style guide, a file) added to a chat or a branch and
-  listed as their own entries in the inspector, each switchable on and off; replaces the single standing
-  instructions setting
-- **Compare, finished:** ✦ Judge (Claude picks the best reply against criteria you give) and ✦ Combine (merges the
-  best parts into a new reply)
+- `fan_out` over MCP, so agents can branch a reply's options the way people do
+- Try the subagent tools on a real task (Phase 1 below)
 
 ## Phase 1: subagents prototype
 Test whether an orchestrating agent benefits from subagents whose context Treechats owns.
@@ -51,8 +53,7 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - MCP writes without the page open; a small CLI over the same operations
 
 ## Phase 3: reuse and agents in full
-- Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; pinned
-  context, `judge`; history per run with undo; a Runs view of agent runs
+- Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; history per run with undo; a Runs view of agent runs
 - Import Claude Code sessions as trees (read-only import; writing sessions back is not a public interface)
 
 ## Later

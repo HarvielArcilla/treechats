@@ -68,6 +68,21 @@ sense. If it doesn't, Replay stops and shows why, with a suggested rewrite you c
 if you choose, it sends the rewrite and keeps going (the prompt is marked as rewritten and keeps your wording). You can also replay any stretch with **✦ Replay from here** under a selected prompt, and after you send
 an edited prompt, the prompts that followed the original can be carried over with **✦ Replay N below**.
 
+## Compare, judge and combine
+
+Open **Compare** on a prompt with several follow-ups to read them side by side. **✦ Judge** sends one request with
+the context and each follow-up's reply, and gets back a reason for each against criteria you type, plus a pick; it
+changes nothing. **✦ Combine** writes one reply from the best parts, with the follow-up it answers and where each
+part came from, as a draft you edit before adding it as a new follow-up (marked as combined).
+
+## Branch settings (advanced)
+
+Turn them on in **Settings › System**. Then the inspector in Editor shows the settings in effect for the selected
+prompt and lets you change them from there on: a system prompt, thinking, effort, temperature and reply length. Fork a
+chat and change one setting to compare the same conversation under a different setup. Treechats sends only what the
+model uses (newer models take effort, not temperature) and the reply says if something was skipped. Every reply also
+shows its token counts and cost, with a running total along the context path.
+
 ## Use it from Claude Code (MCP)
 
 Treechats serves an MCP server at `/mcp`, so Claude Code can read your chats while you work. Add it once:
@@ -84,7 +99,7 @@ in the browser.
 **Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and
 steer: `spawn` (start one with exactly the context it should have), `ask`, `fork`, `leave_out`, `edit_reply`,
 `regenerate`, `replay` (re-send from a prompt once the context above it has changed; it stops at a prompt that no
-longer fits, or rewrites it if asked) and `distill` (get back a short brief instead of the whole chat). For example: "use
+longer fits, or rewrites it if asked), `judge` and `combine` (best-of-n across forks) and `distill` (get back a short brief instead of the whole chat). For example: "use
 treechats to spawn three subagents that each review this design from a different angle, then distill each".
 
 - Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't
@@ -92,7 +107,8 @@ treechats to spawn three subagents that each review this design from a different
 - Everything an agent adds is labeled with its name (⚙).
 - Each run may spend 60 model requests (`TREECHATS_AGENT_MAX_REQUESTS` in `.env`; the count resets when
   Treechats restarts).
-- Subagents have no tools: they answer from the context they're given.
+- Subagents have no tools: they answer from the context they're given. `spawn` and `fork` take branch settings
+  (system prompt, thinking, effort, temperature, max tokens).
 - For now the open Treechats page carries the changes out, so keep it open in your browser while an agent works.
 
 Treechats must be running for any of this.

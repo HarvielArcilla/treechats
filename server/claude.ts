@@ -165,6 +165,8 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
 /* Canned replies for TREECHATS_FAKE=1. Asks for JSON get JSON back, so naming and fan-out work offline. */
 function fakeReply(said: string): string {
   if (/Reply with only (a )?JSON/i.test(said)) {
+    if (/"best"/.test(said)) { const alts = said.slice(said.indexOf('The alternatives:')).match(/#\d+/g) || []; return JSON.stringify({ best: alts[0] || '', reasons: Object.fromEntries(alts.map((a, i) => [a, i === 0 ? 'Meets the criteria best (test verdict).' : 'Less complete (test verdict).'])), summary: 'A test verdict.' }); }
+    if (/"sources"/.test(said)) { const alts = [...new Set(said.slice(said.indexOf('The alternatives:')).match(/#\d+/g) || [])]; return JSON.stringify({ prompt: 'Combine the best of these.', reply: 'A combined test reply.', sources: Object.fromEntries(alts.map((a) => [a, 'Its main point.'])) }); }
     if (/"fits"/.test(said)) return /MISMATCH/.test(said.slice(said.lastIndexOf('The next message:'))) ? '{"fits":false,"reason":"It refers to something the new reply no longer says.","rewrite":"A rewritten follow-up that fits."}' : '{"fits":true,"reason":"","rewrite":""}';
     if (/"options"/.test(said)) return '{"options":[{"title":"First way","prompt":"Let\'s try the first way."},{"title":"Second way","prompt":"Let\'s try the second way."}],"recommended":0}';
     if (/"title"/.test(said)) return '{"title":"Test conversation"}';

@@ -736,12 +736,21 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .tag.rec{color:var(--l1);background:color-mix(in srgb, var(--l1) 14%, transparent);white-space:nowrap}
 @media (max-width:560px){.fopt{grid-template-columns:auto minmax(0,1fr) auto}.fopt .fmain{grid-column:2;margin-top:0}}
 /* compare */
-.cmpbox{width:min(1280px,100%);height:min(860px,calc(100vh - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px var(--shadow);display:grid;grid-template-rows:auto minmax(0,1fr);grid-template-columns:minmax(0,1fr);overflow:hidden}
+.cmpbox{width:min(1280px,100%);height:min(860px,calc(100vh - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px var(--shadow);display:grid;grid-template-rows:auto auto minmax(0,1fr);grid-template-columns:minmax(0,1fr);overflow:hidden}
 .cmptitle{min-width:0;flex:1}
 .cmpbox .sethead{gap:12px}
 .cmpbox .sethead .bar{flex:none;display:flex;gap:8px}
 @media (max-width:640px){.cmpbox .sethead kbd{display:none}}
 .cmptitle .note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctools{padding:10px 16px 0;display:grid;gap:8px;max-height:46vh;overflow:auto}
+.ctrow{display:flex;gap:8px}
+.ctrow input{flex:1;min-width:0}
+.cverdict-sum{font-size:.88rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.cverdict{flex-basis:100%;margin:2px 0 0;font-size:.8rem;color:var(--muted)}
+.tag.pick{color:var(--accent);border:1px solid currentColor;background:none}
+.ccombine{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);display:grid;gap:6px}
+.ccombine input,.ccombine textarea{width:100%}
+.csources{margin:0;padding-left:18px;font-size:.82rem;color:var(--muted)}
 .ccols{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(300px,1fr);gap:14px;padding:16px;overflow:auto;overscroll-behavior:contain;scroll-snap-type:x proximity}
 .ccol{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:10px;border:1px solid var(--line);border-top:3px solid var(--lane);border-radius:10px;padding:12px;background:var(--bg);min-height:0;scroll-snap-align:start}
 .ccol header{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -1054,6 +1063,12 @@ const PROMPTS = {
   replayCheck:{label:'Replay: does the next prompt still fit?', group:'tools', def:"Someone is re-running a conversation after changing something earlier in it, so the replies may now differ from the ones their messages were written for. Decide whether their next message still makes sense as the next message after the conversation as it now stands. It fits if it reads naturally, even if the reply before it is worded differently or reaches a different conclusion that the message doesn't depend on. It doesn't fit if it refers to something the new reply no longer says, answers a question that is no longer asked, or assumes a choice that was no longer made.\n\nThe conversation as it now stands (most recent part):\n{conversation}\n\nThe reply the message was originally written after:\n{original}\n\nThe next message:\n{message}",
     help:'Sent before each prompt after the first when you replay, unless checks are off. {conversation} becomes the latest turns, {original} the reply the prompt was first written after, {message} the prompt.',
     fmt:'Reply with only JSON: {"fits":true,"reason":"","rewrite":""}\nWhen it doesn\'t fit, give a one-sentence reason, and a rewrite of the message that keeps its intent and voice but fits the conversation as it now stands. When it fits, leave reason and rewrite empty.'},
+  judge:{label:'Compare: judging the follow-ups', group:'tools', def:"You are judging alternative follow-ups in a branching conversation. Below is the conversation up to the point where it branched, then each alternative: the follow-up message and the reply to it, labelled with its number.\n\nJudge them only against these criteria: {criteria}\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
+    help:'What Claude is asked by ✦ Judge in Compare. {criteria} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
+    fmt:'Reply with only JSON: {"best":"#12","reasons":{"#12":"One sentence on how it meets the criteria.","#14":"One sentence."},"summary":"One or two sentences on the choice."}\nUse the labels exactly as given, and give a reason for every alternative.'},
+  combine:{label:'Compare: combining the follow-ups', group:'tools', def:"Below is a conversation that branched into alternatives: each is a follow-up message and the reply to it, labelled with its number. Write one reply that combines the best parts of the alternative replies, following these instructions: {instructions}\n\nAlso write the follow-up message that the combined reply answers, in the person's voice, so the pair reads naturally after the conversation. Say which parts came from which alternative.\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
+    help:'What Claude is asked by ✦ Combine in Compare. {instructions} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
+    fmt:'Reply with only JSON: {"prompt":"The follow-up message, in the person\'s voice.","reply":"The combined reply, in Markdown.","sources":{"#12":"What came from it.","#14":"What came from it."}}'},
   reroot:{label:'Reroot summary', group:'ops', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
@@ -2467,22 +2482,112 @@ function renderCompare(){
   const id=cmpFor, ks=cmpKids(id);
   if(ks.length<2){ closeCompare(); return; }
   const p=S.nodes[id], missing=ks.filter(k=>!k.reply && !replyBusy(k.id)).length, running=ks.filter(k=>replyBusy(k.id)).length;
+  const verdict = cmpTool && cmpTool.for===id && cmpTool.judge && cmpTool.judge.result || null;
   const cols=ks.map(k=>{
     const names=refsThrough(k.id).map(refName), main=onMain(k.id), below=desc(k.id).size, live=liveGen(k.id), note=genNotes[gkey(DB.current,k.id)];
     const reply = live ? `<div class="rbody" data-cgen="${k.id}">${live.text?md(live.text):'<p class="thinking">Writing…</p>'}</div><button class="btn xs" data-cstop="${k.id}">Stop</button>`
       : queuedGen(k.id) ? `<p class="note thinking">Waiting its turn…</p><button class="btn xs" data-cstop="${k.id}">Cancel</button>`
       : (k.reply ? `<div class="rbody">${md(k.reply)}</div>` : '<p class="note">No reply yet.</p>')+(note?`<p class="gnote">${esc(note)}</p>`:'')+(!k.reply && sampleState==='ready'?`<button class="btn sm" data-cget="${k.id}">Get reply</button>`:'');
     return `<article class="ccol ${main?'main':''}" style="--lane:var(--l${main?0:1+(k.id%3)})">
-      <header><span class="nid">#${k.id}</span>${names.slice(0,3).map(nm=>`<span class="ref ${nm==='main'?'head':''}">${esc(nm)}</span>`).join('')}${k.skip?'<span class="tag skiptag">left out</span>':''}</header>
+      <header><span class="nid">#${k.id}</span>${names.slice(0,3).map(nm=>`<span class="ref ${nm==='main'?'head':''}">${esc(nm)}</span>`).join('')}${k.skip?'<span class="tag skiptag">left out</span>':''}${k.combined?`<span class="tag rwtag" title="${esc(combinedTitle(k))}">combined</span>`:''}${verdict && verdict.best===k.id?`<span class="tag pick">${AI}pick</span>`:''}${verdict && verdict.reasons[k.id]?`<p class="cverdict">${AI}${esc(verdict.reasons[k.id])}</p>`:''}</header>
       <p class="cprompt">${esc(k.text)}</p>
       <div class="creply">${reply}</div>
       <footer>${below?`<span class="note">${below} more prompt${below===1?'':'s'} below</span>`:''}
         <span class="cacts"><button class="btn xs" data-copen="${k.id}">Open</button><button class="btn xs" data-cmain="${k.id}" ${main?'disabled title="Already on main"':''}>Make mainline</button><button class="btn xs danger" data-cprune="${k.id}" title="Delete this follow-up and everything below it">Delete</button></span></footer>
     </article>`;
   }).join('');
+  /* what's typed in the tools survives a redraw (replies streaming in redraw Compare) */
+  const keep=['judgeCriteria','combineInstr','combPrompt','combReply'].map(k=>{ const x=document.getElementById(k); return x ? [k, x.value, document.activeElement===x] : null; }).filter(Boolean);
   el.querySelector('.cmpbox').innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="cmpTitle">Compare ${ks.length} follow-ups</h2><p class="note">to #${id}: ${esc(clip(p.text||'',140))}</p></div>
     <div class="bar">${missing>1&&sampleState==='ready'?`<button class="btn" data-cgetall>Get ${missing} missing replies</button>`:''}${running>1?`<button class="btn" data-cstopall>Stop ${running} replies</button>`:''}<button class="btn" data-cmpclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+    ${cmpToolsHTML(id)}
     <div class="ccols">${cols}</div>`;
+  for(const [k,v,f] of keep){ const x=document.getElementById(k); if(x){ x.value=v; if(f) x.focus({preventScroll:true}); } }
+}
+
+/* ---- ✦ Judge and ✦ Combine (in Compare) ----
+   Judge: one request with the context up to the prompt, each follow-up and its reply, and your criteria; Claude gives a
+   reason for every follow-up and picks one. It changes nothing; you act on the verdict.
+   Combine: one request that writes a single reply from the best parts of the follow-ups, with the follow-up message it
+   answers and where each part came from. It arrives as a draft you can edit, and enters the tree only when you add it,
+   as a new follow-up marked "combined" with its sources. Both prompts are editable in Settings › Prompts. */
+const JUDGE_DEFAULT='Most correct and useful for what the person is trying to do.';
+const COMBINE_DEFAULT='Keep what is correct and useful from each. Resolve contradictions. Don’t add new claims.';
+let cmpTool=null;
+function compareMaterial(sid, parent, ids){
+  const t=treeOf(sid);
+  return withTree(t, ()=>{
+    const alts=ids.map(i=>S.nodes[i]).filter(n=>n && n.reply);
+    if(alts.length<2) throw new Error('Needs at least two follow-ups with replies.');
+    const conversation=clip(turnsFor(parent, true).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 24000);
+    const alternatives=alts.map(n=>`#${n.id}\nFollow-up: ${clip(n.text||'',3000)}\nReply: ${clip(n.reply,9000)}`).join('\n\n---\n\n');
+    return {conversation, alternatives, ids:alts.map(n=>n.id)};
+  });
+}
+async function judgeCore(sid, parent, ids, criteria){
+  const m=compareMaterial(sid, parent, ids);
+  const d=await sampleFn.json(fillPrompt('judge', {criteria:criteria||JUDGE_DEFAULT, conversation:m.conversation, alternatives:m.alternatives}), {modelTier:opts.model, cache:false});
+  const num=x=>+String(x||'').replace(/[^\d]/g,'');
+  const best=m.ids.includes(num(d && d.best)) ? num(d.best) : null, reasons={};
+  for(const [k,v] of Object.entries((d && d.reasons) || {})){ const id=num(k); if(m.ids.includes(id)) reasons[id]=String(v); }
+  return {best, reasons, summary:String((d && d.summary)||'').trim(), criteria:criteria||JUDGE_DEFAULT, ids:m.ids};
+}
+async function combineCore(sid, parent, ids, instructions){
+  const m=compareMaterial(sid, parent, ids);
+  const d=await sampleFn.json(fillPrompt('combine', {instructions:instructions||COMBINE_DEFAULT, conversation:m.conversation, alternatives:m.alternatives}), {modelTier:opts.model, cache:false});
+  if(!d || !String(d.reply||'').trim()) throw new Error('Claude didn’t return a combined reply.');
+  const num=x=>+String(x||'').replace(/[^\d]/g,''), sources={};
+  for(const [k,v] of Object.entries(d.sources||{})){ const id=num(k); if(m.ids.includes(id)) sources[id]=String(v); }
+  return {prompt:String(d.prompt||'').trim() || 'Combine the best of these.', reply:String(d.reply).trim(), sources, ids:m.ids, tier:opts.model};
+}
+/* adds a combined reply as a new follow-up to `parent`, on its own branch, in the tree in S */
+function addCombined(parent, c, by){
+  const nid=S.nextId++;
+  S.nodes[nid]={id:nid, parents:[parent], text:c.prompt, reply:c.reply, model:c.tier, combined:{from:c.ids, sources:c.sources}};
+  if(by) S.nodes[nid].by=by;
+  newRef(slugName('combined', convOf(parent)), nid);
+  S.nodes[nid].ctx=ctxSig(nid);
+  return nid;
+}
+const combinedTitle = n => `Claude combined ${n.combined.from.map(x=>'#'+x).join(', ')} in Compare.${Object.entries(n.combined.sources||{}).map(([k,v])=>` #${k}: ${v}`).join('')}`;
+function cmpToolsHTML(id){
+  const t=cmpTool && cmpTool.for===id ? cmpTool : (cmpTool={for:id, criteria:opts.judgeCriteria||'', instructions:opts.combineInstructions||'', judge:null, combine:null});
+  if(sampleState!=='ready') return '';
+  const withReplies=cmpKids(id).filter(k=>k.reply).length;
+  const j=t.judge, c=t.combine;
+  const judgeBox = j && j.status==='loading' ? '<p class="note thinking">Claude is judging…</p>' : j && j.status==='error' ? `<p class="gnote">${esc(j.err)}</p>` : j && j.result ? `<div class="cverdict-sum"><b>${AI}Judge${j.result.best?`: #${j.result.best}`:''}</b> ${esc(j.result.summary||'')} <span class="note">· against “${esc(clip(j.result.criteria,80))}” · your call</span></div>` : '';
+  const comboBox = c && c.status==='loading' ? '<p class="note thinking">Claude is combining…</p>' : c && c.status==='error' ? `<p class="gnote">${esc(c.err)}</p>` : c && c.draft ? `<div class="ccombine"><div class="fanhead"><b>${AI}Combined draft</b><span class="note">from ${c.draft.ids.map(x=>'#'+x).join(', ')} · edit before you add it</span></div>
+      <label class="flabel" for="combPrompt">Follow-up it answers</label><input id="combPrompt" value="${esc(c.draft.prompt)}">
+      <label class="flabel" for="combReply">Reply</label><textarea id="combReply" rows="${Math.min(16, Math.max(5, c.draft.reply.split('\n').length+1))}">${esc(c.draft.reply)}</textarea>
+      ${Object.keys(c.draft.sources).length?`<ul class="csources">${Object.entries(c.draft.sources).map(([k,v])=>`<li><b>#${k}</b> ${esc(v)}</li>`).join('')}</ul>`:''}
+      <div class="bar"><button class="btn primary" data-combadd>Add as a follow-up to #${id}</button><button class="btn" data-combagain>Write again</button><button class="btn" data-combdiscard>Discard</button></div></div>` : '';
+  return `<div class="ctools">
+    <div class="ctrow"><input id="judgeCriteria" placeholder="Criteria: ${esc(JUDGE_DEFAULT)}" value="${esc(t.criteria)}" aria-label="What to judge by"><button class="btn" data-judge ${withReplies<2||(j&&j.status==='loading')?'disabled':''} title="One request: Claude gives a reason for each follow-up and picks one against your criteria. Nothing changes.">${AI}Judge</button></div>
+    <div class="ctrow"><input id="combineInstr" placeholder="How to combine: ${esc(COMBINE_DEFAULT)}" value="${esc(t.instructions)}" aria-label="How to combine"><button class="btn" data-combine ${withReplies<2||(c&&c.status==='loading')?'disabled':''} title="One request: Claude writes one reply from the best parts, as a draft you review before adding it.">${AI}Combine</button></div>
+    ${judgeBox}${comboBox}</div>`;
+}
+async function runJudge(){
+  const t=cmpTool, id=t.for; t.criteria=document.getElementById('judgeCriteria').value.trim(); opts.judgeCriteria=t.criteria; save();
+  t.judge={status:'loading'}; renderCompare();
+  try{ t.judge={status:'done', result:await judgeCore(DB.current, id, cmpKids(id).map(k=>k.id), t.criteria)}; }
+  catch(e){ t.judge={status:'error', err: e && e.message && !/^[a-z_]+$/.test(e.message) ? e.message : 'Claude couldn’t judge them. Try again.'}; }
+  if(cmpTool===t) renderCompare();
+}
+async function runCombine(){
+  const t=cmpTool, id=t.for; t.instructions=document.getElementById('combineInstr').value.trim(); opts.combineInstructions=t.instructions; save();
+  t.combine={status:'loading'}; renderCompare();
+  try{ t.combine={status:'done', draft:await combineCore(DB.current, id, cmpKids(id).map(k=>k.id), t.instructions)}; }
+  catch(e){ t.combine={status:'error', err: e && e.message && !/^[a-z_]+$/.test(e.message) ? e.message : 'Claude couldn’t combine them. Try again.'}; }
+  if(cmpTool===t) renderCompare();
+}
+function addCombinedDraft(){
+  const t=cmpTool, d=t && t.combine && t.combine.draft; if(!d) return;
+  const pr=document.getElementById('combPrompt').value.trim(), rp=document.getElementById('combReply').value.trim();
+  if(!rp){ toast('The combined reply is empty.'); return; }
+  const edited = pr!==d.prompt || rp!==d.reply;
+  let nid;
+  commit(`Added the combined reply as #${S.nextId}, a new follow-up to #${t.for}`, ()=>{ nid=addCombined(t.for, {...d, prompt:pr||d.prompt, reply:rp}); if(edited) S.nodes[nid].replyEdited=true; sel=nid; });
+  t.combine=null; renderCompare();
 }
 
 /* ---- Distill ----
@@ -2686,6 +2791,23 @@ const Agent=(()=>{
         message += `. Stopped before #${m.id}, which no longer fits: ${m.reason || 'the new reply went a different way'}${m.rewrite?` Suggested rewrite: "${m.rewrite}"`:''} To go on, call replay with prompt ${m.id}, onto ${last ?? (a.onto ?? '(the prompt before it)')}, and first_prompt set to your version (or ask after #${last} yourself).`; }
       else if(out.why==='error') message += `. Stopped: ${out.error}`;
       return {...(last!=null ? where(sid,last) : where(sid,a.prompt)), prompt:last, reply:lastReply, requests:out.requests, message};
+    },
+    /* the follow-ups of a prompt (or the ones named), judged or combined as in Compare */
+    async judge(a){
+      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.after);
+      const ids=a.prompts && a.prompts.length ? a.prompts : withTree(t, ()=>cmpKids(a.after).map(k=>k.id));
+      const r=await judgeCore(sid, a.after, ids, a.criteria);
+      const lines=r.ids.map(i=>`#${i}${i===r.best?' (pick)':''}: ${r.reasons[i]||'no reason given'}`).join('\n');
+      return {...where(sid,a.after), prompt:r.best ?? undefined, message:`Judged ${r.ids.length} follow-ups to #${a.after} against "${r.criteria}". ${r.best?`Pick: #${r.best}.`:'No pick.'} ${r.summary}\n${lines}\nNothing was changed.`};
+    },
+    async combine(a){
+      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.after);
+      const ids=a.prompts && a.prompts.length ? a.prompts : withTree(t, ()=>cmpKids(a.after).map(k=>k.id));
+      const c=await combineCore(sid, a.after, ids, a.instructions);
+      const nid=change(sid, ()=>addCombined(a.after, c, a.agent||'agent'));
+      return {...where(sid,nid), prompt:nid, reply:c.reply, message:`Combined ${c.ids.map(x=>'#'+x).join(', ')} into #${nid}, a new follow-up to #${a.after}, marked as combined. Sources: ${Object.entries(c.sources).map(([k,v])=>`#${k} ${v}`).join('; ') || 'not given'}`};
     },
     async distill(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
@@ -3067,7 +3189,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Branch settings from here on: '+setSummary(n.set))}">settings</span>`:'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Branch settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -4692,6 +4814,10 @@ cmpEl().addEventListener('click', e=>{
   if(c('[data-cgetall]')){ wantReplies(cmpKids(cmpFor).filter(k=>!k.reply).map(k=>k.id)); return; }
   const cs=c('[data-cstop]'); if(cs){ stopReply(+cs.dataset.cstop); renderCompare(); return; }
   if(c('[data-cstopall]')){ for(const k of cmpKids(cmpFor)) stopReply(k.id); renderCompare(); return; }
+  if(c('[data-judge]')){ runJudge(); return; }
+  if(c('[data-combine]') || c('[data-combagain]')){ runCombine(); return; }
+  if(c('[data-combdiscard]')){ cmpTool.combine=null; renderCompare(); return; }
+  if(c('[data-combadd]')){ addCombinedDraft(); return; }
 });
 palEl().addEventListener('click', e=>{ if(e.target===palEl()){ closePalette(); return; } const o=e.target.closest('[data-pal]'); if(o) runPalette(+o.dataset.pal); });
 palEl().addEventListener('mousemove', e=>{ const o=e.target.closest('[data-pal]'); if(o && +o.dataset.pal!==palIdx){ palIdx=+o.dataset.pal; for(const x of palEl().querySelectorAll('.palo')) x.classList.toggle('on', +x.dataset.pal===palIdx); } });

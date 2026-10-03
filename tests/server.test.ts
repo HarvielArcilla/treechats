@@ -56,3 +56,25 @@ test('context fingerprint: a reply notices edits, left-out turns and new instruc
   tree.nodes[1].reply = 'A'; delete tree.nodes[2].skip; state.opts.prompts.instructions = '';
   assert.equal(ctxChanges(state, tree, 3), null, 'undoing the changes clears the marker');
 });
+
+test('branch settings: each model gets only the parameters it accepts', async () => {
+  const { caps, prices, costOf } = await import('../server/models.ts');
+  assert.deepEqual(caps('claude-haiku-4-5-20251001'), { temperature: true, effort: false, thinking: 'budget' });
+  assert.deepEqual(caps('claude-opus-5-5'), { temperature: false, effort: true, thinking: 'adaptive' });
+  assert.deepEqual(caps('claude-sonnet-5-5'), { temperature: false, effort: true, thinking: 'adaptive' });
+  assert.equal(costOf({ input: 1e6, output: 1e6, cacheWrite: 0, cacheRead: 0 }, prices('claude-haiku-4-5-20251001')), 6);
+  assert.deepEqual(prices('claude-opus-5-5', '1,2,3,4'), [1, 2, 3, 4]);
+  const turns = [{ role: 'user' as const, content: 'hi' }];
+  const quick = buildParams({ input: turns, modelTier: 'quick', settings: { system: 'Be brief.', temperature: 0.2, effort: 'low' } });
+  assert.equal((quick.params as any).system, 'Be brief.');
+  assert.equal((quick.params as any).temperature, 0.2);
+  assert.deepEqual(quick.notes, ['effort']);
+  const complex = buildParams({ input: turns, modelTier: 'complex', settings: { temperature: 0.2, effort: 'high', thinking: true } });
+  assert.equal((complex.params as any).temperature, undefined);
+  assert.deepEqual((complex.params as any).thinking, { type: 'adaptive' });
+  assert.deepEqual((complex.params as any).output_config, { effort: 'high' });
+  assert.deepEqual(complex.notes, ['temperature']);
+  const budget = buildParams({ input: turns, modelTier: 'quick', settings: { thinking: true, maxTokens: 1000 } });
+  assert.equal((budget.params as any).thinking.type, 'enabled');
+  assert.ok((budget.params as any).max_tokens > (budget.params as any).thinking.budget_tokens);
+});

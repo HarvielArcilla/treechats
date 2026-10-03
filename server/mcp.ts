@@ -89,7 +89,7 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
@@ -249,6 +249,16 @@ export function buildMcpServer(read: () => State | null) {
       return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
+  server.registerTool('judge', {
+    title: 'Judge follow-ups',
+    description: 'Best-of-n: Claude reads the context up to a prompt and each follow-up with its reply (all of them, or the ones you name), gives a reason for each against your criteria, and picks one. One request. Nothing is changed; continue on the pick yourself (ask after it).',
+    inputSchema: { run, agent, after: promptNo.describe('The prompt the alternatives follow (for example where you forked).'), prompts: z.array(z.number().int()).optional().describe('Only these follow-ups. Defaults to all of them.'), criteria: z.string().optional().describe('What to judge by, such as "correct, then shortest".') },
+  }, act('judge', true));
+  server.registerTool('combine', {
+    title: 'Combine follow-ups',
+    description: 'Claude writes one reply from the best parts of the follow-ups to a prompt, with the follow-up message it answers and which parts came from where. One request. It is added as a new follow-up marked as combined, on its own branch; the originals are kept.',
+    inputSchema: { run, agent, after: promptNo.describe('The prompt the alternatives follow.'), prompts: z.array(z.number().int()).optional().describe('Only these follow-ups. Defaults to all of them.'), instructions: z.string().optional().describe('How to combine them.') },
+  }, act('combine', true));
   server.registerTool('distill', { title: 'Distill a subagent', description: 'Have Claude write a short brief (goal, decisions, facts, open questions) of a subagent chat up to a prompt, so only the brief needs to enter your own context.', inputSchema: { run, agent, prompt: promptNo.optional(), branch: z.string().optional(), save_as_note: z.boolean().optional().describe('Also keep the brief as a note on that prompt.') } }, act('distill', true));
 
   return server;
