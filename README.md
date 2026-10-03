@@ -107,11 +107,18 @@ treechats". It can list projects and chats, search them, and pull the context of
 same text as **Copy as a prompt** in the app. Attached files appear by name only, since their contents are kept
 in the browser.
 
-**Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and
-steer: `spawn` (start one with exactly the context it should have), `ask`, `fork`, `leave_out`, `edit_reply`,
-`regenerate`, `replay` (re-send from a prompt once the context above it has changed; it stops at a prompt that no
-longer fits, or rewrites it if asked), `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across forks) and `distill`; `list_saved_prompts` reads your prompt library (get back a short brief instead of the whole chat). For example: "use
-treechats to spawn three subagents that each review this design from a different angle, then distill each".
+**Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and steer, with the
+same tools you have:
+- **Talk:** `spawn` (start one with exactly the context it should have), `ask`, `fork`, `edit_prompt`, `regenerate`
+- **Shape context:** `leave_out`, `edit_reply`, `replay` (re-send after a change; stops at a prompt that no longer fits)
+- **Explore and decide:** `fan_out`, `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across
+  forks), `distill` (bring back only a brief)
+- **Everything else:** `operate` runs star, note, branch, rename, make mainline, merge, reroot, squash, splice, delete,
+  rebase, cherry-pick and branch settings; `describe` lists their arguments.
+
+For example: "use treechats to spawn three subagents that each review this design from a different angle, judge them
+for correctness, then distill the best one". Reading tools also include `get_tree` and `list_saved_prompts` (your prompt
+library).
 
 - Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't
   change anything outside their run projects, and their changes stay out of your Undo.

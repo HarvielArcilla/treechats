@@ -2975,6 +2975,69 @@ const Agent=(()=>{
       else if(out.why==='error') message += `. Stopped: ${out.error}`;
       return {...(last!=null ? where(sid,last) : where(sid,a.prompt)), prompt:last, reply:lastReply, requests:out.requests, message};
     },
+    /* an edited prompt: a new version on its own branch, with a reply (as Edit does for people) */
+    async edit_prompt(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt), by=a.agent||'agent';
+      if(!String(a.text||'').trim()) throw new Error('Give the new text of the prompt.');
+      let name='';
+      const id=change(sid, ()=>{
+        const gid=n.alt ?? n.id; n.alt=gid;
+        const nid=S.nextId++;
+        S.nodes[nid]={id:nid, parents:[...n.parents], text:String(a.text), alt:gid, by};
+        if(n.files) S.nodes[nid].files=clone(n.files);
+        const tier=tierOf(a.model)||n.model; if(tier) S.nodes[nid].askTier=tier;
+        S.active[gid]=nid; name=autoName(convOf(n.id)); newRef(name, nid);
+        return nid;
+      });
+      return reply(sid, id, {...where(sid,id), replaced:a.prompt, message:`Edited #${a.prompt} as #${id} on a new branch, ${name}; the original keeps its branch and what followed`});
+    },
+    /* fan out: the options a reply offers, one branch each. Reading them is one request (unless you give them) */
+    async fan_plan(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
+      if(!n.reply) throw new Error(`#${a.prompt} has no reply to fan out yet.`);
+      if(Array.isArray(a.options) && a.options.length) return {options:a.options.map(o=>({title:String(o.title||o.prompt||'option').slice(0,40), prompt:String(o.prompt||o.title||'')})).filter(o=>o.prompt.trim()), read:false};
+      let opts2=[];
+      if(sampleState==='ready'){ try{ const d=await sampleFn.json(FAN_ASK(n.text, n.reply), {modelTier:'quick', cache:false}); opts2=(d && d.options || []).map(o=>({title:String(o.title||'').slice(0,40), prompt:String(o.prompt||'')})).filter(o=>o.prompt.trim()); }catch(e){} }
+      if(!opts2.length) opts2=listOptions(n.reply).options.map(o=>({title:o.title, prompt:o.prompt}));
+      if(!opts2.length) throw new Error(`#${a.prompt}'s reply doesn't offer options to fan out. Use fork to try a direction yourself.`);
+      return {options:opts2, read:sampleState==='ready'};
+    },
+    async fan_out(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent'; need(t, a.prompt);
+      const options=(a.options||[]).filter(o=>o && String(o.prompt||'').trim());
+      if(!options.length) throw new Error('No options to fan out.');
+      const made=change(sid, ()=>options.map(o=>{ const nid=addTurn(S, a.prompt, String(o.prompt), by, tierOf(a.model)); newRef(slugName(o.title||'option', convOf(a.prompt)), nid); return nid; }));
+      if(a.replies===false) return {...where(sid,a.prompt), prompt:a.prompt, message:`Fanned out #${a.prompt} into ${made.length} branches: ${made.map((x,i)=>`#${x} ${options[i].title||''}`).join(', ')}. No replies requested.`};
+      const waits=made.map(x=>awaitReply(sid, x)); wantReplies(made, sid);
+      const rs=await Promise.all(waits);
+      const lines=made.map((x,i)=>`#${x} (${options[i].title||'option'}): ${rs[i].error ? 'no reply: '+rs[i].error : clip(rs[i].reply, 1200)}`).join('\n\n');
+      return {...where(sid,a.prompt), prompt:a.prompt, message:`Fanned out #${a.prompt} into ${made.length} branches, each answered. Use judge after ${a.prompt} to pick, or distill one.\n\n${lines}`};
+    },
+    /* everything else, by name; describe lists them */
+    operate(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, op=a.op, by=a.agent||'agent';
+      const want=(id, what='prompt')=>{ if(id==null) throw new Error(`"${op}" needs ${what}.`); return need(t, id); };
+      const lineBetween=(from, until)=>{ if(until==null) return [from]; const c=withTree(t, ()=>chain(until)); const i=c.indexOf(from); if(i<0) throw new Error(`#${from} isn’t on the line up to #${until}.`); return c.slice(i); };
+      let msg='', at=a.prompt;
+      change(sid, ()=>{
+        if(op==='star'){ const n=want(a.prompt); const on=a.value!==false; if(on) n.star=true; else delete n.star; msg=on?`Starred #${a.prompt}`:`Unstarred #${a.prompt}`; }
+        else if(op==='note'){ const n=want(a.prompt); const txt=String(a.text||'').trim(); if(a.value===false || !txt){ delete n.note; msg=`Cleared the note on #${a.prompt}`; } else { n.note = a.append && n.note ? n.note+'\n\n'+txt : txt; msg=`Noted on #${a.prompt} (never sent to the model)`; } }
+        else if(op==='branch'){ want(a.prompt); const name=a.name && NAME_RE.test(a.name) && !namesIn(convOf(a.prompt)).has(a.name) ? a.name : slugName(a.name||'branch', convOf(a.prompt)); newRef(name, a.prompt); msg=`Started branch ${name} at #${a.prompt}`; }
+        else if(op==='rename_branch'){ const r=Object.values(S.refs).find(r=>r.name===a.branch && S.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}".`); if(!a.name || !NAME_RE.test(a.name)) throw new Error('Give a new name: lowercase words joined by hyphens.'); msg=`Renamed ${r.name} to ${a.name}`; r.name=a.name; }
+        else if(op==='make_mainline'){ want(a.prompt); const c=convOf(a.prompt), through=refsThrough(a.prompt); let rid=through.sort((x,y)=>chain(S.refs[x].tip).length-chain(S.refs[y].tip).length)[0]; const mains=Object.keys(S.refs).filter(r=>S.refs[r].name==='main' && S.nodes[S.refs[r].tip] && convOf(S.refs[r].tip)===c && r!==rid); if(!rid) rid=newRef(autoName(c), leafOf(a.prompt)); const was=S.refs[rid].name; for(const m of mains) S.refs[m].name=was; S.refs[rid].name='main'; msg=`The line through #${a.prompt} is now main`; }
+        else if(op==='merge'){ want(a.prompt, 'prompt (the branch tip to merge)'); want(a.onto, 'onto (the prompt to merge into)'); if(path(a.onto).includes(a.prompt) || path(a.prompt).includes(a.onto)) throw new Error('Those are on the same line; there is nothing to merge.'); const into=refsAt(a.onto), from=refsAt(a.prompt).map(refName)[0]||`#${a.prompt}`, intoName=into.map(refName)[0]||`#${a.onto}`; const mid=S.nextId++; S.nodes[mid]={id:mid, kind:'merge', parents:[a.onto, a.prompt], text:'', from, into:intoName, by}; if(into.length) for(const rid of into) S.refs[rid].tip=mid; else newRef(autoName(convOf(a.onto)), mid); at=mid; msg=`Merged ${from} into ${intoName} at #${mid}`; }
+        else if(op==='unmerge'){ const n=S.nodes[a.prompt]; if(!n) throw new Error(`There is no #${a.prompt} in this run.`); if(n.kind!=='merge') throw new Error(`#${a.prompt} isn’t a merge point.`); const p0=n.parents[0]; for(const k of kids(a.prompt)) k.parents=[...new Set(k.parents.map(q=>q===a.prompt?p0:q))]; for(const r of Object.values(S.refs)) if(r.tip===a.prompt) r.tip=p0; delete S.nodes[a.prompt]; msg=`Removed the merge at #${a.prompt}`; at=p0; }
+        else if(op==='reroot'){ const n=want(a.prompt); let parents=[]; if(String(a.text||'').trim()){ const sid2=S.nextId++; S.nodes[sid2]={id:sid2, kind:'summary', parents:[], text:String(a.text).trim(), by}; parents=[sid2]; } n.parents=parents; delete n.alt; msg=`#${a.prompt} now starts its own chat${parents.length?`, after a summary (#${parents[0]})`:''}`; }
+        else if(op==='squash'){ want(a.prompt); want(a.until, 'until (the last prompt to include)'); const seg=lineBetween(a.prompt, a.until); if(seg.length<2) throw new Error('Squash needs at least two prompts.'); if(seg.some(x=>S.nodes[x].kind==='merge')) throw new Error('The stretch crosses a merge.'); const A=S.nodes[a.prompt], removed=new Set(seg.slice(1)), dA=desc(a.prompt); A.text=seg.map(x=>S.nodes[x].text).filter(Boolean).join('\n\n'); const rs=seg.map(x=>S.nodes[x].reply).filter(Boolean); if(rs.length) A.reply=rs.join('\n\n'); else delete A.reply; if(A.kind!=='summary') A.kind='squash'; for(const x of removed) for(const p of S.nodes[x].parents.slice(1)) if(!removed.has(p) && !dA.has(p) && !A.parents.includes(p)) A.parents.push(p); for(const x of removed) delete S.nodes[x]; for(const m of all()) m.parents=[...new Set(m.parents.map(p=>removed.has(p)?a.prompt:p))].filter(p=>p!==m.id); for(const r of Object.values(S.refs)) if(removed.has(r.tip)) r.tip=a.prompt; msg=`Squashed #${seg[0]}–#${seg[seg.length-1]} into #${a.prompt}`; }
+        else if(op==='splice'){ want(a.prompt); const seg=lineBetween(a.prompt, a.until).filter(x=>S.nodes[x].kind!=='merge'); const top=S.nodes[seg[0]].parents[0]; for(const id of [...seg].reverse()){ const n=S.nodes[id]; for(const k of kids(id)){ const out=[]; for(const p of k.parents){ if(p===id) out.push(...n.parents); else out.push(p); } k.parents=[...new Set(out)]; } for(const r of Object.values(S.refs)) if(r.tip===id && n.parents[0]!=null) r.tip=n.parents[0]; delete S.nodes[id]; } at=top; msg=`Spliced out ${seg.map(x=>'#'+x).join(', ')}; what followed now follows #${top ?? 'nothing'}`; }
+        else if(op==='delete'){ want(a.prompt); const del=new Set([a.prompt]), d=[...desc(a.prompt)]; let grew=true; while(grew){ grew=false; for(const x of d) if(!del.has(x) && S.nodes[x].parents.every(p=>del.has(p))){ del.add(x); grew=true; } } const up=S.nodes[a.prompt].parents[0]; for(const x of del) delete S.nodes[x]; for(const m of all()) m.parents=m.parents.filter(p=>!del.has(p)); for(const r of Object.values(S.refs)) if(del.has(r.tip) && up!=null) r.tip=up; at=up; msg=`Deleted ${del.size} prompt${del.size===1?'':'s'} from #${a.prompt}`; }
+        else if(op==='rebase'){ const n=want(a.prompt); want(a.onto, 'onto (the new parent)'); if(a.onto===a.prompt || desc(a.prompt).has(a.onto)) throw new Error('Can’t rebase a prompt onto itself or what follows it.'); n.parents=[...new Set([a.onto, ...n.parents.slice(1)])]; delete n.alt; msg=`Moved #${a.prompt} and what follows under #${a.onto}; their replies stay as they were (see get_prompt for context changes)`; }
+        else if(op==='cherry_pick'){ const n=want(a.prompt); want(a.onto, 'onto (where the copy goes)'); const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[a.onto], text:n.text, by}; if(n.files) S.nodes[nid].files=clone(n.files); at=nid; msg=`Copied #${a.prompt}'s text under #${a.onto} as #${nid}, without a reply (ask regenerate for one)`; }
+        else if(op==='settings'){ const n=want(a.prompt); if(a.value===false){ delete n.set; msg=`Cleared the branch settings on #${a.prompt}`; } else { const st=agentSettings(a); if(!st) throw new Error('Give at least one of system, thinking, effort, temperature, max_tokens (or value: false to clear).'); n.set=Object.assign(n.set||{}, st); msg=`Branch settings from #${a.prompt}: ${setSummary(n.set)}`; } }
+        else throw new Error(`Unknown operation "${op}". Call describe to see them.`);
+      });
+      return {...(at!=null && t.nodes[at] ? where(sid,at) : {project:DB.spaces[sid].name}), prompt: at!=null && t.nodes[at] ? at : undefined, message:msg};
+    },
     /* a second opinion: a new chat in the run that sees only the reply (or the conversation up to it) */
     async review(a){
       const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);

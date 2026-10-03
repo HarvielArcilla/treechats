@@ -89,7 +89,7 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, review gets a fresh-eyes second opinion on a reply, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, edit_prompt and fan_out work as in the editor, operate runs every other operation (describe lists them), get_tree shows the shape of a chat, review gets a fresh-eyes second opinion on a reply, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
@@ -174,6 +174,43 @@ export function buildMcpServer(read: () => State | null) {
       ].filter(Boolean).join('\n'));
     }));
 
+  server.registerTool('get_tree', { title: 'Get the shape of a chat', description: 'The whole chat as an outline: every prompt with its number, branches (indented where they split off), which branch ends where, versions, merges, and what is marked (left out, edited, starred, noted, combined, review, settings, context changed). Use it to find where to fork, replay or compare.', inputSchema: { project: projectArg, chat: z.string().optional().describe('Part of the chat title.'), branch: z.string().optional(), prompt: z.number().int().optional().describe('Any prompt in the chat.') } },
+    withState((s, a: { project?: string; chat?: string; branch?: string; prompt?: number }) => {
+      const r = pick(s, a); if ('error' in r) return fail(r.error);
+      const { sp, t, v } = r, root = v.rootOf(r.id), tips = new Map<number, string[]>();
+      for (const b of v.branches(root.id)) tips.set(b.tip, [...(tips.get(b.tip) || []), b.name]);
+      const trunk = new Set(v.branches(root.id).filter((b) => b.name === 'main').flatMap((b) => v.chain(b.tip)));
+      const kidsOf = (id: number) => v.all().filter((k) => k.parents[0] === id && v.visible(k));
+      const lines: string[] = []; let count = 0;
+      const line = (n: (typeof t.nodes)[string], ind: string) => {
+        count++;
+        if (n.kind === 'merge') { lines.push(`${ind}#${n.id} ⤵ merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}`); return; }
+        const vs = n.alt != null ? v.all().filter((m) => m.alt === n.alt) : [];
+        const marks = [n.reply ? '' : 'no reply', n.skip ? 'left out' : '', n.replyEdited ? 'reply edited' : '', n.star ? '★' : '', n.note ? 'note' : '',
+          n.combined ? 'combined' : '', n.reviewOf ? `review of #${n.reviewOf.id}` : '',
+          n.set && Object.keys(n.set).length ? 'settings' : '', n.by ? `by ${n.by}` : '',
+          vs.length > 1 ? `version ${vs.findIndex((m) => m.id === n.id) + 1}/${vs.length} (others: ${vs.filter((m) => m.id !== n.id).map((m) => '#' + m.id).join(', ')})` : '',
+          ctxChanges(s, t, n.id) ? 'context changed' : ''].filter(Boolean);
+        const tip = tips.get(n.id);
+        lines.push(`${ind}#${n.id} ${(n.text || '').replace(/\s+/g, ' ').slice(0, 90)}${marks.length ? ` [${marks.join(', ')}]` : ''}${tip ? ` ← ${tip.join(', ')}` : ''}`);
+      };
+      const walk = (id: number, ind: string) => {
+        let cur: number | null = id;
+        while (cur != null) {
+          line(t.nodes[cur], ind);
+          const ks = kidsOf(cur), straight = ks.find((k) => trunk.has(k.id)) || ks[0];
+          /* the other versions of this prompt, and what follows each, as branches of their own */
+          const me = t.nodes[cur];
+          if (me.alt != null) for (const o of v.all().filter((m) => m.alt === me.alt && m.id !== me.id && !v.visible(m))) { lines.push(`${ind}  (another version of #${cur}:)`); walk(o.id, ind + '  '); }
+          for (const k of ks) if (k !== straight) walk(k.id, ind + '  ');
+          cur = straight ? straight.id : null;
+        }
+      };
+      walk(root.id, '');
+      const bs = v.branches(root.id).map((b) => `${b.name} → #${b.tip}`).join(', ');
+      return text(`"${v.title(root)}" in ${sp.name} · ${count} prompts · branches: ${bs || 'none'}\nIndented lines branch off the line above them.\n\n${lines.join('\n')}`);
+    }));
+
   server.registerTool('list_saved_prompts', { title: 'List saved prompts', description: "The person's saved prompts in Treechats (their prompt library): name and text. Words in {braces} are placeholders to fill in. Use one as the prompt of spawn, ask or fork.", inputSchema: {} },
     withState((s) => {
       const list = ((s.opts as { saved?: { name: string; text: string }[] } | undefined)?.saved) || [];
@@ -255,6 +292,58 @@ export function buildMcpServer(read: () => State | null) {
       return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
+  server.registerTool('edit_prompt', {
+    title: 'Edit a prompt',
+    description: 'Change what was asked at a subagent prompt, as people do: the edit becomes a new version on its own branch and gets a reply. The original keeps its branch and everything after it (use replay with onto to carry those over).',
+    inputSchema: { run, agent, model, prompt: promptNo, text: z.string().min(1).describe('The new text of the prompt.') },
+  }, act('edit_prompt', true));
+  server.registerTool('fan_out', {
+    title: 'Fan out',
+    description: 'Explore every option a reply offers: one branch per option, each answered. Treechats reads the options from the reply (one quick request) unless you give them. Costs one request per option for the replies. Follow with judge to pick.',
+    inputSchema: { run, agent, model, prompt: promptNo.describe('The prompt whose reply offers the options.'), options: z.array(z.object({ title: z.string().optional(), prompt: z.string() })).optional().describe('The follow-ups to send, if you want to choose them yourself.'), replies: z.boolean().optional().describe('Get a reply on each branch. Defaults to true.') },
+  }, async (a) => {
+    let left: number | undefined, spent = 0;
+    try {
+      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
+      if (!a.options?.length) { left = spend(String(a.run), 1); spent++; }
+      const plan = await relay('fan_plan', a) as { options: { title: string; prompt: string }[]; read: boolean };
+      if (spent && !plan.read) { refund(String(a.run), 1); spent--; left = (left ?? 0) + 1; }
+      if (a.replies !== false) { left = spend(String(a.run), plan.options.length); spent += plan.options.length; }
+      const d = await relay('fan_out', { ...a, options: plan.options });
+      return text(report(d as Done, left));
+    } catch (e) {
+      if (spent) refund(String(a.run), spent);
+      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+    }
+  });
+  const OPS: Record<string, string> = {
+    star: 'prompt; value (false to unstar)',
+    note: 'prompt; text; append (true adds to the note); value: false clears. Notes are never sent to the model: a scratchpad for you',
+    branch: 'prompt; name. Start a branch at a prompt',
+    rename_branch: 'branch (current name); name',
+    make_mainline: 'prompt. The line through it becomes main',
+    merge: 'prompt (the tip of the branch to bring in); onto (the prompt to merge into). Adds a merge point after onto',
+    unmerge: 'prompt (a merge point)',
+    reroot: 'prompt; text (optional summary to start from). Cuts the prompt from what came before',
+    squash: 'prompt (first); until (last). Collapses the stretch into one prompt and reply',
+    splice: 'prompt; until (optional last). Removes the stretch; what followed attaches above it',
+    delete: 'prompt. Deletes it and everything after it',
+    rebase: 'prompt; onto. Moves it and what follows under another prompt',
+    cherry_pick: 'prompt; onto. Copies its text under another prompt, without a reply',
+    settings: 'prompt; system, thinking, effort, temperature, max_tokens (any of them); value: false clears. Applies from that prompt on',
+  };
+  server.registerTool('describe', { title: 'Describe operations', description: 'The operations operate can run, with the arguments each takes.', inputSchema: { op: z.string().optional() } },
+    async (a) => text(a.op ? (OPS[a.op] ? `${a.op}: ${OPS[a.op]}` : `Unknown operation "${a.op}". Known: ${Object.keys(OPS).join(', ')}`) : 'Run these with operate. Every call needs run (and agent, for labels); none of them sends a request.\n\n' + Object.entries(OPS).map(([k, v]) => `- ${k}: ${v}`).join('\n')));
+  server.registerTool('operate', {
+    title: 'Run an operation',
+    description: 'Restructure or mark a subagent chat in your run, the way people do in the editor: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, settings. Call describe for the arguments. No requests are sent; changes stay out of the person’s Undo.',
+    inputSchema: {
+      run, agent, ...bset,
+      op: z.enum(['star', 'note', 'branch', 'rename_branch', 'make_mainline', 'merge', 'unmerge', 'reroot', 'squash', 'splice', 'delete', 'rebase', 'cherry_pick', 'settings']),
+      prompt: z.number().int().optional(), until: z.number().int().optional(), onto: z.number().int().optional(),
+      branch: z.string().optional(), name: z.string().max(40).optional(), text: z.string().optional(), value: z.boolean().optional(), append: z.boolean().optional(),
+    },
+  }, act('operate', false));
   server.registerTool('review', {
     title: 'Get a second opinion',
     description: 'A fresh-eyes review of a subagent reply: a new chat in your run that sees only that prompt and reply (or the whole conversation up to it), asked to point out what is wrong, missing or weak. A reviewer that did not write the answer has no reason to defend it. One request. Returns the review.',

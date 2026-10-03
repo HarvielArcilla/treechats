@@ -25,11 +25,11 @@ foundation once the agent interface has been tried on a real task, then everythi
 - Editing a prompt starts a new branch (Save in place is the exception)
 - ✦ Review: a second opinion from a new chat that sees only what you include, linked both ways
 - Saved prompts with {placeholders}, inserted with / ; starters for common strategies (plan first, interview me, …)
+- MCP parity: edit_prompt, fan_out, get_tree, and operate/describe for every other operation
 - MCP: replay, review, judge, combine and list_saved_prompts; spawn and fork take branch settings; get_prompt reports settings, usage and
   context changes
 
 ## Next
-- `fan_out` over MCP, so agents can branch a reply's options the way people do
 - Range selection (Shift-click) with tools for a stretch of a line; recipes; running a prompt over many inputs
 - Try the subagent tools on a real task (Phase 1 below)
 
@@ -57,7 +57,7 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - MCP writes without the page open; a small CLI over the same operations
 
 ## Phase 3: reuse and agents in full
-- Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; history per run with undo; a Runs view of agent runs
+- For agents: history per run with undo; a Runs view of agent runs
 - Import Claude Code sessions as trees (read-only import; writing sessions back is not a public interface)
 
 ## Later

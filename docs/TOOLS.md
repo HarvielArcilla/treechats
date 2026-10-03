@@ -113,6 +113,9 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 | Tool | What it does | Use |
 |---|---|---|
 | list_projects, list_chats, search, get_context, get_prompt | Read your chats; get_prompt also reports settings, cost, thinking and context changes | Common |
+| get_tree | A chat's whole shape: every prompt, branches, versions, merges and marks | Common |
+| edit_prompt, fan_out | As in the editor: an edit on a new branch with a reply; one answered branch per option | Power |
+| operate, describe | Every other operation by name: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, settings | Power |
 | list_saved_prompts | Read your prompt library | Rare |
 | spawn, ask, fork | Subagent chats whose context the agent controls exactly; spawn and fork take branch settings | Power |
 | leave_out, edit_reply, regenerate | Steer what a subagent sees | Power |
