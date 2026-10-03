@@ -61,6 +61,27 @@ Claude does the work; each use sends a request.
 | Rebase onto… | Moves a prompt and what follows under another prompt | Re-parenting work | Rare |
 | Cherry-pick | Copies a prompt's text under another prompt | Reusing one question elsewhere | Rare |
 
+## Commands (type `/` in the input box)
+
+The input box takes commands like Claude Code's. Typing `/` lists them, then your saved prompts; Tab fills one in,
+Enter runs it. Each one maps onto a tool above, or is a small one of its own. Anything else that starts with `/` is
+sent as written. They are also in the command palette (Ctrl/⌘-K).
+
+| Command | What it does | Need | Use |
+|---|---|---|---|
+| `/btw question` | ✦ Claude answers from this chat's context; nothing is added to the chat. *Keep as a branch* saves the question and answer as a branch, without moving you | A quick aside that shouldn't clutter the context | Common |
+| `/loop [times] [every 10m] prompt [until: condition]` | ✦ Sends the same prompt again after each reply on this line. Stops after *times* (default 3), when a quick check says the condition is met (its verdict is noted under each reply), or when you stop it. *every* waits between sends while Treechats is open | "Keep improving it until…", polishing passes, periodic checks | Power |
+| `/context` | What the next prompt sends, part by part (system prompt, instructions, project files, prompts, replies, files), with the largest turns | Knowing what to leave out before the limit bites | Power |
+| `/cost` | Tokens and cost on this line and in the whole chat | Keeping an eye on spend | Common |
+| `/model [quick\|default\|complex]` | Sets the model for next replies | Switching without the menu | Common |
+| `/rewind` | Lists earlier prompts on the line; choosing one continues from it, so the next send forks there | Going back without losing anything | Common |
+| `/compact` | ✦ Distill, then a fresh chat from the brief | A long chat that has lost focus | Power |
+| `/review [what to check]` | ✦ Review, with your instructions | A second opinion | Common |
+| `/branch name` | Renames the branch you're on, or starts one here | Naming a line of work | Power |
+| `/clear` | A new chat; this one stays | Starting fresh | Common |
+| `/memory` | Settings › Prompts, at the standing instructions (Treechats' CLAUDE.md) | Instructions for every request | Rare |
+| `/search words`, `/settings`, `/export`, `/help` | Search, Settings, copy the line as Markdown, list commands | Getting around | Common |
+
 ## Tools on several prompts
 
 ### A stretch of a line (Shift-click)
@@ -121,6 +142,8 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 | leave_out, edit_reply, regenerate | Steer what a subagent sees; leave_out takes a stretch (`until`) | Power |
 | replay | Re-send after changing context (to the end, or `until` a prompt for a stretch); stops at a prompt that no longer fits, or rewrites it if asked | Power |
 | review | A fresh-eyes check of a subagent's reply | Power |
+| loop | /loop for a subagent: the same prompt after each reply, up to *times* or *until* a condition is met | Power |
+| btw | A side question with the exact context of any prompt in your chats; changes nothing and needs no open page | Common |
 | judge, combine | Best-of-n across forks, or across any prompts (as Ctrl/⌘-click picks) | Power |
 | distill | Bring back only a brief | Power |
 

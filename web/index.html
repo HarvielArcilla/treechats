@@ -1155,6 +1155,9 @@ const COMMANDS=[
   {name:'review', args:'[what to check]', desc:'A fresh chat reviews the last reply. Same as ✦ Review.'},
   {name:'branch', args:'name', need:true, desc:'Rename the branch you’re on, or name a new one from here.'},
   {name:'clear', desc:'Start a new chat. This one stays as it is.', root:true},
+  {name:'memory', desc:'Edit the standing instructions sent at the start of every request, and see the project’s files.', root:true},
+  {name:'search', args:'words', need:true, desc:'Find prompts and replies in this project.', root:true},
+  {name:'settings', desc:'Open Settings.', root:true},
   {name:'export', desc:'Copy this line as Markdown.'},
   {name:'help', desc:'Every command and what it does.', root:true},
 ];
@@ -1201,6 +1204,9 @@ function runCommand(name, arg, at){
     return;
   }
   if(name==='clear'){ closeDrawers(); pick=null; composeFor='root'; render(); const t=document.getElementById('composeText'); if(t) t.focus({preventScroll:true}); return; }
+  if(name==='memory'){ openSettings('prompts'); setTimeout(()=>{ const f=document.querySelector('#settings textarea'); if(f) f.focus({preventScroll:true}); }, 50); if(S.files && S.files.length) toast(`This project also sends ${S.files.length} file${S.files.length===1?'':'s'} with every chat (Project files, in the sidebar).`); return; }
+  if(name==='settings'){ openSettings(); return; }
+  if(name==='search'){ convFilterEl.value=arg; convFilterEl.dispatchEvent(new Event('input', {bubbles:true})); convFilterEl.focus({preventScroll:true}); return; }
   if(name==='export'){ copyText(pathMarkdown(at), true).then(ok=>{ if(ok) toast(`Copied the line up to #${at} as Markdown.`); }); return; }
 }
 const tierLabel = v => (TIERS.find(t=>t[0]===v)||[v,v])[1].replace(/ \(.*\)/,'');

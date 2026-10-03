@@ -74,10 +74,22 @@ an edited prompt, the prompts that followed the original can be carried over wit
 up to it) and asks for an honest review. A reviewer that didn't write the answer has no reason to defend it. The review
 prompt is shown before it's sent and editable in Settings › Prompts, and the reply and its review link to each other.
 
-**Saved prompts** are your prompt library: insert one from **Saved prompts** under the input box, or type `/` in an
-empty box. Words in `{braces}` are placeholders; what you've typed fills the first. A few starters are included (plan
+**Saved prompts** are your prompt library: insert one from **Saved prompts** under the input box, or type `/` and
+pick it from the list. Words in `{braces}` are placeholders; what you've typed fills the first. A few starters are included (plan
 first, ask me questions first, improve my prompt, critique your answer, and more). Edit them in Settings › Saved
 prompts.
+
+## Commands
+
+Type `/` in the input box for commands, as in Claude Code:
+- `/btw question` asks a side question from the chat's context. The answer shows above the input box and nothing is
+  added to the chat, unless you keep it as a branch.
+- `/loop 3 Tighten it` sends a prompt again after each reply. Add `until: under 100 words` to stop when a quick check
+  says the condition is met (its verdict is noted under each reply), or `every 10m` to wait between sends while
+  Treechats is open.
+- `/context` and `/cost` show what the next prompt sends and what the chat has cost; `/rewind` goes back to an earlier
+  prompt; `/model`, `/compact`, `/review`, `/branch`, `/clear`, `/memory`, `/search`, `/export` and `/help` do what
+  they say.
 
 ## Compare, judge and combine
 
@@ -109,7 +121,8 @@ in the browser.
 
 **Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and steer, with the
 same tools you have:
-- **Talk:** `spawn` (start one with exactly the context it should have), `ask`, `fork`, `edit_prompt`, `regenerate`
+- **Talk:** `spawn` (start one with exactly the context it should have), `ask`, `fork`, `edit_prompt`, `regenerate`,
+  `loop` (the same prompt after each reply until a condition is met)
 - **Shape context:** `leave_out`, `edit_reply`, `replay` (re-send after a change; stops at a prompt that no longer fits)
 - **Explore and decide:** `fan_out`, `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across
   forks), `distill` (bring back only a brief)
@@ -117,8 +130,8 @@ same tools you have:
   rebase, cherry-pick and model settings; `describe` lists their arguments.
 
 For example: "use treechats to spawn three subagents that each review this design from a different angle, judge them
-for correctness, then distill the best one". Reading tools also include `get_tree` and `list_saved_prompts` (your prompt
-library).
+for correctness, then distill the best one". Reading tools also include `get_tree`, `list_saved_prompts` (your prompt
+library) and `btw`, which asks a side question with the exact context of any of your chats and changes nothing.
 
 - Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't
   change anything outside their run projects, and their changes stay out of your Undo.
