@@ -813,7 +813,11 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .ovmap{margin-top:auto;flex:none;position:sticky;bottom:-16px;background:var(--panel);padding:8px 2px 14px;border-top:1px solid var(--line);display:grid;gap:6px}
 .ovmap[hidden]{display:none}
 /* hidden: just the header stays, so the map is one click away */
-.rwnote{opacity:1 !important;margin-right:4px}
+/* Chat view: authorship marks sit above the message, so the actions under it keep the same spacing */
+.rtop{margin:0 0 4px}
+.rtop .edtag{margin-left:0}
+.ptop{display:flex;justify-content:flex-end;margin:0 0 4px}
+.ptop .edtag{margin-left:0}
 .fitmodes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px}
 .fitmodes>span{font-size:.82rem;color:var(--muted);margin-right:4px}
 .rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
@@ -3021,11 +3025,12 @@ function rowHTML(id, pathSet){
   const txtE = editingHere ? `<div class="txt pedit" data-key="pe${id}"><textarea id="promptEditText" rows="${Math.min(14, Math.max(2, (n.text||'').split('\n').length+1))}" aria-label="Edit prompt #${id}">${esc(n.text||'')}</textarea>
     <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Claude answers the edited prompt. The original and its reply stay as the other version.">Send as new version <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-pedit="save" title="Change the prompt where it is. Its reply and everything below stay as they are.">Save in place</button>`}<button class="btn" data-pedit="cancel">Cancel</button></div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
-  let h=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
+  let h=opts.simple && !pick && n.rewritten ? `<div class="ptop"><span class="edtag" title="${esc(rwTitle(n))}">rewritten</span></div>` : '';
+  h+=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${n.rewritten?`<span class="edtag rwnote" title="${esc(rwTitle(n))}">rewritten</span>`:''}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
     else if(id===sel){
       const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
       const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
@@ -3139,7 +3144,7 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}"><div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow">${ed}<button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
   return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
@@ -3201,7 +3206,7 @@ function forkHTML(id){
   return `<span class="fork" title="Other versions and branches from here"><button ${go(i-1)} aria-label="Previous branch">‹</button><span>${i+1} / ${sib.length}</span><button ${go(i+1)} aria-label="Next branch">›</button></span>`;
 }
 function lenGroupHTML(rl=lenMode()){
-  return `<div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['short','Shorten','Long replies away from the selected prompt are cut short'],['full','Full','Every reply in full']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div>`;
+  return `<div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['full','Full','Every reply in full'],['short','Shorten','Long replies away from the selected prompt are cut short']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div>`;
 }
 function simpleHTML(){
   const rs=orderedRoots();
@@ -3237,8 +3242,8 @@ function renderTree(){
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
   const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
   if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
-    const lineGroup=`<div class="vgroup" role="group" aria-label="Which prompts"><span>Prompts</span>${[['all','All','Every branch of each chat'],['line','This line','Only the line you\u2019re on: what the selected prompt sends, and the prompts after it. Other branches fold into a note where they split off']].map(([v,l,t])=>`<button class="seg" data-linemode="${v}" aria-pressed="${(v==='line')===!!opts.lineOnly}" title="${t}">${l}</button>`).join('')}</div>`;
-    const showGroup=`<div class="vgroup" role="group" aria-label="Which replies"><span>Replies</span>${[['selected','Selected','Only the selected prompt\u2019s reply'],['path','Context path','Replies the selected prompt sends'],['all','All','Every reply']].map(([v,l,t])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}" title="${t}">${l}</button>`).join('')}</div>`;
+    const lineGroup=`<div class="vgroup" role="group" aria-label="Which prompts"><span>Prompts</span>${[['all','All','Every branch of each chat'],['line','Context path','Only the line you\u2019re on: what the selected prompt sends, and the prompts after it. Other branches fold into a note where they split off']].map(([v,l,t])=>`<button class="seg" data-linemode="${v}" aria-pressed="${(v==='line')===!!opts.lineOnly}" title="${t}">${l}</button>`).join('')}</div>`;
+    const showGroup=`<div class="vgroup" role="group" aria-label="Which replies"><span>Replies</span>${[['all','All','Every reply'],['path','Context path','Replies the selected prompt sends'],['selected','Selected','Only the selected prompt\u2019s reply']].map(([v,l,t])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}" title="${t}">${l}</button>`).join('')}</div>`;
     const lenGroup=lenGroupHTML(rl);
     if(!simpleNow) h+=`<div class="viewbar" data-key="viewbar">${lineGroup}${showGroup}${lenGroup}</div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
@@ -3247,7 +3252,7 @@ function renderTree(){
   if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New chat</p>':`<p class="emptyhead">Start a chat in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a chat here from another project with its Move button.</p>`}${composerHTML('root')}</section>`;
   const offN=rs.length-shown.length;
   if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} chats in this project are hidden. Choose which to show from the chat list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
-  /* This line: in the selected prompt's chat, only the line it's on (with whatever merges bring in) */
+  /* Prompts: Context path: in the selected prompt's chat, only the line it's on (with whatever merges bring in) */
   const lineSet = opts.lineOnly && sel!=null && S.nodes[sel] ? new Set(path(threadTip(sel))) : null, lineRoot = lineSet ? chain(sel)[0] : null;
   for(const r of shown){
     curLine = r.id===lineRoot ? lineSet : null;
@@ -4455,8 +4460,8 @@ function renderSettings(){
     h+=`<section class="setsec"><h3>Replies</h3>
       <p class="note">${AI}marks tools where Claude does the work, such as Distill or Fan out. Each use sends a request.</p>
       ${setRow('Default model','Also in the box under each prompt.',`<select data-setselect="model" aria-label="Default model">${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select>`)}
-      ${setRow('Show replies','Chat view always shows every reply in the chat.', segs('replies',[['selected','Selected'],['path','Context path'],['all','All']],'Show replies'))}
-      ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['short','Shorten'],['full','Full']],'Reply length'))}
+      ${setRow('Replies','Chat view always shows every reply in the chat.', segs('replies',[['all','All'],['path','Context path'],['selected','Selected']],'Replies'))}
+      ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['full','Full'],['short','Shorten']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, merge notes, and what every '+AI+'tool asks Claude.','<button class="btn" data-setprompts>Edit prompts</button>')}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
     h+=`<section class="setsec"><h3>Input</h3>
