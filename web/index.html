@@ -617,6 +617,10 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 /* settings */
 .setwrap{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb, var(--fg) 28%, transparent)}
 .setwrap[hidden]{display:none}
+.newchat .newchatbody{flex:1;display:grid;align-content:center;justify-items:center;text-align:center;gap:6px;padding:12vh 16px 24px}
+.newchat .ncgreet{margin:0;font:600 1.5rem var(--display);letter-spacing:-.01em}
+.newchat .newchatbody .note{max-width:520px}
+
 .viewsw[data-pos="2"] .vthumb{transform:translateX(100%)}
 .fvtools{display:flex;align-items:center;gap:8px}
 .fvspacer{flex:1}
@@ -4807,6 +4811,12 @@ function forkHTML(id){
 function lenGroupHTML(rl=lenMode()){
   return `<div class="vgroup" role="group" aria-label="Reply length"><span>Length</span>${[['full','Full','Every reply in full'],['short','Shorten','Long replies away from the selected prompt are cut short']].map(([v,l,t])=>`<button class="seg" data-rlen="${v}" aria-pressed="${rl===v}" title="${t}">${l}</button>`).join('')}</div>`;
 }
+function newChatHTML(hasChats){
+  const sp=DB.spaces[DB.current], files=(S.files||[]).length;
+  return `<section class="conv thread newchat" data-key="cv${S.nextId}"><div class="chathead" data-key="chathead"><button class="chatproj" data-projmenu aria-haspopup="menu" title="Project options">${esc(sp.name)}</button><div class="chattitle"><h1>New chat</h1></div></div>
+    <div class="newchatbody" data-key="ncbody"><p class="ncgreet">What are you working on?</p><p class="note">${hasChats?`A new chat in ${esc(sp.name)}.`:`The first chat in ${esc(sp.name)}.`}${files?` It starts with the project’s ${files} file${files===1?'':'s'}.`:''} Type <code>/</code> for commands and saved prompts.</p></div>
+    <div class="ops simpleops" data-key="osimple">${composerHTML('root')}</div></section>`;
+}
 function simpleHTML(){
   const rs=orderedRoots();
   let base = sel!=null && S.nodes[sel] ? sel : null;
@@ -4847,9 +4857,11 @@ function renderTree(){
     const lineGroup=`<div class="vgroup" role="group" aria-label="Which prompts"><span>Prompts</span>${[['all','All','Every branch of each chat'],['line','Context path','Only the line you\u2019re on: what the selected prompt sends, and the prompts after it. Other branches fold into a note where they split off']].map(([v,l,t])=>`<button class="seg" data-linemode="${v}" aria-pressed="${(v==='line')===!!opts.lineOnly}" title="${t}">${l}</button>`).join('')}</div>`;
     const showGroup=`<div class="vgroup" role="group" aria-label="Which replies"><span>Replies</span>${[['all','All','Every reply'],['path','Context path','Replies the selected prompt sends'],['selected','Selected','Only the selected prompt\u2019s reply']].map(([v,l,t])=>`<button class="seg" data-rmode="${v}" aria-pressed="${rm===v}" title="${t}">${l}</button>`).join('')}</div>`;
     const lenGroup=lenGroupHTML(rl);
-    if(!simpleNow) h+=`<div class="viewbar" data-key="viewbar">${lineGroup}${showGroup}${lenGroup}</div>`; }
+    if(!simpleNow && !(opts.simple && !pick && composing)) h+=`<div class="viewbar" data-key="viewbar">${lineGroup}${showGroup}${lenGroup}</div>`; }
   /* the composer is keyed as the conversation it will become, so sending turns it into that conversation in place */
   if(simpleNow) h+=simpleHTML();
+  /* Chat view, starting a chat: a page of its own, like a new chat in any chat app, not the tree */
+  else if(opts.simple && !pick && composing) h+=newChatHTML(rs.length);
   else {
   if(composing) h+=`<section class="conv" data-key="cv${S.nextId}">${rs.length?'<p class="emptyhead">New chat</p>':`<p class="emptyhead">Start a chat in ${esc(DB.spaces[DB.current].name)}</p><p class="note" style="margin-bottom:10px">You can also move a chat here from another project with its Move button.</p>`}${composerHTML('root')}</section>`;
   const offN=rs.length-shown.length;
