@@ -18,6 +18,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import { contextPrompt, ctxChanges, loadState, settingsFor, TreeView, turnsFor, type Tree } from './context.ts';
 import { pageOpen, refund, relay, RelayError, spend } from './relay.ts';
+import { sampleOnce, type SampleRequest } from './claude.ts';
 
 type State = NonNullable<ReturnType<typeof loadState>>;
 const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] });
@@ -89,7 +90,7 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, edit_prompt and fan_out work as in the editor, operate runs every other operation (describe lists them), get_tree shows the shape of a chat, review gets a fresh-eyes second opinion on a reply, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, edit_prompt and fan_out work as in the editor, operate runs every other operation (describe lists them), get_tree shows the shape of a chat, review gets a fresh-eyes second opinion on a reply, loop sends the same prompt again after each reply until a condition is met, btw asks a side question with a chat\'s exact context without changing it, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
@@ -159,8 +160,9 @@ export function buildMcpServer(read: () => State | null) {
           }
           if (hits.length >= 40) break;
         }
+        if (hits.length >= 40) break;
       }
-      return text(hits.length ? hits.join('\n') : `Nothing matches "${a.query}".`);
+      return text(hits.length ? hits.join('\n') + (hits.length >= 40 ? '\n(Stopped at 40 matches. Narrow the search or name a project.)' : '') : `Nothing matches "${a.query}".`);
     }));
 
   server.registerTool('get_prompt', { title: 'Get a prompt', description: 'One prompt in full: its text, Claude\'s reply, your note, what it follows, what follows it, and the branches through it.', inputSchema: { prompt: z.number().int(), project: projectArg } },
@@ -210,7 +212,7 @@ export function buildMcpServer(read: () => State | null) {
           const ks = kidsOf(cur), straight = ks.find((k) => trunk.has(k.id)) || ks[0];
           /* the other versions of this prompt, and what follows each, as branches of their own */
           const me = t.nodes[cur];
-          if (me.alt != null) for (const o of v.all().filter((m) => m.alt === me.alt && m.id !== me.id && !v.visible(m))) { lines.push(`${ind}  (another version of #${cur}:)`); walk(o.id, ind + '  '); }
+          if (me.alt != null && v.visible(me)) for (const o of v.all().filter((m) => m.alt === me.alt && m.id !== me.id && !v.visible(m))) { lines.push(`${ind}  (another version of #${cur}:)`); walk(o.id, ind + '  '); }
           for (const k of ks) if (k !== straight) walk(k.id, ind + '  ');
           cur = straight ? straight.id : null;
         }
@@ -219,6 +221,28 @@ export function buildMcpServer(read: () => State | null) {
       const bs = v.branches(root.id).map((b) => `${b.name} → #${b.tip}`).join(', ');
       return text(`"${v.title(root)}" in ${sp.name} · ${count} prompts · branches: ${bs || 'none'}\nIndented lines branch off the line above them.\n\n${lines.join('\n')}`);
     }));
+
+  server.registerTool('btw', {
+    title: 'Side question',
+    description: 'Ask a question with the exact context of a prompt in any of the person\'s chats, and get the answer, without changing anything: nothing is added to the chat (the same as /btw in the page). Use it to ask what a chat decided, what a reply meant, or what to do next, as the model in that chat would answer. One request.',
+    inputSchema: {
+      project: projectArg,
+      chat: z.string().optional().describe('Chat title (or part of it), or the number of its first prompt.'),
+      branch: z.string().optional().describe('Branch name, such as main.'),
+      prompt: z.number().int().optional().describe('Prompt number, such as 12 for #12. The answer sees everything up to and including its reply.'),
+      question: z.string().min(1).describe('The side question.'),
+      model: z.enum(['quick', 'default', 'complex']).optional().describe('Which model tier answers (default: default).'),
+    },
+  }, async (a: Pick & { question: string; model?: 'quick' | 'default' | 'complex' }) => {
+    const s = read(); if (!s) return fail('Treechats has nothing saved yet. Open it in the browser and start a chat first.');
+    const r = pick(s, a); if ('error' in r) return fail(r.error);
+    const { sp, t, v, id } = r;
+    const st = settingsFor(t, id) as SampleRequest['settings'];
+    const out = await sampleOnce({ input: [...turnsFor(s, t, id), { role: 'user', content: a.question }], modelTier: a.model || 'default', settings: st });
+    if (out.error) return fail(`No answer: ${out.error.message || out.error.code}`);
+    const cost = out.usage?.cost != null ? ` · $${out.usage.cost.toFixed(4)}` : '';
+    return text(`(Side question from project "${sp.name}", chat "${v.title(v.rootOf(id))}", after #${id}. Nothing was added to the chat${cost}.)\n\n${out.text}`);
+  });
 
   server.registerTool('list_saved_prompts', { title: 'List saved prompts', description: "The person's saved prompts in Treechats (their prompt library): name and text. Words in {braces} are placeholders to fill in. Use one as the prompt of spawn, ask or fork.", inputSchema: {} },
     withState((s) => {
@@ -295,6 +319,30 @@ export function buildMcpServer(read: () => State | null) {
       n = ((await relay('replay_plan', a)) as { count: number }).count;
       left = spend(String(a.run), n);
       const d = await relay('replay', a) as Done & { requests?: number };
+      if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
+      return text(report(d, left));
+    } catch (e) {
+      if (left != null) refund(String(a.run), n);
+      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+    }
+  });
+  server.registerTool('loop', {
+    title: 'Loop a prompt',
+    description: 'Send the same prompt to a subagent again after each reply, continuing the line: a set number of times, or until a condition is met. With until, a quick check after each reply asks whether the condition is met; its verdict is noted under that reply. Costs one request per send, plus one per check. Returns the last reply. Same as /loop in the page.',
+    inputSchema: {
+      run, agent, model,
+      after: promptNo.optional().describe('Loop from after this prompt number.'), branch: z.string().optional().describe('Or from the end of this branch.'),
+      prompt: z.string().min(1).describe('What to send each time, for example "Tighten it further" or "Find another bug and fix it".'),
+      times: z.number().int().min(1).max(20).optional().describe('The most times to send it (default 3).'),
+      until: z.string().optional().describe('Stop early once this is true of the latest reply, for example "the draft is under 100 words".'),
+    },
+  }, async (a) => {
+    const n = ((a.times as number | undefined) ?? 3) * (a.until ? 2 : 1);
+    let left: number | undefined;
+    try {
+      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
+      left = spend(String(a.run), n);
+      const d = await relay('loop', a) as Done & { requests?: number };
       if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
       return text(report(d, left));
     } catch (e) {

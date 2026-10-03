@@ -5,7 +5,7 @@
 import { config } from './config.ts';
 
 type Page = { id: number; send: (data: string) => void };
-type Waiter = { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
+type Waiter = { page: number; op: string; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
 
 const pages: Page[] = [];
 const waiting = new Map<string, Waiter>();
@@ -14,7 +14,11 @@ let nextPage = 1, nextCmd = 1;
 export function attachPage(send: (data: string) => void) {
   const page = { id: nextPage++, send };
   pages.push(page);
-  return () => { const i = pages.indexOf(page); if (i >= 0) pages.splice(i, 1); };
+  return () => {
+    const i = pages.indexOf(page); if (i >= 0) pages.splice(i, 1);
+    /* the tab that was doing the work is gone, so its commands will never be answered */
+    for (const [id, w] of waiting) if (w.page === page.id) { waiting.delete(id); clearTimeout(w.timer); w.reject(new RelayError(`The Treechats tab closed before "${w.op}" finished. Some of it may have been done; check with get_tree or get_prompt before trying again.`)); }
+  };
 }
 export const pageOpen = () => pages.length > 0;
 
@@ -27,7 +31,7 @@ export function relay(op: string, args: Record<string, unknown>, timeoutMs = 15 
   const id = 'c' + nextCmd++;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { waiting.delete(id); reject(new RelayError(`Treechats didn’t finish "${op}" within ${Math.round(timeoutMs / 60000)} minutes.`)); }, timeoutMs);
-    waiting.set(id, { resolve, reject, timer });
+    waiting.set(id, { page: page.id, op, resolve, reject, timer });
     page.send(JSON.stringify({ id, op, args }));
   });
 }

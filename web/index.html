@@ -720,6 +720,25 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 /* fan out */
 .fan{margin:0 0 8px 20px;padding:12px 14px;border:1px solid var(--accent);border-radius:10px;background:var(--surface);display:grid;gap:10px;box-shadow:0 4px 14px var(--shadow)}
 .fanhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.cmdcard{margin:0 0 10px 0}
+.cmdcard .fanhead .note{flex:1}
+.cmdtable{border-collapse:collapse;font-size:.84rem;width:100%}
+.cmdtable td{padding:4px 8px 4px 0;vertical-align:top;border-top:1px solid var(--line)}
+.cmdtable tr:first-child td{border-top:0}
+.cmdtable td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cmdtable code{font:500 .8rem var(--mono)}
+.sideq{margin:0;font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
+.sidecard .rbody{max-height:min(50vh,520px);overflow:auto}
+.loopnote span,.pnote.loopnote span{color:var(--accent)}
+.slashpop{position:fixed;z-index:60;max-height:min(360px,calc(100vh - 16px));overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px var(--shadow);padding:4px;display:grid}
+.slashpop .mh{font:500 .66rem var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:8px 10px 4px}
+.slashpop button{display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:baseline;text-align:left;border:0;background:none;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--fg);font-size:.86rem}
+.slashpop button.on,.slashpop button:hover{background:var(--accent-soft)}
+.slashpop code{font:600 .82rem var(--mono)}
+.slashpop .sargs{font:400 .76rem var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slashpop .sdesc{grid-column:1/-1;color:var(--muted);font-size:.78rem;line-height:1.35}
+.slashpop .shelp{margin:4px 10px 4px;font-size:.72rem;color:var(--muted)}
+
 .fanhead b{font-size:.92rem}
 .fopts{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .fopt{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px;align-items:start;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
@@ -1073,6 +1092,9 @@ const PROMPTS = {
   replayCheck:{label:'Replay: does the next prompt still fit?', group:'tools', def:"Someone is re-running a conversation after changing something earlier in it, so the replies may now differ from the ones their messages were written for. Decide whether their next message still makes sense as the next message after the conversation as it now stands. It fits if it reads naturally, even if the reply before it is worded differently or reaches a different conclusion that the message doesn't depend on. It doesn't fit if it refers to something the new reply no longer says, answers a question that is no longer asked, or assumes a choice that was no longer made.\n\nThe conversation as it now stands (most recent part):\n{conversation}\n\nThe reply the message was originally written after:\n{original}\n\nThe next message:\n{message}",
     help:'Sent before each prompt after the first when you replay, unless checks are off. {conversation} becomes the latest turns, {original} the reply the prompt was first written after, {message} the prompt.',
     fmt:'Reply with only JSON: {"fits":true,"reason":"","rewrite":""}\nWhen it doesn\'t fit, give a one-sentence reason, and a rewrite of the message that keeps its intent and voice but fits the conversation as it now stands. When it fits, leave reason and rewrite empty.'},
+  loopCheck:{label:'Loop: is the condition met?', group:'tools', def:"Someone is sending the same message to Claude again after each reply, until a condition is met. Read the latest turns of the conversation and decide whether this condition is met now: {condition}\n\nThe conversation (most recent part):\n{conversation}",
+    help:'Sent after each reply of a /loop that has an until: condition. {condition} becomes the condition, {conversation} the latest turns.',
+    fmt:'Reply with only JSON: {"met":false,"why":"One short sentence."}\nmet is true only when the condition is clearly met by the latest reply.'},
   judge:{label:'Compare: judging the follow-ups', group:'tools', def:"You are judging alternative follow-ups in a branching conversation. Below is the conversation up to the point where it branched, then each alternative: the follow-up message and the reply to it, labelled with its number.\n\nJudge them only against these criteria: {criteria}\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
     help:'What Claude is asked by ✦ Judge in Compare. {criteria} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
     fmt:'Reply with only JSON: {"best":"#12","reasons":{"#12":"One sentence on how it meets the criteria.","#14":"One sentence."},"summary":"One or two sentences on the choice."}\nUse the labels exactly as given, and give a reason for every alternative.'},
@@ -1118,6 +1140,319 @@ function savedMenu(anchor, t){
     {label:'Manage saved prompts…', run:()=>openSettings('saved')}
   ]);
 }
+/* ---- Commands ----
+   Typing / at the start of the input box offers commands, then your saved prompts. A command does something in
+   Treechats instead of being sent to Claude. Each maps onto a tool that also has a button, and none of them sends
+   anything you can't see: /btw and the /loop check are ordinary requests whose prompts are under Settings › Prompts. */
+const COMMANDS=[
+  {name:'btw', args:'question', need:true, desc:'Ask a side question. Claude answers from this chat’s context, and nothing is added to the chat unless you keep it.'},
+  {name:'loop', args:'[times] [every 10m] prompt [until: condition]', need:true, desc:'Send the same prompt again after each reply: a set number of times, or until a condition is met.'},
+  {name:'context', desc:'What your next prompt will send, part by part, and how much of the limit it uses.'},
+  {name:'cost', desc:'Tokens and cost of the replies on this line, and in the whole chat.'},
+  {name:'model', args:'[quick | default | complex]', desc:'The model for your next replies.', root:true},
+  {name:'rewind', desc:'Go back to an earlier prompt on this line and continue from there. What came after stays on its branch.'},
+  {name:'compact', desc:'Distill the context into a brief, then start a fresh chat from it. Same as ✦ Distill.'},
+  {name:'review', args:'[what to check]', desc:'A fresh chat reviews the last reply. Same as ✦ Review.'},
+  {name:'branch', args:'name', need:true, desc:'Rename the branch you’re on, or name a new one from here.'},
+  {name:'clear', desc:'Start a new chat. This one stays as it is.', root:true},
+  {name:'export', desc:'Copy this line as Markdown.'},
+  {name:'help', desc:'Every command and what it does.', root:true},
+];
+function parseCommand(text){
+  const m=String(text||'').match(/^\/([a-z]+)(?:\s+([\s\S]*))?$/i); if(!m) return null;
+  const cmd=COMMANDS.find(c=>c.name===m[1].toLowerCase());
+  return cmd ? {cmd, arg:(m[2]||'').trim()} : null;
+}
+/* the input box's text, or a command run from it */
+function submitPrompt(parent, text){
+  const c=parseCommand(text.trim());
+  if(!c){ addPrompt(parent, text); return; }
+  closeSlash();
+  if(parent==null && !c.cmd.root){ toast(`/${c.cmd.name} works inside a chat. Start one first.`); return; }
+  if(c.cmd.need && !c.arg){ toast(`Write what goes after /${c.cmd.name}: /${c.cmd.name} ${c.cmd.args}`); return; }
+  if(parent==null) draftRoot=''; else draft='';
+  const box=document.getElementById(parent==null ? 'composeText' : 'contText'); if(box) box.value='';
+  runCommand(c.cmd.name, c.arg, parent);
+}
+let cmdPanel=null;
+function runCommand(name, arg, at){
+  const ready = () => { if(sampleState==='ready') return true; toast('This needs Claude. Add an API key to .env or sign in to Claude Code, then restart Treechats.'); return false; };
+  if(name==='help'){ cmdPanel={kind:'help'}; return paintCmds(at); }
+  if(name==='context'){ cmdPanel={kind:'context', at}; return paintCmds(at); }
+  if(name==='cost'){ cmdPanel={kind:'cost', at}; return paintCmds(at); }
+  if(name==='model'){
+    if(!arg){ toast(`Replies use ${tierLabel(opts.model)}. Choose with /model ${TIERS.map(t=>t[0]).join(' | ')}, or the Model menu.`); return; }
+    const low=arg.toLowerCase(), t=TIERS.find(([v,l])=>v===low || l.toLowerCase().startsWith(low));
+    if(!t){ toast(`No model called “${arg}”. Choose ${TIERS.map(t=>t[0]).join(', ')}.`); return; }
+    opts.model=t[0]; save(); keepDraft(()=>animRender([at])); toast(`Next replies use ${tierLabel(t[0])}.`); return;
+  }
+  if(name==='btw'){ if(ready()) askSide(at, arg); return; }
+  if(name==='loop'){ if(ready()) startLoop(at, arg); return; }
+  if(name==='rewind'){ return rewindMenu(at); }
+  if(name==='compact'){ if(ready()) openDistill(at); return; }
+  if(name==='review'){ if(!ready()) return; if(!S.nodes[at].reply){ toast(`#${at} has no reply to review yet.`); return; } openReview(at); if(arg && reviewAsk){ reviewAsk.text=arg+'\n\n{material}'; animRender([at]); } return; }
+  if(name==='branch'){
+    const name2=arg.trim();
+    if(!NAME_RE.test(name2)){ toast('Use letters, numbers, dots, dashes, slashes or underscores (no spaces).'); return; }
+    const onTip = S.head && S.refs[S.head] && S.refs[S.head].tip===at;
+    if(onTip) return renameRef(S.head, name2);
+    if(namesIn(convOf(at)).has(name2)){ toast(`This chat already has a branch named ${name2}.`); return; }
+    commit(`Started branch ${name2} at #${at}`, ()=>{ S.head=newRef(name2, at); });
+    return;
+  }
+  if(name==='clear'){ closeDrawers(); pick=null; composeFor='root'; render(); const t=document.getElementById('composeText'); if(t) t.focus({preventScroll:true}); return; }
+  if(name==='export'){ copyText(pathMarkdown(at), true).then(ok=>{ if(ok) toast(`Copied the line up to #${at} as Markdown.`); }); return; }
+}
+const tierLabel = v => (TIERS.find(t=>t[0]===v)||[v,v])[1].replace(/ \(.*\)/,'');
+/* cards above the input box: a side answer, a running loop, and the panels from /help, /context and /cost */
+function cmdCardsHTML(forId){
+  let h='';
+  if(loop && loop.sid===DB.current) h+=loopHTML();
+  if(side && side.sid===DB.current) h+=sideHTML();
+  if(cmdPanel && (cmdPanel.at==null || S.nodes[cmdPanel.at])) h+=panelHTML(forId);
+  return h;
+}
+function paintCmds(at){ keepDraft(()=>animRender([at ?? sel])); }
+function panelHTML(forId){
+  const p=cmdPanel, at=p.at ?? forId, close='<button class="rmore" data-cmdclose>Close</button>';
+  if(p.kind==='help') return `<div class="fan cmdcard" data-key="cmdhelp"><div class="fanhead"><b>Commands</b><span class="note">type / in the input box</span>${close}</div>
+    <table class="cmdtable">${COMMANDS.map(c=>`<tr><td><code>/${c.name}</code>${c.args?` <span class="note">${esc(c.args)}</span>`:''}</td><td>${esc(c.desc)}</td></tr>`).join('')}</table>
+    <p class="note">Your saved prompts are listed after the commands. Anything else that starts with / is sent as written.</p></div>`;
+  if(at==null || !S.nodes[at]) return '';
+  if(p.kind==='context'){
+    const ents=contextEntries(at), parts=[], add=(label, text, extra='')=>{ if(text) parts.push({label, b:enc?enc.encode(text).length:text.length, t:Math.ceil(text.length/4), extra}); };
+    add('System prompt (model settings)', (settingsFor(at).values.system||'').trim());
+    add('Standing instructions', promptText('instructions').trim());
+    if(S.files && S.files.length) add(`Project files (${S.files.length})`, S.files.map(fileBlock).join('\n\n'));
+    const turns=[]; let pText='', rText='', fText='', seams=0, skipped=0, np=0, nr=0;
+    for(const e of ents){
+      if(e.seam){ seams++; pText+=e.text; continue; }
+      const n=S.nodes[e.id]; if(n.kind==='merge') continue;
+      if(n.skip && e.id!==at){ skipped++; continue; }
+      const fl=(n.files||[]).map(fileBlock).join('\n\n'); fText+=fl;
+      if(n.text){ pText+=n.text; np++; } if(n.reply){ rText+=n.reply; nr++; }
+      turns.push({id:e.id, size:(n.text||'').length+(n.reply||'').length+fl.length});
+    }
+    add(`Your prompts (${np})${seams?` and ${seams} merge note${seams===1?'':'s'}`:''}`, pText);
+    add(`Claude’s replies (${nr})`, rText);
+    add('Attached files', fText);
+    const big=turns.sort((a,b)=>b.size-a.size).slice(0,3).filter(x=>x.size>2000);
+    return `<div class="fan cmdcard" data-key="cmdctx"><div class="fanhead"><b>Context from #${at}</b><span class="note">what your next prompt sends, before you type it</span>${close}</div>
+      <table class="cmdtable">${parts.map(x=>`<tr><td>${esc(x.label)}</td><td class="num">${fmtSize(x.b)}</td><td class="num">~${x.t.toLocaleString()} tok</td></tr>`).join('')}</table>
+      ${meterHTML(turnsFor(at,true))}
+      ${skipped?`<p class="note">${skipped} prompt${skipped===1?' is':'s are'} left out and not sent.</p>`:''}
+      ${big.length?`<p class="note">Largest turns: ${big.map(x=>`<button class="rmore" data-goto="${x.id}">#${x.id}</button> ${fmtSize(x.size)}`).join(' · ')}. Leave one out to send less.</p>`:''}</div>`;
+  }
+  if(p.kind==='cost'){
+    const sum=ids=>{ const o={n:0, input:0, output:0, cacheRead:0, cacheWrite:0, cost:0, anyCost:false}; for(const x of ids){ const u=S.nodes[x] && S.nodes[x].usage; if(!u) continue; o.n++; o.input+=u.input||0; o.output+=u.output||0; o.cacheRead+=u.cacheRead||0; o.cacheWrite+=u.cacheWrite||0; if(u.cost!=null){ o.cost+=u.cost; o.anyCost=true; } } return o; };
+    const root=convOf(at), line=sum(path(at)), chat=sum(all().filter(n=>convOf(n.id)===root).map(n=>n.id));
+    const row=(l,o)=>`<tr><td>${l}</td><td class="num">${o.n}</td><td class="num">${o.input.toLocaleString()}${o.cacheRead?` <span class="note">+${o.cacheRead.toLocaleString()} cached</span>`:''}</td><td class="num">${o.output.toLocaleString()}</td><td class="num">${o.anyCost?fmtCost(o.cost):'—'}</td></tr>`;
+    return `<div class="fan cmdcard" data-key="cmdcost"><div class="fanhead"><b>Cost</b><span class="note">as each reply reported it</span>${close}</div>
+      <table class="cmdtable"><tr class="note"><td></td><td class="num">Replies</td><td class="num">Tokens in</td><td class="num">Out</td><td class="num">Cost</td></tr>${row(`This line, up to #${at}`, line)}${row('The whole chat, every branch', chat)}</table>
+      <p class="note">Replies written before Treechats recorded usage, and side questions you didn’t keep, aren’t counted. Cost uses each model’s published price.</p></div>`;
+  }
+  return '';
+}
+
+/* /btw: a side question. It sends the context of the prompt you're on plus the question, shows the answer here,
+   and adds nothing to the tree unless you keep it, which makes it a branch with the question and answer. */
+let side=null;
+async function askSide(at, q){
+  if(side && side.ctl) side.ctl.abort();
+  const n=S.nodes[at];
+  const s={sid:DB.current, at, q, text:'', status:'loading', ctl:new AbortController(), tier:opts.model, sig:ctxSig(at), partial: !!liveGen(at)};
+  side=s; cmdPanel=null; paintCmds(at);
+  const turns=turnsFor(at, true).concat({role:'user', content:q});
+  try{
+    const r=await sampleFn(turns, {modelTier:s.tier, cache:false, signal:s.ctl.signal, settings:settingsFor(at).values, onText:({text})=>{ if(side!==s) return; s.text=text; const b=document.querySelector('.sidecard .rbody'); if(b) b.innerHTML=md(text); }});
+    if(side!==s) return;
+    s.text=r.text; s.usage=r.usage||null; s.model=r.modelTierApplied; s.status='done';
+  }catch(e){
+    if(side!==s) return;
+    s.status = e && e.code==='cancelled' ? (s.text ? 'done' : 'stopped') : 'error'; s.error=errCopy(e && e.code);
+  }
+  s.ctl=null; if(s.sid===DB.current) paintCmds(s.at);
+}
+function sideHTML(){
+  const s=side;
+  const acts = s.status==='loading' ? '<button class="btn" data-sidestop>Stop</button>'
+    : `${s.text?`<button class="btn" data-sidekeep title="Adds the question and this answer as a new branch from #${s.at}. You stay where you are.">Keep as a branch</button><button class="btn" data-sidecopy>Copy</button>`:''}<button class="btn" data-sideclose>Close</button>`;
+  return `<div class="fan cmdcard sidecard" data-key="side"><div class="fanhead"><b>By the way</b><span class="note">from #${s.at}’s context · not added to the chat</span></div>
+    <p class="sideq">${esc(s.q)}</p>
+    <div class="rbody">${s.text ? md(s.text) : s.status==='loading' ? '<em class="thinking">Claude is answering…</em>' : ''}</div>
+    ${s.status==='error'?`<p class="note">${esc(s.error||'No answer came back.')}</p>`:''}${s.partial?'<p class="note">The reply to #'+s.at+' was still being written, so Claude didn’t see it.</p>':''}${s.usage&&s.usage.cost!=null?`<p class="note">${fmtCost(s.usage.cost)}</p>`:''}
+    <div class="bar">${acts}</div></div>`;
+}
+function keepSide(){
+  const s=side; if(!s || !s.text || !S.nodes[s.at] || s.sid!==DB.current) return;
+  const nid=S.nextId; let name='';
+  commit('', ()=>{
+    S.nextId++; S.nodes[nid]={id:nid, parents:[s.at], text:s.q, reply:s.text, btw:true};
+    if(s.sig) S.nodes[nid].ctx=s.sig; if(s.usage) S.nodes[nid].usage=s.usage; if(s.model) S.nodes[nid].model=s.model;
+    name=slugName('btw', convOf(s.at)); newRef(name, nid);
+  }, {quiet:true});
+  side=null; paintCmds(s.at);
+  toast(`Kept the side question as #${nid} on a new branch, ${name}.`, true, {label:'Go to it', fn:()=>{ simpleTip=null; select(nid); }});
+}
+
+/* /loop: sends the same prompt again after each reply. It stops after a set number of times, when an optional
+   condition is met (one quick request after each reply asks whether it is, and the answer is noted under that
+   reply), or when you stop it. With "every", it waits between sends, for as long as Treechats stays open. */
+let loop=null, loopSeq=0;
+function parseLoop(arg){
+  let rest=arg.trim(), times=null, every=null, until=null, m;
+  if((m=rest.match(/(?:^|\s)until:\s*([\s\S]+)$/i))){ until=m[1].trim(); rest=rest.slice(0, m.index).trim(); }
+  for(;;){
+    if(times==null && (m=rest.match(/^(\d{1,3})\s*(?:x|times)?\s+/i))){ times=+m[1]; rest=rest.slice(m[0].length); continue; }
+    if(every==null && (m=rest.match(/^(?:every\s+)?(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?)\b\s*/i))){ const k=m[2][0].toLowerCase(); every=+m[1]*(k==='s'?1e3:k==='m'?6e4:36e5); rest=rest.slice(m[0].length); continue; }
+    break;
+  }
+  return {prompt:rest.trim(), times, every, until};
+}
+const fmtDur = ms => ms>=36e5 && ms%36e5===0 ? `${ms/36e5} h` : ms>=6e4 && ms%6e4===0 ? `${ms/6e4} min` : `${Math.round(ms/1000)} s`;
+function startLoop(at, arg){
+  if(loop){ toast('A loop is already running. Stop it before starting another.'); return; }
+  const p=parseLoop(arg);
+  if(!p.prompt){ toast('Say what to send: /loop 3 Make it shorter, or /loop Improve it until: under 100 words.'); return; }
+  if(p.every!=null && p.every<10e3){ toast('Wait at least 10 seconds between sends.'); return; }
+  const times=Math.min(50, Math.max(1, p.times ?? (p.every ? 12 : p.until ? 10 : 3)));
+  const L={id:++loopSeq, sid:DB.current, tip:at, prompt:p.prompt, times, every:p.every, until:p.until, done:0, status:'starting', stop:false};
+  loop=L; cmdPanel=null;
+  runLoop(L).catch(e=>{ L.end=`Loop stopped: ${e && e.message || e}`; }).finally(()=>{
+    if(loop===L) loop=null;
+    if(L.sid===DB.current) paintCmds(sel);
+    toast(L.end || `Loop finished after ${L.done} of ${L.times}.`);
+  });
+}
+function loopApply(L, fn, msg){
+  let out;
+  if(L.sid===DB.current){
+    const follow = sel===L.tip || composeParent()===L.tip;
+    if(msg) commit(msg, ()=>{ out=fn(); if(out!=null && follow){ sel=out; if(opts.simple) simpleTip=null; } }, {quiet:true});
+    else { out=fn(); save(); render(); }
+  } else { out=withTree(treeOf(L.sid), fn); save(); }
+  return out;
+}
+function loopSleep(L, ms){
+  return new Promise(res=>{
+    L.next=Date.now()+ms;
+    const tick=setInterval(()=>{ if(L.stop){ clearInterval(tick); clearTimeout(L.timer); res(false); return; } const el=document.querySelector('.loopbar .loopwhen'); if(el) el.textContent=loopWhen(L); }, 1000);
+    L.wake=()=>{ clearInterval(tick); clearTimeout(L.timer); res(!L.stop); };
+    L.timer=setTimeout(()=>{ clearInterval(tick); res(!L.stop); }, ms);
+  });
+}
+function loopWhen(L){
+  if(L.status==='waiting'){ const s=Math.max(0, Math.round((L.next-Date.now())/1000)); return `Next send in ${s>=60?`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`:`${s} s`}`; }
+  if(L.status==='sending') return `Waiting for the reply to #${L.cur}…`;
+  if(L.status==='checking') return `Checking whether the condition is met…`;
+  return 'Starting…';
+}
+async function runLoop(L){
+  const t=()=>treeOf(L.sid);
+  while(!L.stop){
+    if(L.done>=L.times){ L.end=`Loop finished: sent ${L.times} time${L.times===1?'':'s'}.`; return; }
+    if(!t() || !t().nodes[L.tip]){ L.end='Loop stopped: the prompt it was continuing from was deleted.'; return; }
+    if(L.done>0 && L.every){ L.status='waiting'; paintLoop(L); if(!await loopSleep(L, L.every)) break; }
+    const i=L.done+1;
+    const nid=loopApply(L, ()=>{
+      const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[L.tip], text:L.prompt, loop:{id:L.id, i, of:L.times, ...(L.until?{until:L.until}:{})}};
+      const rids=refsAt(L.tip); if(rids.length) for(const r of rids) S.refs[r].tip=nid; else newRef(autoName(convOf(L.tip)), nid);
+      return nid;
+    }, `Loop: sent ${i} of ${L.times}`);
+    L.cur=nid; L.status='sending'; paintLoop(L);
+    const wait=awaitReply(L.sid, nid); wantReplies([nid], L.sid);
+    const res=await wait;
+    if(res.error){ L.end=`Loop stopped at #${nid}: ${res.error}`; return; }
+    L.tip=nid; L.done=i;
+    if(L.until && !L.stop){
+      L.status='checking'; paintLoop(L);
+      const c=await loopCheck(L, nid);
+      loopApply(L, ()=>{ const n=S.nodes[nid]; if(n) n.loopCheck=c; return null; }, null);
+      if(c.met){ L.end=`Loop finished after ${i}: the condition is met. ${c.why||''}`.trim(); return; }
+    }
+  }
+  L.end=`Loop stopped after ${L.done} of ${L.times}.`;
+}
+async function loopCheck(L, id){
+  const turns=withTree(treeOf(L.sid), ()=>turnsFor(id, true)).slice(-4);
+  const conversation=clip(turns.map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 16000);
+  try{
+    const d=await sampleFn.json(fillPrompt('loopCheck', {condition:L.until, conversation}), {modelTier:'quick', cache:false});
+    if(!d || typeof d.met!=='boolean') return {met:false, why:'The check didn’t give a clear answer, so the loop carries on.', unclear:true};
+    return {met:d.met, why:String(d.why||'').trim()};
+  }catch(e){ return {met:false, why:'The check failed, so the loop carries on.', unclear:true}; }
+}
+function paintLoop(L){ if(L.sid!==DB.current) return; const el=document.querySelector('.loopbar'); if(el) el.outerHTML=loopHTML(); else paintCmds(sel); }
+function loopHTML(){
+  const L=loop;
+  return `<div class="fan cmdcard loopbar" data-key="loop"><div class="fanhead"><b>Loop · ${L.done} of ${L.times} sent</b><span class="note loopwhen">${loopWhen(L)}</span><button class="rmore" data-loopstop title="Nothing more is sent. A reply already on its way still arrives.">Stop</button></div>
+    <p class="note">Sending “${esc(clip(L.prompt, 140))}”${L.until?`, until: ${esc(clip(L.until, 120))}`:''}${L.every?`, every ${fmtDur(L.every)} while Treechats is open`:''}.</p></div>`;
+}
+function stopLoop(){ const L=loop; if(!L) return; L.stop=true; if(L.wake) L.wake(); paintLoop(L); }
+
+/* /rewind: the prompts on this line, newest first. Choosing one continues from it, so what you send next forks
+   there; what came after stays on its branch, one ‹ › away. */
+function rewindMenu(at){
+  const box=document.getElementById('contText'); if(!box) return;
+  const line=chain(at).filter(x=>S.nodes[x].kind!=='merge').reverse().slice(1);
+  if(!line.length){ toast('This is the first prompt of the chat, so there’s nothing to go back to.'); return; }
+  openMenu(box, [{heading:'Continue from'}, ...line.slice(0, 30).map(x=>({label:`#${x} · ${clip(plainText(S.nodes[x].text||'').replace(/\s+/g,' '), 60)}`, run:()=>rewindTo(x)}))]);
+}
+function rewindTo(id){
+  if(!S.nodes[id]) return;
+  if(opts.simple){ sel=id; simpleTip=id; setActivePath(id); render(); }
+  else select(id);
+  const t=document.getElementById('contText'); if(t) t.focus({preventScroll:true});
+  toast(`Continuing from #${id}. What you send next starts a new branch; what came after stays on its own.`);
+}
+
+/* the list that opens under the input box while you type a command */
+let slash=null;
+function slashItems(q, root){
+  const low=q.toLowerCase(), out=[];
+  for(const c of COMMANDS) if((!root || c.root) && c.name.startsWith(low)) out.push({cmd:c});
+  if(low.length) for(const c of COMMANDS) if((!root || c.root) && !c.name.startsWith(low) && fuzzy(low, c.name+' '+c.desc)>0) out.push({cmd:c});
+  const saved=savedPrompts().filter(sp=>!low || fuzzy(low, sp.name)>0).slice(0, 8);
+  if(saved.length) out.push({heading:'Saved prompts'}, ...saved.map(sp=>({saved:sp})));
+  return out;
+}
+function updateSlash(box){
+  const v=box.value, root=box.id==='composeText';
+  let items=null, hint=false;
+  const m=v.match(/^\/([a-z]*)$/i);
+  if(m) items=slashItems(m[1], root);
+  else { const m2=v.match(/^\/([a-z]+)\s/i), c=m2 && COMMANDS.find(x=>x.name===m2[1].toLowerCase()); if(c && c.args && !v.includes('\n')){ items=[{cmd:c}]; hint=true; } }
+  if(!items || !items.some(x=>!x.heading)){ closeSlash(); return; }
+  const keep = slash && slash.box===box && !hint ? slash.i : 0;
+  slash={box, items, hint, i:Math.min(keep, items.length-1)};
+  if(slash.items[slash.i].heading) slash.i=slash.items.findIndex(x=>!x.heading);
+  paintSlash();
+}
+function paintSlash(){
+  const s=slash; let el=document.getElementById('slashPop');
+  if(!el){ el=document.createElement('div'); el.id='slashPop'; el.className='slashpop'; el.setAttribute('role','listbox'); el.addEventListener('pointerdown', e=>e.preventDefault()); el.addEventListener('click', e=>{ const b=e.target.closest('[data-slashi]'); if(b && slash){ slash.i=+b.dataset.slashi; acceptSlash(true); } }); document.body.append(el); }
+  el.innerHTML = s.items.map((x,i)=>x.heading ? `<div class="mh">${esc(x.heading)}</div>`
+    : x.cmd ? `<button type="button" role="option" data-slashi="${i}" class="${i===s.i?'on':''}" aria-selected="${i===s.i}"><code>/${x.cmd.name}</code>${x.cmd.args?`<span class="sargs">${esc(x.cmd.args)}</span>`:''}<span class="sdesc">${esc(x.cmd.desc)}</span></button>`
+    : `<button type="button" role="option" data-slashi="${i}" class="${i===s.i?'on':''}" aria-selected="${i===s.i}"><b>${esc(x.saved.name)}</b><span class="sdesc">${esc(clip(x.saved.text.replace(/\s+/g,' '), 90))}</span></button>`).join('')
+    + (s.hint ? '' : '<p class="shelp">↑↓ to choose · Tab to fill in · Enter to run</p>');
+  const r=s.box.getBoundingClientRect(), w=Math.min(Math.max(Math.min(r.width, 620), 360), innerWidth-16);
+  el.style.width=w+'px'; el.style.left=Math.max(8, Math.min(r.left, innerWidth-w-8))+'px';
+  const h=el.offsetHeight, above=r.top-6-h;
+  el.style.top=(above>8 && (r.bottom+6+h>innerHeight-8 || opts.simple) ? above : Math.min(r.bottom+6, innerHeight-h-8))+'px';
+  const on=el.querySelector('.on'); if(on) on.scrollIntoView({block:'nearest'});
+}
+function closeSlash(){ slash=null; const el=document.getElementById('slashPop'); if(el) el.remove(); }
+function moveSlash(d){ const s=slash, n=s.items.length; let i=s.i; do{ i=(i+d+n)%n; } while(s.items[i].heading); s.i=i; paintSlash(); }
+/* run: Enter or a click; otherwise Tab, which only fills in */
+function acceptSlash(run){
+  const s=slash; if(!s) return false; const x=s.items[s.i], box=s.box; if(!x) return false;
+  if(x.saved){ box.value=''; closeSlash(); insertSaved(box, x.saved); return true; }
+  if(s.hint) return false; /* the command is typed with its words: Enter sends it */
+  const c=x.cmd;
+  if(run && !c.need){ const parent = box.id==='composeText' ? null : composeParent(); box.value='/'+c.name; submitPrompt(parent, '/'+c.name); return true; }
+  box.value='/'+c.name+' '; box.dispatchEvent(new Event('input', {bubbles:true})); box.focus({preventScroll:true}); box.setSelectionRange(box.value.length, box.value.length);
+  return true;
+}
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
 /* A prompt with its {placeholders} filled. A value whose placeholder was edited out is added at the end, so Claude
    always gets the material. Tools that need a set answer shape get it appended, since Treechats reads the answer. */
@@ -1140,6 +1475,8 @@ function uniqueSpaceName(base){ const used=new Set(spaceIds().map(id=>DB.spaces[
 function spaceStats(tree){ return withTree(tree, ()=>({convs:vRoots().length, prompts:all().filter(n=>n.kind!=='merge').length})); }
 function enterSpace(sid){
   DB.current=sid; S=DB.spaces[sid].tree; lastConv=null; pickingRows=false;
+  /* a stretch or picks belong to the project they were made in */
+  try{ range=null; alsoTargets.clear(); }catch(e){ /* not declared yet during first load */ }
   if(!S.fold) S.fold={}; if(!S.convs) S.convs={}; if(!S.active) S.active={};
   if(typeof noteExistingRefs==='function') noteExistingRefs();
   const want=DB.spaces[sid].sel;
@@ -1420,7 +1757,8 @@ function commit(msg, fn, o={}){
   if(choosing!=null) finishChoosing(true);
   const before = JSON.stringify(S), prevSel = sel;
   const pre = {}; for(const [rid,r] of Object.entries(S.refs||{})) pre[rid] = S.nodes[r.tip] ? chain(r.tip) : [];
-  fn();
+  /* the graph cache describes the tree before the change; changes always read the live tree */
+  G=null; fn(); G=null;
   DB.spaces[DB.current].tree=S;
   if(!S.refs || !S.active) migrate();
   /* a branch whose tip was deleted falls back to its nearest surviving ancestor, like a reset */
@@ -1445,8 +1783,10 @@ function pushUndo(e){ undoStack.push(e); if(undoStack.length>120) undoStack.shif
 function capture(e){ return e.kind==='store' ? {kind:'store', s:snapshotDB()} : {kind:'tree', sid:e.sid, s:JSON.stringify(DB.spaces[e.sid].tree)}; }
 function restore(e){
   if(e.kind==='store'){
-    const was=DB.spaces;
+    const was=DB.spaces, wasNext=DB.nextSpace;
     Object.assign(DB, JSON.parse(e.s));
+    /* ids are never reused, or a project made after the undo could take the id of one an agent made meanwhile */
+    DB.nextSpace=Math.max(DB.nextSpace, wasNext);
     for(const sid of Object.keys(DB.spaces)) if(was[sid]) keepReplies(was[sid].tree, DB.spaces[sid].tree);
     /* agent run spaces are the agent's: your Undo leaves them exactly as they are */
     for(const [sid, sp] of Object.entries(was)) if(sp.agentRun){ DB.spaces[sid]=sp; if(!DB.order.includes(sid)) DB.order.unshift(sid); }
@@ -1651,7 +1991,7 @@ function fix(){
   if(sel!=null && !S.nodes[sel]) sel = defaultSel();
   else if(sel!=null && headTip()!=null && headTip()!==sel) sel = headTip();
   if(sel!=null){ setActivePath(sel); syncHead(); }
-  pick=null; composeFor=null; renaming=false; save();
+  pick=null; composeFor=null; renaming=false; range=null; pruneAlso(); save();
   showSelection(prevSel);
 }
 
@@ -2241,7 +2581,7 @@ function regenerate(id, newText){
   commit(edit ? '' : `Asking for another reply to #${id}. The old one is kept.`, ()=>{
     const gid = n.alt ?? n.id; n.alt = gid;
     nid=S.nextId++;
-    S.nodes[nid]={id:nid, parents:[...n.parents], text: edit ? newText : n.text, alt:gid}; if(n.kind) S.nodes[nid].kind=n.kind; if(n.files) S.nodes[nid].files=clone(n.files);
+    S.nodes[nid]={id:nid, parents:[...n.parents], text: edit ? newText : n.text, alt:gid}; if(n.kind) S.nodes[nid].kind=n.kind; if(n.files) S.nodes[nid].files=clone(n.files); if(n.set) S.nodes[nid].set=clone(n.set);
     S.active[gid]=nid;
     if(edit){ name=autoName(convOf(id)); S.head=newRef(name, nid); }
     else for(const rid of refsAt(id)) S.refs[rid].tip=nid;
@@ -2287,6 +2627,7 @@ function rangeAction(k){
   if(k==='squash'){ range=null; pick={op:'squash', src:last}; finishPick(first); return; }
   if(k==='splice'){
     range=null;
+    const above=S.nodes[first] ? S.nodes[first].parents[0] : null, after=vKids(last)[0];
     commit(`Spliced out #${first}–#${last}`, ()=>{
       for(const id of [...asks].reverse()){
         const n=S.nodes[id]; if(!n) continue;
@@ -2294,7 +2635,9 @@ function rangeAction(k){
         for(const r of Object.values(S.refs)) if(r.tip===id) r.tip=n.parents[0] ?? r.tip;
         delete S.nodes[id];
       }
-      const p0=S.nodes[first] ? first : null; sel = p0 ?? (ids.map(x=>S.nodes[x]).find(Boolean)||{}).id ?? defaultSel();
+      /* a merge whose sides now share their history merges nothing: drop the side already in the line */
+      for(const n of Object.values(S.nodes)) if(n.kind==='merge' && n.parents.length>1){ const base=new Set(path(n.parents[0])); n.parents=[n.parents[0], ...n.parents.slice(1).filter(p=>!base.has(p))]; }
+      sel = after && S.nodes[after.id] ? after.id : above!=null && S.nodes[above] ? above : (ids.map(x=>S.nodes[x]).find(Boolean)||{}).id ?? defaultSel();
     });
     return;
   }
@@ -2344,7 +2687,7 @@ function replayHTML(){
     : r.onto!=null
     ? `Carry the ${n} prompt${n===1?'':'s'} that followed the original #${r.from} over to this version, and get new replies to ${n===1?'it':'them'}.`
     : `Re-send ${n===1?`#${first}`:n===2?`#${first} and #${last}`:`#${first} and the ${n-1} prompts below it (down to #${last})`} with the context as it is now, one at a time.`;
-  const checks = m==='off' || n<2 ? 0 : n-1 + (r.onto!=null ? 1 : 0);
+  const checks = m==='off' ? 0 : Math.max(0, n-1) + (r.onto!=null ? 1 : 0);
   const cost = `${n} request${n===1?'':'s'}${checks?`, plus up to ${checks} quick check${checks===1?'':'s'}`:''}`;
   const modes = n>1 || r.onto!=null ? `<div class="vgroup fitmodes" role="group" aria-label="When a prompt no longer fits"><span>When a prompt no longer fits</span>${FIT_MODES.map(([v,l,t])=>`<button class="seg" data-replayfit="${v}" aria-pressed="${m===v}" title="${esc(t)}">${l}</button>`).join('')}</div>` : '';
   return `<div class="fan replay" data-key="rp${r.at}"><div class="fanhead"><b>${AI}Replay</b><span class="note">${cost}</span><button class="rmore" data-replaycancel>Cancel</button></div>
@@ -2355,7 +2698,7 @@ function replayHTML(){
 /* one prompt of the line, copied under `parent` (or beside the original as a new version), in the tree in S */
 function copyOne(o, parent, asVersion, by, text, rewrite){
   const nid=S.nextId++, c={id:nid, text: text ?? (o.text||'')};
-  for(const k of ['kind','files','skip','note','from','into','seam']) if(o[k]!=null) c[k]=clone(o[k]);
+  for(const k of ['kind','files','skip','note','from','into','seam','set']) if(o[k]!=null) c[k]=clone(o[k]);
   if(o.model) c.askTier=o.model;
   if(by) c.by=by;
   if(rewrite) c.rewritten=rewrite;
@@ -2863,6 +3206,9 @@ const Agent=(()=>{
   /* changes go straight into the run space's tree, outside commit(), so they never enter your Undo */
   function change(sid, fn){
     const t=DB.spaces[sid].tree, out=withTree(t, fn);
+    /* as after your own changes: a branch whose prompts are gone goes too, and the view moves off deleted prompts */
+    for(const [rid, r] of Object.entries(t.refs||{})) if(!t.nodes[r.tip]) delete t.refs[rid];
+    if(t.head && !t.refs[t.head]) t.head=null;
     undoStack=undoStack.filter(e=>e.sid!==sid); redoStack=redoStack.filter(e=>e.sid!==sid);
     save(); if(sid===DB.current){ render(); } else renderSpaces();
     return out;
@@ -2891,6 +3237,8 @@ const Agent=(()=>{
   }
   const replayLine = (t, a) => a.until!=null ? (()=>{ const c=withTree(t, ()=>chain(a.until)), i=c.indexOf(a.prompt); if(i<0) throw new Error(`#${a.prompt} isn’t on the line up to #${a.until}.`); return c.slice(i); })() : agentLine(t, a.prompt, a.branch);
   const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
+  /* a point to continue from: a prompt, or a merge point (a branch tip after a merge) */
+  const point = (t, id) => { const n=t.nodes[id]; if(!n) throw new Error(`There is no prompt #${id} in this run.`); return n; };
   /* model settings an agent asks for on spawn or fork: they apply to that prompt and the ones after it */
   function agentSettings(a){
     const st={};
@@ -2933,7 +3281,7 @@ const Agent=(()=>{
       let after=a.after;
       if(after==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); after=r.tip; }
       if(after==null) throw new Error('Say where to continue: after (a prompt number) or branch.');
-      need(t, after);
+      point(t, after);
       const id=change(sid, ()=>{
         const nid=addTurn(S, after, a.prompt, by, tierOf(a.model));
         const rids=refsAt(after); if(rids.length) S.refs[rids[0]].tip=nid; else newRef(autoName(convOf(after)), nid);
@@ -2941,9 +3289,35 @@ const Agent=(()=>{
       });
       return reply(sid, id, {...where(sid,id), message:'Asked'});
     },
+    /* /loop for agents: the same prompt again after each reply, up to times, or until a quick check says the
+       condition is met (that verdict is noted under the reply, as in the page) */
+    async loop(a){
+      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
+      let after=a.after;
+      if(after==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); after=r.tip; }
+      if(after==null) throw new Error('Say where to loop from: after (a prompt number) or branch.');
+      point(t, after);
+      const times=Math.min(20, Math.max(1, a.times||3)), L={id:'a'+(++loopSeq), sid, until:a.until||null};
+      let requests=0, last=null, lastReply='', met=null, sent=0, stopNote='';
+      for(let i=1; i<=times; i++){
+        const nid=change(sid, ()=>{
+          const nid=addTurn(S, after, a.prompt, by, tierOf(a.model)); S.nodes[nid].loop={id:L.id, i, of:times, ...(L.until?{until:L.until}:{})};
+          const rids=refsAt(after); if(rids.length) for(const r of rids) S.refs[r].tip=nid; else newRef(autoName(convOf(after)), nid);
+          return nid;
+        });
+        const w=awaitReply(sid, nid); wantReplies([nid], sid); const r=await w; requests++;
+        if(r.error){ stopNote=` Stopped at #${nid}: ${r.error}`; last=nid; break; }
+        after=nid; last=nid; lastReply=r.reply; sent=i;
+        if(L.until){ const c=await loopCheck(L, nid); requests++; change(sid, ()=>{ S.nodes[nid].loopCheck=c; }); if(c.met){ met=c; break; } }
+      }
+      const msg = met ? `Looped ${sent} time${sent===1?'':'s'}; the condition is met at #${last}${met.why?` (${met.why.replace(/\.$/,'')})`:''}`
+        : `Looped ${sent} time${sent===1?'':'s'}${L.until?' and the condition wasn’t met':''}`;
+      return {...where(sid,last), prompt:last, reply:lastReply, requests, message:msg+stopNote};
+    },
     async fork(a){
       const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
-      need(t, a.at);
+      point(t, a.at);
       const id=change(sid, ()=>{
         const nid=addTurn(S, a.at, a.prompt, by, tierOf(a.model));
         const st=agentSettings(a); if(st) S.nodes[nid].set=st;
@@ -2971,7 +3345,7 @@ const Agent=(()=>{
         const gid=n.alt ?? n.id; n.alt=gid;
         const nid=S.nextId++;
         S.nodes[nid]={id:nid, parents:[...n.parents], text:n.text, alt:gid, by};
-        if(n.files) S.nodes[nid].files=clone(n.files);
+        if(n.files) S.nodes[nid].files=clone(n.files); if(n.set) S.nodes[nid].set=clone(n.set);
         const tier=tierOf(a.model)||n.model; if(tier) S.nodes[nid].askTier=tier;
         S.active[gid]=nid;
         for(const rid of refsAt(n.id)) S.refs[rid].tip=nid;
@@ -3011,7 +3385,7 @@ const Agent=(()=>{
         const gid=n.alt ?? n.id; n.alt=gid;
         const nid=S.nextId++;
         S.nodes[nid]={id:nid, parents:[...n.parents], text:String(a.text), alt:gid, by};
-        if(n.files) S.nodes[nid].files=clone(n.files);
+        if(n.files) S.nodes[nid].files=clone(n.files); if(n.set) S.nodes[nid].set=clone(n.set);
         const tier=tierOf(a.model)||n.model; if(tier) S.nodes[nid].askTier=tier;
         S.active[gid]=nid; name=autoName(convOf(n.id)); newRef(name, nid);
         return nid;
@@ -3050,7 +3424,7 @@ const Agent=(()=>{
         if(op==='star'){ const n=want(a.prompt); const on=a.value!==false; if(on) n.star=true; else delete n.star; msg=on?`Starred #${a.prompt}`:`Unstarred #${a.prompt}`; }
         else if(op==='note'){ const n=want(a.prompt); const txt=String(a.text||'').trim(); if(a.value===false || !txt){ delete n.note; msg=`Cleared the note on #${a.prompt}`; } else { n.note = a.append && n.note ? n.note+'\n\n'+txt : txt; msg=`Noted on #${a.prompt} (never sent to the model)`; } }
         else if(op==='branch'){ want(a.prompt); const name=a.name && NAME_RE.test(a.name) && !namesIn(convOf(a.prompt)).has(a.name) ? a.name : slugName(a.name||'branch', convOf(a.prompt)); newRef(name, a.prompt); msg=`Started branch ${name} at #${a.prompt}`; }
-        else if(op==='rename_branch'){ const r=Object.values(S.refs).find(r=>r.name===a.branch && S.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}".`); if(!a.name || !NAME_RE.test(a.name)) throw new Error('Give a new name: lowercase words joined by hyphens.'); msg=`Renamed ${r.name} to ${a.name}`; r.name=a.name; }
+        else if(op==='rename_branch'){ const r=Object.values(S.refs).find(r=>r.name===a.branch && S.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}".`); if(!a.name || !NAME_RE.test(a.name)) throw new Error('Give a new name: up to 40 letters, numbers, dots, dashes, slashes or underscores, with no spaces.'); if(a.name!==r.name && namesIn(convOf(r.tip)).has(a.name)) throw new Error(`This chat already has a branch named ${a.name}.`); msg=`Renamed ${r.name} to ${a.name}`; r.name=a.name; }
         else if(op==='make_mainline'){ want(a.prompt); const c=convOf(a.prompt), through=refsThrough(a.prompt); let rid=through.sort((x,y)=>chain(S.refs[x].tip).length-chain(S.refs[y].tip).length)[0]; const mains=Object.keys(S.refs).filter(r=>S.refs[r].name==='main' && S.nodes[S.refs[r].tip] && convOf(S.refs[r].tip)===c && r!==rid); if(!rid) rid=newRef(autoName(c), leafOf(a.prompt)); const was=S.refs[rid].name; for(const m of mains) S.refs[m].name=was; S.refs[rid].name='main'; msg=`The line through #${a.prompt} is now main`; }
         else if(op==='merge'){ want(a.prompt, 'prompt (the branch tip to merge)'); want(a.onto, 'onto (the prompt to merge into)'); if(path(a.onto).includes(a.prompt) || path(a.prompt).includes(a.onto)) throw new Error('Those are on the same line; there is nothing to merge.'); const into=refsAt(a.onto), from=refsAt(a.prompt).map(refName)[0]||`#${a.prompt}`, intoName=into.map(refName)[0]||`#${a.onto}`; const mid=S.nextId++; S.nodes[mid]={id:mid, kind:'merge', parents:[a.onto, a.prompt], text:'', from, into:intoName, by}; if(into.length) for(const rid of into) S.refs[rid].tip=mid; else newRef(autoName(convOf(a.onto)), mid); at=mid; msg=`Merged ${from} into ${intoName} at #${mid}`; }
         else if(op==='unmerge'){ const n=S.nodes[a.prompt]; if(!n) throw new Error(`There is no #${a.prompt} in this run.`); if(n.kind!=='merge') throw new Error(`#${a.prompt} isn’t a merge point.`); const p0=n.parents[0]; for(const k of kids(a.prompt)) k.parents=[...new Set(k.parents.map(q=>q===a.prompt?p0:q))]; for(const r of Object.values(S.refs)) if(r.tip===a.prompt) r.tip=p0; delete S.nodes[a.prompt]; msg=`Removed the merge at #${a.prompt}`; at=p0; }
@@ -3097,7 +3471,7 @@ const Agent=(()=>{
       let id=a.prompt;
       if(id==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); id=r.tip; }
       if(id==null) throw new Error('Say what to distill: prompt (a number) or branch.');
-      need(t, id);
+      if(point(t, id).kind==='merge' && a.save_as_note) throw new Error(`#${id} is a merge point, which can’t hold a note. Distill the prompt before it.`);
       const convo=withTree(t, ()=>turnsFor(id, true)).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n');
       const r=await sampleFn(fillPrompt('distill', {conversation:convo}), {modelTier:opts.model, cache:false});
       const brief=r.text.trim();
@@ -3204,6 +3578,8 @@ function paletteCommands(q){
     add(g, S.fold[sel] ? 'Show the prompts below' : 'Hide the prompts below', ()=>toggleFold(sel));
     if(n.kind!=='merge') add(g, n.star ? 'Unstar' : 'Star', ()=>toggleStar(sel));
     add(g, 'Copy context as a prompt', ()=>copyContextPrompt(sel));
+    /* the commands from the input box, so they can be found here too */
+    for(const c of COMMANDS) if(!c.root || c.name==='model') add('Commands (type / in the input box)', `/${c.name} · ${c.desc.replace(/\..*$/,'')}`, ()=>{ select(sel); setTimeout(()=>{ const t=document.getElementById('contText'); if(!t) return; if(c.need || c.args){ t.value='/'+c.name+' '; t.dispatchEvent(new Event('input', {bubbles:true})); t.focus(); t.setSelectionRange(t.value.length, t.value.length); } else submitPrompt(composeParent(), '/'+c.name); }, 30); });
     if(sampleState==='ready' && n.kind!=='merge') add(g, AI+'Distill the context into a brief', ()=>openDistill(sel));
     if(n.reply) add(g, 'Edit Claude’s reply', ()=>openReplyEdit(sel));
     add(g, 'Copy this path as Markdown', ()=>copyText(pathMarkdown(sel)));
@@ -3391,7 +3767,8 @@ function sendVariants(){
 function composerHTML(forId){
   if(forId!=='root' && variants) return variantsHTML(forId);
   if(forId==='root') return `<div class="composer root">
-    <textarea id="composeText" placeholder="First prompt of a new chat" aria-label="First prompt">${esc(draftRoot)}</textarea>
+    ${cmdCardsHTML(null)}
+    <textarea id="composeText" placeholder="First prompt of a new chat (type / for commands)" aria-label="First prompt">${esc(draftRoot)}</textarea>
     ${fileChips(pendingFiles, true)}
     <div class="bar"><button class="btn primary" data-compose="add-root">Start chat <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button><button class="btn" data-savedmenu="composeText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}</div>
     <p class="note">${sendNote()} Have a chat elsewhere? <button class="rmore" data-openimport>Import it</button>.</p></div>`;
@@ -3410,7 +3787,8 @@ function composerHTML(forId){
   return `<div class="composer">
     <p class="contLabel">${many ? `Reply to <b>${alsoTargets.size+1} prompts</b>, each in its own branch` : label}</p>
     ${also}
-    <textarea id="contText" placeholder="Your next prompt" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
+    ${cmdCardsHTML(forId)}
+    <textarea id="contText" placeholder="Your next prompt (type / for commands)" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
     ${fileChips(pendingFiles, true)}
     <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:'Send'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button><button class="btn" data-savedmenu="contText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
     ${replyBusy(forId)?'<p class="note">You can send now. Claude answers it as soon as the reply above is done.</p>':''}
@@ -3472,7 +3850,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(n.loop?`<span class="tag rwtag" title="${esc(`Sent by /loop, ${n.loop.i} of ${n.loop.of}${n.loop.until?`, until: ${n.loop.until}`:''}`)}">loop ${n.loop.i}/${n.loop.of}</span>`:'')+(n.btw?'<span class="tag rwtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -3491,7 +3869,8 @@ function rowHTML(id, pathSet){
   const txtE = editingHere ? `<div class="txt pedit" data-key="pe${id}"><textarea id="promptEditText" rows="${Math.min(14, Math.max(2, (n.text||'').split('\n').length+1))}" aria-label="Edit prompt #${id}">${esc(n.text||'')}</textarea>
     <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Starts a new branch with your edit and gets a reply. The original stays on its branch with everything after it.">Send on a new branch <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>`}<button class="btn" data-pedit="cancel">Cancel</button>${opts.simple?'':'<button class="linkbtn pinplace" data-pedit="save" title="Change the text where it is, without a new reply. The reply and everything after it stay as they were, and they\u2019re marked as written for the old wording.">Save in place instead</button>'}</div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
-  let h=opts.simple && !pick && n.rewritten ? `<div class="ptop"><span class="edtag" title="${esc(rwTitle(n))}">rewritten</span></div>` : '';
+  const ptags=[n.rewritten?`<span class="edtag" title="${esc(rwTitle(n))}">rewritten</span>`:'', n.loop?`<span class="edtag" title="Sent by /loop">loop ${n.loop.i} of ${n.loop.of}</span>`:'', n.btw?'<span class="edtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':''].filter(Boolean).join(' ');
+  let h=opts.simple && !pick && ptags ? `<div class="ptop">${ptags}</div>` : '';
   h+=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
@@ -3505,6 +3884,7 @@ function rowHTML(id, pathSet){
   }
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
+  if(n.loopCheck && shown) h+=`<p class="pnote loopnote" data-key="lc${id}"><span>Loop check</span>${n.loopCheck.met?'Met':'Not yet'}${n.loopCheck.why?`: ${esc(n.loopCheck.why)}`:''}</p>`;
   if(fan && fan.id===id) h+=fanHTML();
   if(distill && distill.id===id) h+=distillHTML();
   if(reviewAsk && reviewAsk.id===id) h+=reviewHTML();
@@ -3701,6 +4081,7 @@ function mergeBoxHTML(m, pathSet){
 treeEl.addEventListener('toggle', e=>{ const d=e.target; if(d.dataset && d.dataset.mergebox!=null){ const m=+d.dataset.mergebox; d.open ? openMerges.add(m) : openMerges.delete(m); } }, true);
 function scrollThreadEnd(){ requestAnimationFrame(()=>{ if(treeEl.querySelector('.simpleops')) window.scrollTo(0, document.documentElement.scrollHeight); }); }
 function renderTree(){
+  if(slash) queueMicrotask(()=>{ if(slash && !document.contains(slash.box)) closeSlash(); });
   const pathSet=new Set(sel!=null&&S.nodes[sel]?path(sel):[]);
   for(const x of pathSet) if(x!==sel && S.fold[x]) delete S.fold[x];
   trunk = new Set(Object.values(S.refs).filter(r=>r.name==='main' && S.nodes[r.tip]).flatMap(r=>chain(r.tip)));
@@ -4659,6 +5040,12 @@ treeEl.addEventListener('click', e=>{
   const co=e.target.closest('[data-co]'); if(co && !pick){ checkout(co.dataset.co); return; }
   if(e.target.closest('[data-renamehead]')){ renaming=true; animRender([sel]); return; }
   const sp=e.target.closest('[data-stop]'); if(sp){ stopReply(+sp.dataset.stop); return; }
+  if(e.target.closest('[data-cmdclose]')){ const at=cmdPanel && cmdPanel.at; cmdPanel=null; paintCmds(at); return; }
+  if(e.target.closest('[data-sideclose]')){ if(side){ const at=side.at; if(side.ctl) side.ctl.abort(); side=null; paintCmds(at); } return; }
+  if(e.target.closest('[data-sidestop]')){ if(side && side.ctl) side.ctl.abort(); return; }
+  if(e.target.closest('[data-sidekeep]')){ keepSide(); return; }
+  if(e.target.closest('[data-sidecopy]')){ if(side) copyText(side.text, true).then(ok=>{ if(ok) toast('Copied the answer.'); }); return; }
+  if(e.target.closest('[data-loopstop]')){ stopLoop(); return; }
   const ua2=e.target.closest('[data-unalso]'); if(ua2){ alsoTargets.delete(+ua2.dataset.unalso); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsoclear]')){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
   if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
@@ -4688,8 +5075,8 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-cancel]')){ const src=pick&&pick.src, wasAlso=pick&&pick.op==='also'; pick=null; keepDraft(()=>animRender([src, sel])); if(wasAlso){ const t=document.getElementById('contText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length, t.value.length); } } return; }
   const cmp=e.target.closest('[data-compose]');
   if(cmp){ const a=cmp.dataset.compose;
-    if(a==='add-root') addPrompt(null, document.getElementById('composeText').value);
-    else if(a==='cont') addPrompt(composeParent(), document.getElementById('contText').value);
+    if(a==='add-root') submitPrompt(null, document.getElementById('composeText').value);
+    else if(a==='cont') submitPrompt(composeParent(), document.getElementById('contText').value);
     else if(a==='renbranch'){ const v=document.getElementById('branchName').value; renaming=false; renameRef(S.head, v); animRender([sel]); }
     else if(a==='cancel-root'){ composeFor=null; animRender([sel]); }
     else { composeFor=null; renaming=false; animRender([sel]); }
@@ -4702,7 +5089,7 @@ treeEl.addEventListener('click', e=>{
   const id=+row.dataset.id;
   if(pick && pick.op==='also'){ if(id!==pick.src && S.nodes[id].kind!=='merge'){ alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); } return; }
   if(!pick && !opts.simple && sel!=null && id!==sel && e.shiftKey && !e.metaKey && !e.ctrlKey){ setRange(sel, id); return; }
-  if(!pick && sel!=null && id!==sel && (e.metaKey || e.ctrlKey)){ range=null; alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); return; }
+  if(!pick && sel!=null && id!==sel && (e.metaKey || e.ctrlKey)){ if(S.nodes[id].kind==='merge'){ toast('A merge point has no prompt of its own to pick.'); return; } range=null; alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); return; }
   if(range && !pick){ range=null; }
   if(!pick && id===sel){ if(!opts.simple) deselect(); return; }
   if(pick){ if(id===pick.src) return; if(validTarget(pick.op,pick.src,id)) finishPick(id); else toast(pick.op==='merge' ? 'That prompt is already on the same line as this branch, so there is nothing to merge.' : 'That prompt can’t be used here. It would create a loop or change nothing.'); return; }
@@ -4721,10 +5108,18 @@ treeEl.addEventListener('change', e=>{
 });
 treeEl.addEventListener('mouseover', e=>{ const b=e.target.closest('[data-hint]'); const h=document.getElementById('hint'); if(b&&h) h.textContent=b.dataset.hint; });
 treeEl.addEventListener('focusin', e=>{ const b=e.target.closest('[data-hint]'); const h=document.getElementById('hint'); if(b&&h) h.textContent=b.dataset.hint; });
+treeEl.addEventListener('focusout', e=>{ if(slash && e.target===slash.box) setTimeout(()=>{ if(slash && document.activeElement!==slash.box) closeSlash(); }, 120); });
+addEventListener('scroll', ()=>{ if(slash) paintSlash(); }, {passive:true});
 treeEl.addEventListener('keydown', e=>{
   const send = e.key==='Enter' && !e.isComposing && e.keyCode!==229 && (opts.sendKey==='mod' ? (e.metaKey||e.ctrlKey) : (!e.shiftKey && !e.altKey));
-  if(e.target.id==='composeText' && send){ e.preventDefault(); addPrompt(null, e.target.value); }
-  if(e.target.id==='contText' && send){ e.preventDefault(); addPrompt(composeParent(), e.target.value); }
+  if(slash && e.target===slash.box && !e.isComposing){
+    if(e.key==='ArrowDown' || e.key==='ArrowUp'){ if(!slash.hint){ e.preventDefault(); moveSlash(e.key==='ArrowDown'?1:-1); return; } }
+    else if(e.key==='Escape'){ e.preventDefault(); e.stopImmediatePropagation(); closeSlash(); return; }
+    else if(e.key==='Tab' && !e.shiftKey){ if(acceptSlash(false)){ e.preventDefault(); return; } }
+    else if(e.key==='Enter' && !e.shiftKey && !e.altKey){ if(acceptSlash(true)){ e.preventDefault(); return; } }
+  }
+  if(e.target.id==='composeText' && send){ e.preventDefault(); submitPrompt(null, e.target.value); }
+  if(e.target.id==='contText' && send){ e.preventDefault(); submitPrompt(composeParent(), e.target.value); }
   if(e.target.dataset && e.target.dataset.vtext!=null && send){ e.preventDefault(); sendVariants(); }
   if(fan && fan.status==='ready' && e.key==='Enter' && (e.metaKey||e.ctrlKey) && e.target.closest && e.target.closest('.fan')){ e.preventDefault(); fanCreate(); }
   if(e.target.id==='resendText' && send){ e.preventDefault(); const v=e.target.value.trim(); if(v) regenerate(resendFor, v); }
@@ -4785,7 +5180,7 @@ async function addFiles(list, target){
 treeEl.addEventListener('input', e=>{
   if(e.target.id==='distillText' && distill){ distill.text=e.target.value; const has=!!e.target.value.trim(); for(const b of treeEl.querySelectorAll('[data-dgo]')) if(b.dataset.dgo!=='again') b.disabled=!has; }
   if(e.target.id==='contText') draft=e.target.value; else if(e.target.id==='composeText') draftRoot=e.target.value;
-  if((e.target.id==='contText' || e.target.id==='composeText') && e.target.value==='/' && e.inputType==='insertText'){ e.target.value=''; e.target.id==='contText' ? draft='' : draftRoot=''; savedMenu(e.target, e.target); }
+  if(e.target.id==='contText' || e.target.id==='composeText') updateSlash(e.target);
   if(variants && e.target.dataset.vtext!=null){ const i=+e.target.dataset.vtext, r=variants.rows[i], was=!!r.text.trim(); r.text=e.target.value; if(i===0) draft=r.text;
     if(was!==!!r.text.trim()){ const n=variants.rows.filter(x=>x.text.trim()).length, b=treeEl.querySelector('[data-vsend]'); if(b){ b.disabled=!n; b.textContent=`Send ${n} variant${n===1?'':'s'}`; } const sg=treeEl.querySelector('[data-vsuggest]'); if(sg && i===0) sg.disabled=variants.suggesting||!r.text.trim(); } }
   if(fan){ const d=e.target.dataset; if(d.ftitle!=null) fan.options[+d.ftitle].title=e.target.value; if(d.fprompt!=null){ const o=fan.options[+d.fprompt], was=!!o.prompt.trim(); o.prompt=e.target.value; if(was!==!!o.prompt.trim()){ const b=treeEl.querySelector('[data-fango]'), n=fan.options.filter(x=>x.on&&x.prompt.trim()).length; if(b){ b.disabled=!n; b.firstChild.textContent=fanGoLabel(n)+' '; } } } }

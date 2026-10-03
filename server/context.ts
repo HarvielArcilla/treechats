@@ -31,11 +31,19 @@ export class TreeView {
   visible = (n: Node) => n.alt == null || this.activeOf(n.alt) === n.id;
   roots = () => this.all().filter((n) => !n.parents.length && this.visible(n));
   chain(id: number) { const c: number[] = []; let n = this.t.nodes[id]; while (n) { c.push(n.id); n = this.t.nodes[n.parents[0]]; } return c.reverse(); }
-  path(id: number, memo = new Map<number, number[]>()): number[] {
-    if (memo.has(id)) return memo.get(id)!;
-    const res: number[] = [];
-    for (const p of this.t.nodes[id].parents) for (const x of this.path(p, memo)) if (!res.includes(x)) res.push(x);
-    res.push(id); memo.set(id, res); return res;
+  /* every prompt the context of id is built from, in order: a post-order walk of its parents. Iterative, so long
+     chats can't overflow the stack, and linear thanks to the seen set. */
+  private pathMemo = new Map<number, number[]>();
+  path(id: number): number[] {
+    const hit = this.pathMemo.get(id); if (hit) return hit;
+    const res: number[] = [], seen = new Set<number>([id]), stack: [number, number][] = [[id, 0]];
+    while (stack.length) {
+      const top = stack[stack.length - 1], ps = this.t.nodes[top[0]]?.parents || [];
+      if (top[1] < ps.length) { const p = ps[top[1]++]; if (!seen.has(p) && this.t.nodes[p]) { seen.add(p); stack.push([p, 0]); } continue; }
+      stack.pop(); res.push(top[0]);
+    }
+    this.pathMemo.set(id, res);
+    return res;
   }
   convKey = (r: Node) => r.alt ?? r.id;
   title(r: Node) {

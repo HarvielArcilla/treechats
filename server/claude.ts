@@ -162,12 +162,33 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
   });
 }
 
+/* One reply as a whole, for the server's own use (MCP's btw): reads the same stream the page reads. */
+export async function sampleOnce(req: SampleRequest, signal: AbortSignal = new AbortController().signal): Promise<{ text: string; usage?: Usage | null; model?: string; error?: { code: string; message: string } }> {
+  const reader = streamReply(req, signal).getReader(), dec = new TextDecoder();
+  let buf = '', out: { text: string; usage?: Usage | null; model?: string; error?: { code: string; message: string } } = { text: '' };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (!line.trim()) continue;
+      const e = JSON.parse(line);
+      if (e.t === 'text') out.text += e.d;
+      else if (e.t === 'done') out = { text: e.text, usage: e.usage, model: e.model };
+      else if (e.t === 'error') out = { text: e.text || out.text, error: { code: e.code, message: e.message } };
+    }
+    if (done) return out;
+  }
+}
+
 /* Canned replies for TREECHATS_FAKE=1. Asks for JSON get JSON back, so naming and fan-out work offline. */
 function fakeReply(said: string): string {
   if (/Reply with only (a )?JSON/i.test(said)) {
     if (/"best"/.test(said)) { const alts = said.slice(said.indexOf('The alternatives:')).match(/#\d+/g) || []; return JSON.stringify({ best: alts[0] || '', reasons: Object.fromEntries(alts.map((a, i) => [a, i === 0 ? 'Meets the criteria best (test verdict).' : 'Less complete (test verdict).'])), summary: 'A test verdict.' }); }
     if (/"sources"/.test(said)) { const alts = [...new Set(said.slice(said.indexOf('The alternatives:')).match(/#\d+/g) || [])]; return JSON.stringify({ prompt: 'Combine the best of these.', reply: 'A combined test reply.', sources: Object.fromEntries(alts.map((a) => [a, 'Its main point.'])) }); }
     if (/"fits"/.test(said)) return /MISMATCH/.test(said.slice(said.lastIndexOf('The next message:'))) ? '{"fits":false,"reason":"It refers to something the new reply no longer says.","rewrite":"A rewritten follow-up that fits."}' : '{"fits":true,"reason":"","rewrite":""}';
+    if (/"met"/.test(said)) return /condition is met now: always/i.test(said) ? '{"met":true,"why":"The latest reply meets it (test verdict)."}' : '{"met":false,"why":"Not yet (test verdict)."}';
     if (/"options"/.test(said)) return '{"options":[{"title":"First way","prompt":"Let\'s try the first way."},{"title":"Second way","prompt":"Let\'s try the second way."}],"recommended":0}';
     if (/"title"/.test(said)) return '{"title":"Test conversation"}';
     if (/"name"/.test(said)) return '{"name":"test-branch"}';
