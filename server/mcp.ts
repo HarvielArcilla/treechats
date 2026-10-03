@@ -166,7 +166,7 @@ export function buildMcpServer(read: () => State | null) {
         `Follows: ${n.parents.map((p) => '#' + p).join(', ') || 'nothing (starts the chat)'} · Followed by: ${kids.join(', ') || 'nothing'} · Branches: ${bs.join(', ') || 'none'}`,
         n.kind === 'merge' ? `Merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}` : `\nPrompt:\n${n.text}`,
         n.reply ? `\nClaude's reply:\n${n.reply}` : '',
-        (() => { const st = settingsFor(t, n.id); const keys = Object.keys(st); return keys.length ? `\nBranch settings in effect: ${keys.map((k) => `${k} ${k === 'system' ? JSON.stringify(st[k]) : st[k]}`).join(', ')}` : ''; })(),
+        (() => { const st = settingsFor(t, n.id); const keys = Object.keys(st); return keys.length ? `\nModel settings in effect: ${keys.map((k) => `${k} ${k === 'system' ? JSON.stringify(st[k]) : st[k]}`).join(', ')}` : ''; })(),
         n.usage ? `Usage: ${n.usage.input} tokens in, ${n.usage.output} out${n.usage.cost != null ? `, $${n.usage.cost.toFixed(4)}` : ''}` : '',
         n.thinking ? `\nThe model's thinking (never sent back to it):\n${n.thinking}` : '',
         (() => { const ch = ctxChanges(s, t, n.id); return ch ? `\nContext changed since this reply was written: ${ch.join('; ')}. (For you only; the model never sees this. replay re-sends from here.)` : ''; })(),
@@ -222,7 +222,7 @@ export function buildMcpServer(read: () => State | null) {
   const agent = z.string().max(40).optional().describe('Your name, shown on everything you add. Defaults to "agent".');
   const model = z.enum(['quick', 'default', 'complex']).optional().describe('Which model answers: quick, default or complex. Defaults to the model chosen in Treechats.');
   const promptNo = z.number().int().describe('A prompt number in the run project, as returned by spawn, ask or fork.');
-  /* branch settings: sent with this prompt and every prompt after it; models that don't use one skip it and say so */
+  /* model settings: sent with this prompt and every prompt after it; models that don't use one skip it and say so */
   const bset = {
     system: z.string().optional().describe('A system prompt for this subagent from here on.'),
     thinking: z.boolean().optional().describe('Let the model think before replying (its thinking is kept, folded, and never sent back).'),
@@ -330,16 +330,16 @@ export function buildMcpServer(read: () => State | null) {
     delete: 'prompt. Deletes it and everything after it',
     rebase: 'prompt; onto. Moves it and what follows under another prompt',
     cherry_pick: 'prompt; onto. Copies its text under another prompt, without a reply',
-    settings: 'prompt; system, thinking, effort, temperature, max_tokens (any of them); value: false clears. Applies from that prompt on',
+    model_settings: 'prompt; system, thinking, effort, temperature, max_tokens (any of them); value: false clears. Applies from that prompt on',
   };
   server.registerTool('describe', { title: 'Describe operations', description: 'The operations operate can run, with the arguments each takes.', inputSchema: { op: z.string().optional() } },
     async (a) => text(a.op ? (OPS[a.op] ? `${a.op}: ${OPS[a.op]}` : `Unknown operation "${a.op}". Known: ${Object.keys(OPS).join(', ')}`) : 'Run these with operate. Every call needs run (and agent, for labels); none of them sends a request.\n\n' + Object.entries(OPS).map(([k, v]) => `- ${k}: ${v}`).join('\n')));
   server.registerTool('operate', {
     title: 'Run an operation',
-    description: 'Restructure or mark a subagent chat in your run, the way people do in the editor: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, settings. Call describe for the arguments. No requests are sent; changes stay out of the person’s Undo.',
+    description: 'Restructure or mark a subagent chat in your run, the way people do in the editor: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, model_settings. Call describe for the arguments. No requests are sent; changes stay out of the person’s Undo.',
     inputSchema: {
       run, agent, ...bset,
-      op: z.enum(['star', 'note', 'branch', 'rename_branch', 'make_mainline', 'merge', 'unmerge', 'reroot', 'squash', 'splice', 'delete', 'rebase', 'cherry_pick', 'settings']),
+      op: z.enum(['star', 'note', 'branch', 'rename_branch', 'make_mainline', 'merge', 'unmerge', 'reroot', 'squash', 'splice', 'delete', 'rebase', 'cherry_pick', 'model_settings']),
       prompt: z.number().int().optional(), until: z.number().int().optional(), onto: z.number().int().optional(),
       branch: z.string().optional(), name: z.string().max(40).optional(), text: z.string().optional(), value: z.boolean().optional(), append: z.boolean().optional(),
     },

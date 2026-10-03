@@ -55,7 +55,7 @@ app.get('/api/config', async (c) => {
     cli: status,
     tiers: (['quick', 'default', 'complex'] as const).map((t) => [t, `${t[0].toUpperCase() + t.slice(1)} · ${p === 'fake' ? 'test replies' : modelLabel(config.models[t]) + via}`]),
     models: config.models,
-    /* which branch settings each tier's model uses (Claude Code takes only the system prompt) */
+    /* which model settings each tier's model uses (Claude Code takes only the system prompt) */
     caps: Object.fromEntries((['quick', 'default', 'complex'] as const).map((t) => [t, p === 'claude-code' ? { temperature: false, effort: false, thinking: 'none', systemOnly: true } : caps(config.models[t])])),
     limits: { maxPromptBytes: 3_000_000 },
   });

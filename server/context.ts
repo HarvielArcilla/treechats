@@ -70,7 +70,7 @@ export class TreeView {
 
 const fileStub = (f: { name: string; kind?: string }) => f.kind === 'image' ? `[Attached image: ${f.name}]` : `<file name="${f.name}">\n(The contents of this file are kept in the browser, so they aren't included here.)\n</file>`;
 
-/* branch settings in effect at a prompt (page: settingsFor) */
+/* model settings in effect at a prompt (page: settingsFor) */
 const SET_FIELDS = ['system', 'thinking', 'effort', 'temperature', 'maxTokens'];
 export function settingsFor(tree: Tree, id: number) {
   const v = new TreeView(tree), out: Record<string, unknown> = {}, seen = new Set<string>();

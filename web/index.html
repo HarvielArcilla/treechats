@@ -1935,7 +1935,7 @@ function contextEntries(id){
   return out;
 }
 /* Messages for the API: user/assistant turns, with back-to-back turns of one role joined so they alternate. */
-/* ---- Branch settings ----
+/* ---- Model settings ----
    A system prompt, thinking, effort, temperature and a reply length limit, set on a prompt and used by it and every
    prompt after it, unless a later prompt sets its own. Forking and changing one setting compares the same
    conversation under a different setup. Each field is inherited on its own; null means "back to the default". */
@@ -2106,7 +2106,7 @@ async function startReply(sid, id){
     const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal, settings,
       onText:({text})=>{ g.text=text; paintGen(g); }});
     g.usage=r.usage||null; g.thinking=r.thinking||'';
-    const unused=(r.notes||[]).length ? `Branch settings not used by this model: ${r.notes.join(', ')}.` : null;
+    const unused=(r.notes||[]).length ? `Model settings not used by this model: ${r.notes.join(', ')}.` : null;
     finishGen(g, r.text, r.modelTierApplied, [r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null), unused].filter(Boolean).join(' ') || null);
   }catch(e){
     const code = e && e.code;
@@ -2866,7 +2866,7 @@ const Agent=(()=>{
     });
   }
   const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
-  /* branch settings an agent asks for on spawn or fork: they apply to that prompt and the ones after it */
+  /* model settings an agent asks for on spawn or fork: they apply to that prompt and the ones after it */
   function agentSettings(a){
     const st={};
     if(typeof a.system==='string' && a.system.trim()) st.system=a.system.trim();
@@ -3033,7 +3033,7 @@ const Agent=(()=>{
         else if(op==='delete'){ want(a.prompt); const del=new Set([a.prompt]), d=[...desc(a.prompt)]; let grew=true; while(grew){ grew=false; for(const x of d) if(!del.has(x) && S.nodes[x].parents.every(p=>del.has(p))){ del.add(x); grew=true; } } const up=S.nodes[a.prompt].parents[0]; for(const x of del) delete S.nodes[x]; for(const m of all()) m.parents=m.parents.filter(p=>!del.has(p)); for(const r of Object.values(S.refs)) if(del.has(r.tip) && up!=null) r.tip=up; at=up; msg=`Deleted ${del.size} prompt${del.size===1?'':'s'} from #${a.prompt}`; }
         else if(op==='rebase'){ const n=want(a.prompt); want(a.onto, 'onto (the new parent)'); if(a.onto===a.prompt || desc(a.prompt).has(a.onto)) throw new Error('Can’t rebase a prompt onto itself or what follows it.'); n.parents=[...new Set([a.onto, ...n.parents.slice(1)])]; delete n.alt; msg=`Moved #${a.prompt} and what follows under #${a.onto}; their replies stay as they were (see get_prompt for context changes)`; }
         else if(op==='cherry_pick'){ const n=want(a.prompt); want(a.onto, 'onto (where the copy goes)'); const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[a.onto], text:n.text, by}; if(n.files) S.nodes[nid].files=clone(n.files); at=nid; msg=`Copied #${a.prompt}'s text under #${a.onto} as #${nid}, without a reply (ask regenerate for one)`; }
-        else if(op==='settings'){ const n=want(a.prompt); if(a.value===false){ delete n.set; msg=`Cleared the branch settings on #${a.prompt}`; } else { const st=agentSettings(a); if(!st) throw new Error('Give at least one of system, thinking, effort, temperature, max_tokens (or value: false to clear).'); n.set=Object.assign(n.set||{}, st); msg=`Branch settings from #${a.prompt}: ${setSummary(n.set)}`; } }
+        else if(op==='model_settings'){ const n=want(a.prompt); if(a.value===false){ delete n.set; msg=`Cleared the model settings on #${a.prompt}`; } else { const st=agentSettings(a); if(!st) throw new Error('Give at least one of system, thinking, effort, temperature, max_tokens (or value: false to clear).'); n.set=Object.assign(n.set||{}, st); msg=`Model settings from #${a.prompt}: ${setSummary(n.set)}`; } }
         else throw new Error(`Unknown operation "${op}". Call describe to see them.`);
       });
       return {...(at!=null && t.nodes[at] ? where(sid,at) : {project:DB.spaces[sid].name}), prompt: at!=null && t.nodes[at] ? at : undefined, message:msg};
@@ -3383,7 +3383,7 @@ function composerHTML(forId){
     ${also}
     <textarea id="contText" placeholder="Your next prompt" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
     ${fileChips(pendingFiles, true)}
-    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:opts.simple?'Send':'Continue'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button><button class="btn" data-savedmenu="contText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
+    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:'Send'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button><button class="btn" data-savedmenu="contText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
     ${replyBusy(forId)?'<p class="note">You can send now. Claude answers it as soon as the reply above is done.</p>':''}
     ${sampleState==='off'?'<p class="note">To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats. Prompts still get added.</p>':''}</div>`;
 }
@@ -3443,7 +3443,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Branch settings from here on: '+setSummary(n.set))}">settings</span>`:'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -3582,7 +3582,7 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}${!(reviewAsk && reviewAsk.id===id)?`<button class="act" data-review="${id}" title="A second opinion from a new chat that sees only this reply">${AI}Review</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
   return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
@@ -3816,7 +3816,7 @@ function usageHTML(id){
   const sum = withU.length>1 && anyCost ? `Context path so far: ${fmtCost(total)} across ${withU.length} replies` : '';
   return line||sum ? `<p class="meta usage" title="Token counts come from each reply; cost uses the published price of the model (TREECHATS_PRICE_* in .env overrides it).">${[line,sum].filter(Boolean).join('<br>')}</p>` : '';
 }
-/* ---- Branch settings in the inspector ---- */
+/* ---- Model settings in the inspector ---- */
 let bsetFor=null;
 const EFFORT_OPTS=['low','medium','high','xhigh','max'];
 function setSummary(st){
@@ -3848,10 +3848,10 @@ function bsetHTML(id){
     ['Temperature', v.temperature!=null ? String(v.temperature) : 'model default', 'temperature'],
     ['Reply length', v.maxTokens ? `up to ${v.maxTokens.toLocaleString()} tokens` : 'default', 'maxTokens'],
   ];
-  if(bsetFor!==id) return `<div class="bset"><p class="flabel">Branch settings <span class="flhint">for #${id} and the prompts after it</span></p>
+  if(bsetFor!==id) return `<div class="bset"><p class="flabel">Model settings <span class="flhint">for #${id} and the prompts after it</span></p>
     <ul class="bsetlist">${rows.map(([l,val,f])=>`<li><span>${l}</span><span>${val}<span class="note">${src(f)}</span></span></li>`).join('')}</ul>
     <div class="bar"><button class="btn xs" data-bsetedit="${id}">Change from #${id}</button>${hasSettings(n.set)?`<button class="btn xs" data-bsetclear="${id}" title="Go back to what the prompts above use">Clear what’s set here</button>`:''}</div></div>`;
-  return `<div class="bset editing"><p class="flabel">Branch settings <span class="flhint">from #${id} on</span></p>
+  return `<div class="bset editing"><p class="flabel">Model settings <span class="flhint">from #${id} on</span></p>
     <label class="flabel" for="bsSystem">System prompt</label><textarea id="bsSystem" rows="3" placeholder="None">${esc(v.system||'')}</textarea>
     <div class="bsrow"><span>Thinking</span><span class="segs" role="group" aria-label="Thinking">${[['off','Off'],['on','On']].map(([k,l])=>`<button class="seg" data-bsthink="${k}" aria-pressed="${(k==='on')===!!v.thinking}">${l}</button>`).join('')}</span></div>
     <div class="bsrow"><label for="bsEffort">Effort</label><select id="bsEffort"><option value="">Model default</option>${EFFORT_OPTS.map(e=>`<option ${v.effort===e?'selected':''}>${e}</option>`).join('')}</select></div>
@@ -3873,7 +3873,7 @@ function saveBset(id){
   const inh=inheritedSettings(id), next={};
   for(const f of SET_FIELDS){ if(want[f]===inh[f]) continue; next[f] = want[f]===undefined ? null : want[f]; }
   bsetFor=null;
-  commit(hasSettings(next) ? `Branch settings from #${id}: ${setSummary(next)}` : `#${id} uses the same settings as the prompts above it`, ()=>{ if(hasSettings(next)) n.set=next; else delete n.set; });
+  commit(hasSettings(next) ? `Model settings from #${id}: ${setSummary(next)}` : `#${id} uses the same settings as the prompts above it`, ()=>{ if(hasSettings(next)) n.set=next; else delete n.set; });
   renderCtx();
 }
 let ctxFor;
@@ -3887,7 +3887,7 @@ function renderCtx(){
   const changed = ctxFor!==sel; ctxFor=sel;
   /* a note being typed survives redraws (a reply landing elsewhere redraws everything) */
   const a=document.activeElement, keepNote = a && a.id==='editNote' && card.contains(a) ? {s:a.selectionStart, e:a.selectionEnd} : null;
-  /* branch settings being edited survive redraws too */
+  /* model settings being edited survive redraws too */
   const bsDraft = bsetFor!=null && document.querySelector('.bset.editing') ? ['bsSystem','bsEffort','bsTemp','bsMax'].map(k=>[k, document.getElementById(k).value]).concat([['think', document.querySelector('.bset.editing [data-bsthink][aria-pressed="true"]')?.dataset.bsthink]]) : null, bsFocus = a && a.closest && a.closest('.bset.editing') ? a.id : null;
   if(sel==null||!S.nodes[sel]){ setCard(card,'ctx','<h2>Context</h2><p class="note">Select a prompt to see exactly what Claude would be sent from there, and to shape it.</p>'); return; }
   const n=S.nodes[sel];
@@ -3902,7 +3902,7 @@ function renderCtx(){
   const ents=contextEntries(sel), msgs=turnsFor(sel,true), merged=ents.some(e=>e.seam), instr=promptText('instructions').trim(), fs=S.files||[];
   const tok=t=>Math.ceil(t.length/4);
   const bsv=settingsFor(sel), sysTxt=(bsv.values.system||'').trim();
-  const items=(sysTxt?`<li class="seam instr" ${set('branchSettings')?`data-bsetedit="${bsv.from.system}"`:''} title="System prompt from #${bsv.from.system}'s branch settings, sent alongside every message"><span class="cid">⚙</span><span class="ct">System prompt: ${esc(sysTxt)}</span><span></span></li>`:'')+(instr?`<li class="seam instr" data-gotoprompts title="Standing instructions, sent first. Change them in Settings › Prompts."><span class="cid">✎</span><span class="ct">${esc(instr)}</span><span></span></li>`:'')
+  const items=(sysTxt?`<li class="seam instr" ${set('branchSettings')?`data-bsetedit="${bsv.from.system}"`:''} title="System prompt from #${bsv.from.system}'s model settings, sent alongside every message"><span class="cid">⚙</span><span class="ct">System prompt: ${esc(sysTxt)}</span><span></span></li>`:'')+(instr?`<li class="seam instr" data-gotoprompts title="Standing instructions, sent first. Change them in Settings › Prompts."><span class="cid">✎</span><span class="ct">${esc(instr)}</span><span></span></li>`:'')
     +(fs.length?`<li class="files" data-openspacefiles title="Sent with every request in this project"><span class="cid">⎘</span><span class="ct">${fs.length} project file${fs.length===1?'':'s'}: ${esc(fs.map(f=>f.name).join(', '))}</span><span></span></li>`:'')
     +ents.map(e=>{
       if(e.seam) return `<li class="seam" data-sel="${e.merge}"><span class="cid">⑂</span><span class="ct">${esc(e.text)}</span><span></span></li>`;
@@ -4701,7 +4701,7 @@ ctxCardEl.addEventListener('click', e=>{
   const be=e.target.closest('[data-bsetedit]'); if(be){ bsetFor=+be.dataset.bsetedit; renderCtx(); const t=document.getElementById('bsSystem'); if(t) t.focus({preventScroll:true}); return; }
   if(e.target.closest('[data-bsetcancel]')){ bsetFor=null; renderCtx(); return; }
   const bs=e.target.closest('[data-bsetsave]'); if(bs){ saveBset(+bs.dataset.bsetsave); return; }
-  const bc=e.target.closest('[data-bsetclear]'); if(bc){ const id=+bc.dataset.bsetclear; commit(`Cleared the branch settings on #${id}`, ()=>{ delete S.nodes[id].set; }); renderCtx(); return; }
+  const bc=e.target.closest('[data-bsetclear]'); if(bc){ const id=+bc.dataset.bsetclear; commit(`Cleared the model settings on #${id}`, ()=>{ delete S.nodes[id].set; }); renderCtx(); return; }
   const bt=e.target.closest('[data-bsthink]'); if(bt){ for(const x of bt.parentElement.children) x.setAttribute('aria-pressed', x===bt); return; }
   if(e.target.closest('[data-openspacefiles]')){ openSpaceFiles(); return; }
   const rf=e.target.closest('[data-rmnodefile]'); if(rf && S.nodes[sel]){ const i=+rf.dataset.rmnodefile, m=S.nodes[sel].files[i]; commit(`Removed ${m.name} from #${sel}`, ()=>{ S.nodes[sel].files.splice(i,1); if(!S.nodes[sel].files.length) delete S.nodes[sel].files; }, {touch:false}); return; }
@@ -5013,7 +5013,7 @@ function renderSettings(){
       ${setRow('Replies','Chat view always shows every reply in the chat.', segs('replies',[['all','All'],['path','Context path'],['selected','Selected']],'Replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['full','Full'],['short','Shorten']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, merge notes, and what every '+AI+'tool asks Claude.','<button class="btn" data-setprompts>Edit prompts</button>')}
-      ${setRow('Branch settings','Advanced. A system prompt, thinking, effort, temperature and reply length for a prompt and the ones after it, set from the inspector in Editor. Settings already made keep applying when this is off, and stay marked on their prompt.', segs('branchSettings',[['false','Off'],['true','On']],'Branch settings'))}
+      ${setRow('Model settings','Advanced. A system prompt, thinking, effort, temperature and reply length for a prompt and the ones after it, set from the inspector in Editor. Settings already made keep applying when this is off, and stay marked on their prompt.', segs('branchSettings',[['false','Off'],['true','On']],'Model settings'))}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
     h+=`<section class="setsec"><h3>Input</h3>
       ${setRow('Send with', set('sendKey')==='mod'?'Enter adds a new line.':'Shift+Enter adds a new line.', segs('sendKey',[['enter','Enter'],['mod',IS_MAC?'⌘ Enter':'Ctrl+Enter']],'Send with'))}

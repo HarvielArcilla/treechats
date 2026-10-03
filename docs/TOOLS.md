@@ -15,10 +15,10 @@ Claude does the work; each use sends a request.
 
 | Tool | Where | What it does | Need | Use |
 |---|---|---|---|---|
-| Send / Continue | Input box | Adds your prompt after the selected one and gets a reply; forks if that prompt already has follow-ups | The conversation itself | Core |
+| Send | Input box | Adds your prompt after the selected one and gets a reply; forks if that prompt already has follow-ups | The conversation itself | Core |
 | Edit (prompt) | Under the prompt | Your edit becomes a new version on its own branch, with a reply. The original keeps its branch and what followed. *Save in place* (Editor) changes the text without a reply | "Edit, don't argue": fix the question instead of correcting the answer | Core |
-| Retry / ↻ Regenerate | Under the reply | Another reply to the same prompt, as a new version; ‹ › flips between them | A bad or unlucky reply | Core |
-| ‹ › version and branch switcher | Under the prompt | Moves between versions of a prompt and the branches from it | Navigating what Edit, Retry and forks create | Core |
+| Regenerate | Under the reply | Another reply to the same prompt, as a new version; ‹ › flips between them | A bad or unlucky reply | Core |
+| ‹ › version and branch switcher | Under the prompt | Moves between versions of a prompt and the branches from it | Navigating what Edit, Regenerate and forks create | Core |
 | Copy (prompt or reply) | Under each | Copies the text | Taking an answer elsewhere | Core |
 | Attach files | Input box | Text, code or images sent with the prompt | Giving Claude the material | Common |
 | Saved prompts | Input box, or `/` | Inserts a prompt from your library; what you typed fills its first `{placeholder}` | Reusing prompts that work: plan first, interview me, critique, … | Common |
@@ -32,7 +32,7 @@ Claude does the work; each use sends a request.
 | Leave out | Operations, inspector | Stops sending a turn from the prompts below; nothing is deleted | Dropping a dead end or a misleading tangent | Power |
 | Context changed (marker) | On replies | Says what changed above a reply since it was written (e.g. "#16 reply edited") | Knowing which replies are out of date after you edit context | Power (automatic) |
 | ✦ Replay from here | Under the prompt, the marker | Re-sends the prompt and the ones after it, one at a time, as new versions. A quick check stops at a prompt that no longer fits | Regenerating what followed after you change the context | Power |
-| Branch settings | Inspector (Settings › System to turn on) | System prompt, thinking, effort, temperature, reply length from this prompt on | Trying the same chat under a different setup | Rare (advanced) |
+| Model settings | Inspector (Settings › System to turn on) | System prompt, thinking, effort, temperature, reply length from this prompt on | Trying the same chat under a different setup | Rare (advanced) |
 | Copy as a prompt / Markdown / JSON | Inspector | The exact context from the selected prompt, as one block | Moving context into another tool or chat | Common |
 
 ### Exploring
@@ -115,9 +115,9 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 | list_projects, list_chats, search, get_context, get_prompt | Read your chats; get_prompt also reports settings, cost, thinking and context changes | Common |
 | get_tree | A chat's whole shape: every prompt, branches, versions, merges and marks | Common |
 | edit_prompt, fan_out | As in the editor: an edit on a new branch with a reply; one answered branch per option | Power |
-| operate, describe | Every other operation by name: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, settings | Power |
+| operate, describe | Every other operation by name: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, model_settings | Power |
 | list_saved_prompts | Read your prompt library | Rare |
-| spawn, ask, fork | Subagent chats whose context the agent controls exactly; spawn and fork take branch settings | Power |
+| spawn, ask, fork | Subagent chats whose context the agent controls exactly; spawn and fork take model settings | Power |
 | leave_out, edit_reply, regenerate | Steer what a subagent sees | Power |
 | replay | Re-send after changing context; stops at a prompt that no longer fits, or rewrites it if asked | Power |
 | review | A fresh-eyes check of a subagent's reply | Power |
@@ -126,7 +126,7 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 
 ## Observations
 
-- **Where the value is:** the core and common tools are what anyone would expect from a chat app (Edit, Retry, Copy,
+- **Where the value is:** the core and common tools are what anyone would expect from a chat app (Edit, Regenerate, Copy,
   Review, Saved prompts). Treechats' own value is in the power tools that shape context: Edit reply, Leave out, Replay,
   Distill, Compare and Judge, plus the stretch tools.
 - **Low-use restructuring tools:** Rebase, Cherry-pick, Splice out on one prompt, Reroot, Squash on one prompt, and

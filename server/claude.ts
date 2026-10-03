@@ -16,7 +16,7 @@ export type SampleRequest = {
   modelTier?: Tier;
   images?: { mediaType: string; data: string }[];
   maxTokens?: number;
-  /* branch settings (see "Branch settings" in web/index.html) */
+  /* model settings (see "Model settings" in web/index.html) */
   settings?: { system?: string; temperature?: number; thinking?: boolean; effort?: string; maxTokens?: number };
 };
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];

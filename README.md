@@ -86,7 +86,7 @@ the context and each follow-up's reply, and gets back a reason for each against 
 changes nothing. **✦ Combine** writes one reply from the best parts, with the follow-up it answers and where each
 part came from, as a draft you edit before adding it as a new follow-up (marked as combined).
 
-## Branch settings (advanced)
+## Model settings (advanced)
 
 Turn them on in **Settings › System**. Then the inspector in Editor shows the settings in effect for the selected
 prompt and lets you change them from there on: a system prompt, thinking, effort, temperature and reply length. Fork a
@@ -114,7 +114,7 @@ same tools you have:
 - **Explore and decide:** `fan_out`, `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across
   forks), `distill` (bring back only a brief)
 - **Everything else:** `operate` runs star, note, branch, rename, make mainline, merge, reroot, squash, splice, delete,
-  rebase, cherry-pick and branch settings; `describe` lists their arguments.
+  rebase, cherry-pick and model settings; `describe` lists their arguments.
 
 For example: "use treechats to spawn three subagents that each review this design from a different angle, judge them
 for correctness, then distill the best one". Reading tools also include `get_tree` and `list_saved_prompts` (your prompt
@@ -125,7 +125,7 @@ library).
 - Everything an agent adds is labeled with its name (⚙).
 - Each run may spend 60 model requests (`TREECHATS_AGENT_MAX_REQUESTS` in `.env`; the count resets when
   Treechats restarts).
-- Subagents have no tools: they answer from the context they're given. `spawn` and `fork` take branch settings
+- Subagents have no tools: they answer from the context they're given. `spawn` and `fork` take model settings
   (system prompt, thinking, effort, temperature, max tokens).
 - For now the open Treechats page carries the changes out, so keep it open in your browser while an agent works.
 

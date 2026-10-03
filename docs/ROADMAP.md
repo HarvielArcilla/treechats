@@ -17,7 +17,7 @@ foundation once the agent interface has been tried on a real task, then everythi
   after saying what it can cost; a quick ✦ check before each prompt stops at one that no longer fits (or rewrites
   it, if chosen, marked and with the original kept); also carries the prompts below an edited prompt over to its
   new version
-- Branch settings (advanced, off by default): system prompt, thinking, effort, temperature and reply length for a
+- Model settings (advanced, off by default): system prompt, thinking, effort, temperature and reply length for a
   prompt and the ones after it; the server sends only what each model uses and says what it skipped
 - Token counts and cost on every reply, with a running total along the context path; thinking kept, folded
 - Compare: ✦ Judge (a reason for every follow-up and a pick, against your criteria; changes nothing) and ✦ Combine
@@ -26,7 +26,7 @@ foundation once the agent interface has been tried on a real task, then everythi
 - ✦ Review: a second opinion from a new chat that sees only what you include, linked both ways
 - Saved prompts with {placeholders}, inserted with / ; starters for common strategies (plan first, interview me, …)
 - MCP parity: edit_prompt, fan_out, get_tree, and operate/describe for every other operation
-- MCP: replay, review, judge, combine and list_saved_prompts; spawn and fork take branch settings; get_prompt reports settings, usage and
+- MCP: replay, review, judge, combine and list_saved_prompts; spawn and fork take model settings; get_prompt reports settings, usage and
   context changes
 
 ## Next
