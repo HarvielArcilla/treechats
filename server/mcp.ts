@@ -216,16 +216,23 @@ export function buildMcpServer(read: () => State | null) {
   server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));
   server.registerTool('replay', {
     title: 'Replay',
-    description: 'After you change a subagent\'s context (leave_out, edit_reply, or an edit above), re-send a prompt and every prompt after it on its branch, so their replies are written against the context as it is now. Each becomes a new version (the old ones are kept) and costs one request. Returns the last reply.',
-    inputSchema: { run, agent, prompt: promptNo.describe('The first prompt to re-send.'), branch: z.string().optional().describe('Follow this branch to its end. Defaults to the branch through the prompt.') },
+    description: 'After you change a subagent\'s context (leave_out, edit_reply, or an edit above), re-send a prompt and every prompt after it on its branch, one at a time, so their replies are written against the context as it is now. Each becomes a new version (the old ones are kept). By default it stops at a prompt that no longer makes sense after the new replies and tells you why. Costs one request per prompt plus a quick check per prompt after the first. Returns the last reply.',
+    inputSchema: {
+      run, agent, prompt: promptNo.describe('The first prompt to re-send.'),
+      branch: z.string().optional().describe('Follow this branch to its end. Defaults to the branch through the prompt.'),
+      on_mismatch: z.enum(['stop', 'rewrite', 'ignore']).optional().describe('Before each prompt after the first, a quick check asks whether it still makes sense after the new replies. stop (default): stop there and report why, with a suggested rewrite. rewrite: send the rewrite (marked as rewritten, original kept) and go on. ignore: no checks, send everything as written.'),
+      onto: promptNo.optional().describe('Continue under this prompt instead of beside the originals: use it to carry on after a stop.'),
+      first_prompt: z.string().optional().describe('Send this text instead of the first prompt (for example your fix after a stop).'),
+    },
   }, async (a) => {
     let left: number | undefined, n = 0;
     try {
       if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
       n = ((await relay('replay_plan', a)) as { count: number }).count;
       left = spend(String(a.run), n);
-      const d = await relay('replay', a);
-      return text(report(d as Done, left));
+      const d = await relay('replay', a) as Done & { requests?: number };
+      if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
+      return text(report(d, left));
     } catch (e) {
       if (left != null) refund(String(a.run), n);
       return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);

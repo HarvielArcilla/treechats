@@ -62,8 +62,10 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
 Fix an earlier prompt, correct one of Claude's replies, or leave a turn out, and every reply below it now rests on
 context that has changed. Each reply remembers what it was sent, so it shows a small note, such as **Context
 changed: #3 reply edited** (only you see it; Claude never does, and you can turn it off in Settings). Click
-**Replay** to re-send from there: each prompt below gets a new reply as a new version, and the old ones stay one
-‹ › away. You can also replay any stretch with **✦ Replay from here** under a selected prompt, and after you send
+**Replay** to re-send from there, one prompt at a time: each gets a new reply as a new version, and the old ones stay
+one ‹ › away. A new reply can go a different way, so before each prompt a quick ✦ check asks whether it still makes
+sense. If it doesn't, Replay stops and shows why, with a suggested rewrite you can edit, send as is, or stop at; or,
+if you choose, it sends the rewrite and keeps going (the prompt is marked as rewritten and keeps your wording). You can also replay any stretch with **✦ Replay from here** under a selected prompt, and after you send
 an edited prompt, the prompts that followed the original can be carried over with **✦ Replay N below**.
 
 ## Use it from Claude Code (MCP)
@@ -81,7 +83,8 @@ in the browser.
 
 **Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and
 steer: `spawn` (start one with exactly the context it should have), `ask`, `fork`, `leave_out`, `edit_reply`,
-`regenerate`, `replay` (re-send from a prompt once the context above it has changed) and `distill` (get back a short brief instead of the whole chat). For example: "use
+`regenerate`, `replay` (re-send from a prompt once the context above it has changed; it stops at a prompt that no
+longer fits, or rewrites it if asked) and `distill` (get back a short brief instead of the whole chat). For example: "use
 treechats to spawn three subagents that each review this design from a different angle, then distill each".
 
 - Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't

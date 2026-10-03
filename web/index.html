@@ -691,6 +691,7 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .row.skipped .txt{opacity:.5}
 .row.skipped .dot{border-style:dashed}
 .tag.skiptag{color:var(--muted);background:var(--bg);border:1px dashed var(--line)}
+.tag.rwtag{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
 .ctx li.skipped{opacity:.45}
 .ctx li.skipped .ct{text-decoration:line-through;text-decoration-color:var(--muted)}
 .pnote{margin:-2px 0 6px 38px;padding:5px 10px;font-size:.82rem;background:color-mix(in srgb, var(--merge) 10%, var(--surface));border:1px solid color-mix(in srgb, var(--merge) 28%, var(--line));border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -812,6 +813,9 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .ovmap{margin-top:auto;flex:none;position:sticky;bottom:-16px;background:var(--panel);padding:8px 2px 14px;border-top:1px solid var(--line);display:grid;gap:6px}
 .ovmap[hidden]{display:none}
 /* hidden: just the header stays, so the map is one click away */
+.rwnote{opacity:1 !important;margin-right:4px}
+.fitmodes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px}
+.fitmodes>span{font-size:.82rem;color:var(--muted);margin-right:4px}
 .ctxwrap{display:inline-flex;align-items:baseline;gap:6px;margin-left:auto;font-size:.76rem;color:var(--muted)}
 .ctxmark{font:inherit;color:var(--muted)}
 .ctxwrap .linkbtn{font-size:inherit}
@@ -1007,6 +1011,9 @@ const PROMPTS = {
     help:'{conversation} becomes the first message and the start of the first reply.', fmt:'Reply with only JSON: {"title":"Rate limiter design"}'},
   nameSpace:{label:'Naming projects', group:'naming', def:'Name a workspace that holds these conversations, in 1 to 4 words, no quotes.\n\nConversations:\n{titles}',
     help:'{titles} becomes the titles of up to six chats in the project.', fmt:'Reply with only JSON: {"name":"API rate limiting"}'},
+  replayCheck:{label:'Replay: does the next prompt still fit?', group:'tools', def:"Someone is re-running a conversation after changing something earlier in it, so the replies may now differ from the ones their messages were written for. Decide whether their next message still makes sense as the next message after the conversation as it now stands. It fits if it reads naturally, even if the reply before it is worded differently or reaches a different conclusion that the message doesn't depend on. It doesn't fit if it refers to something the new reply no longer says, answers a question that is no longer asked, or assumes a choice that was no longer made.\n\nThe conversation as it now stands (most recent part):\n{conversation}\n\nThe reply the message was originally written after:\n{original}\n\nThe next message:\n{message}",
+    help:'Sent before each prompt after the first when you replay, unless checks are off. {conversation} becomes the latest turns, {original} the reply the prompt was first written after, {message} the prompt.',
+    fmt:'Reply with only JSON: {"fits":true,"reason":"","rewrite":""}\nWhen it doesn\'t fit, give a one-sentence reason, and a rewrite of the message that keeps its intent and voice but fits the conversation as it now stands. When it fits, leave reason and rewrite empty.'},
   reroot:{label:'Reroot summary', group:'ops', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
@@ -1318,7 +1325,7 @@ function commit(msg, fn, o={}){
   setActivePath(sel); syncHead(); if(o.touch!==false) touch(sel); save();
   reconcileReplies();
   if(o.swap) swapView(()=>render(true)); else showSelection(prevSel);
-  toast(msg, true, o.action);
+  if(!o.quiet) toast(msg, true, o.action);
   if(typeof scanNewBranches==='function') setTimeout(scanNewBranches, 0);
 }
 const snapshotDB = () => JSON.stringify({spaces:DB.spaces, order:DB.order, current:DB.current, nextSpace:DB.nextSpace});
@@ -2109,10 +2116,17 @@ function regenerate(id, newText){
 
 /* ---- Replay ----
    Re-sends a run of prompts against the context as it is now: after you fix an early turn, edit a reply, or leave
-   something out. Each prompt is copied as a new version (the first one beside the original, the rest below it) and
-   answered in order, so the old line and its replies stay one ‹ › away. Branches that ended at the old tip move to the
-   new one. Nothing is replayed without asking, and the ask says how many requests it takes. */
-let replayAsk=null;
+   something out. Prompts go one at a time. Each is copied as a new version (the first one beside the original, the
+   rest below it) and answered before the next, so the old line and its replies stay one ‹ › away.
+
+   A new reply can go somewhere the old one didn't, and the next prompt, written for the old reply, may no longer make
+   sense. So before each prompt after the first, a quick ✦ check asks whether it still fits. What happens when it
+   doesn't is your choice: stop and ask (the default: you see why, with a suggested rewrite you can edit, send the
+   original, or stop there), rewrite it (Claude's version is sent, marked as rewritten, the original kept on the
+   prompt), or don't check at all. Nothing is replayed without asking first, and the ask says what it can cost. */
+let replayAsk=null, replayRun=null;
+const FIT_MODES=[['stop','Stop and ask','Pause on a prompt that no longer fits, with a suggested rewrite you can edit'],['rewrite','Rewrite it','Send Claude’s rewrite and keep going. The prompt is marked as rewritten and keeps your original'],['off','Don’t check','Send every prompt as written, with no checks']];
+const fitMode = () => FIT_MODES.some(m=>m[0]===opts.replayFit) ? opts.replayFit : 'stop';
 /* the prompts from id down to the tip of the line you're looking at */
 function lineFrom(id){
   const h=headTip();
@@ -2128,6 +2142,7 @@ const replayCount = line => line.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merg
    carrying the prompts below an edited prompt over to its new version. */
 function askReplay(from, onto=null){
   if(sampleState!=='ready'){ toast('To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats.'); return; }
+  if(replayRun && !replayRun.done){ toast('A replay is already running. Stop it first.'); return; }
   const line = onto!=null ? lineFrom(from).slice(1) : lineFrom(from);
   if(!line.length) return;
   replayAsk={at: onto ?? from, from, onto, line};
@@ -2135,43 +2150,118 @@ function askReplay(from, onto=null){
   const b=treeEl.querySelector('[data-replaygo]'); if(b) b.focus({preventScroll:true});
 }
 function replayHTML(){
-  const r=replayAsk, n=replayCount(r.line), first=r.line[0], last=r.line[r.line.length-1];
+  const r=replayAsk, n=replayCount(r.line), first=r.line[0], last=r.line[r.line.length-1], m=fitMode();
   const what = r.onto!=null
     ? `Carry the ${n} prompt${n===1?'':'s'} that followed the original #${r.from} over to this version, and get new replies to ${n===1?'it':'them'}.`
-    : `Re-send ${n===1?`#${first}`:n===2?`#${first} and #${last}`:`#${first} and the ${n-1} prompts below it (down to #${last})`} with the context as it is now.`;
-  return `<div class="fan replay" data-key="rp${r.at}"><div class="fanhead"><b>${AI}Replay</b><span class="note">${n} request${n===1?'':'s'}, one after another</span><button class="rmore" data-replaycancel>Cancel</button></div>
+    : `Re-send ${n===1?`#${first}`:n===2?`#${first} and #${last}`:`#${first} and the ${n-1} prompts below it (down to #${last})`} with the context as it is now, one at a time.`;
+  const checks = m==='off' || n<2 ? 0 : n-1 + (r.onto!=null ? 1 : 0);
+  const cost = `${n} request${n===1?'':'s'}${checks?`, plus up to ${checks} quick check${checks===1?'':'s'}`:''}`;
+  const modes = n>1 || r.onto!=null ? `<div class="vgroup fitmodes" role="group" aria-label="When a prompt no longer fits"><span>When a prompt no longer fits</span>${FIT_MODES.map(([v,l,t])=>`<button class="seg" data-replayfit="${v}" aria-pressed="${m===v}" title="${esc(t)}">${l}</button>`).join('')}</div>` : '';
+  return `<div class="fan replay" data-key="rp${r.at}"><div class="fanhead"><b>${AI}Replay</b><span class="note">${cost}</span><button class="rmore" data-replaycancel>Cancel</button></div>
     <p class="note">${what} ${r.onto!=null ? 'The original keeps its prompts and replies.' : 'Each becomes a new version; the current ones stay one ‹ › away.'}</p>
+    ${modes}
     <div class="bar"><button class="btn primary" data-replaygo>${AI}Replay ${n} prompt${n===1?'':'s'}</button><button class="btn" data-replaycancel>Cancel</button></div></div>`;
 }
-/* copies a line of prompts as described above, in the tree in S; returns the new prompt numbers */
-function copyLine(line, onto, by){
-  const made=[]; let prev=onto;
+/* one prompt of the line, copied under `parent` (or beside the original as a new version), in the tree in S */
+function copyOne(o, parent, asVersion, by, text, rewrite){
+  const nid=S.nextId++, c={id:nid, text: text ?? (o.text||'')};
+  for(const k of ['kind','files','skip','note','from','into','seam']) if(o[k]!=null) c[k]=clone(o[k]);
+  if(o.model) c.askTier=o.model;
+  if(by) c.by=by;
+  if(rewrite) c.rewritten=rewrite;
+  if(asVersion){ const gid=o.alt ?? o.id; o.alt=gid; c.alt=gid; c.parents=[...o.parents]; S.active[gid]=nid; }
+  else c.parents=[parent, ...o.parents.slice(1)];
+  S.nodes[nid]=c; setActivePath(nid);
+  return nid;
+}
+/* ✦ does this prompt still make sense after the conversation as it now stands? */
+async function checkFit(sid, afterId, o, original){
+  const t=treeOf(sid);
+  const turns=withTree(t, ()=>turnsFor(afterId, true)).slice(-6);
+  const conversation=clip(turns.map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 16000);
+  try{
+    const d=await sampleFn.json(fillPrompt('replayCheck', {conversation, original:clip(original||'(none)', 6000), message:clip(o.text||'', 4000)}), {modelTier:'quick', cache:false});
+    if(!d || typeof d.fits!=='boolean') return {fits:true, unchecked:true};
+    return {fits:d.fits, reason:String(d.reason||'').trim(), rewrite:String(d.rewrite||'').trim()};
+  }catch(e){ return {fits:true, unchecked:true}; }
+}
+/* The replay itself, shared by the page and agents. io.apply(fn, msg) makes a change in the space; io.pause(info)
+   resolves to {text} to send, or null to stop; io.update() redraws. Returns what happened. */
+async function runReplay(r, io){
+  const t=treeOf(r.sid), made=[], line=r.line;
+  let parent=r.onto, requests=0, stoppedAt=null, why=null, rewrites=0;
   for(const [i,id] of line.entries()){
-    const o=S.nodes[id]; if(!o) break;
-    const nid=S.nextId++, c={id:nid, text:o.text||''};
-    for(const k of ['kind','files','skip','note','from','into','seam']) if(o[k]!=null) c[k]=clone(o[k]);
-    if(o.model) c.askTier=o.model;
-    if(by) c.by=by;
-    if(i===0 && onto==null){ const gid=o.alt ?? o.id; o.alt=gid; c.alt=gid; c.parents=[...o.parents]; S.active[gid]=nid; }
-    else c.parents=[prev, ...o.parents.slice(1)];
-    S.nodes[nid]=c; made.push(nid); prev=nid;
+    if(r.stop){ stoppedAt=id; why='stopped'; break; }
+    const o=t.nodes[id]; if(!o){ stoppedAt=id; why='gone'; break; }
+    if(parent!=null && !t.nodes[parent]){ stoppedAt=id; why='gone'; break; }
+    let text=i===0 && r.firstText!=null ? r.firstText : o.text, rewrite=null;
+    const lastAsk=[...made].reverse().find(x=>t.nodes[x] && t.nodes[x].kind!=='merge' && t.nodes[x].reply);
+    const prevOld = i>0 ? t.nodes[line[i-1]] : (r.onto!=null ? t.nodes[r.from] : null);
+    if(o.kind!=='merge' && r.mode!=='off' && (lastAsk!=null || (i===0 && r.onto!=null && t.nodes[r.onto] && t.nodes[r.onto].reply)) && !(i===0 && r.firstText!=null)){
+      r.status={what:'checking', id}; io.update();
+      const v=await checkFit(r.sid, lastAsk ?? r.onto, o, prevOld && prevOld.reply); requests++;
+      if(r.stop){ stoppedAt=id; why='stopped'; break; }
+      if(!v.fits){
+        if(r.mode==='rewrite' && v.rewrite){ text=v.rewrite; rewrite={from:o.text, by:'claude', why:v.reason}; rewrites++; }
+        else {
+          r.status={what:'paused', id, reason:v.reason, suggest:v.rewrite}; io.update();
+          const ans=await io.pause({id, reason:v.reason, rewrite:v.rewrite});
+          if(!ans){ stoppedAt=id; why='mismatch'; r.mismatch={id, reason:v.reason, rewrite:v.rewrite}; break; }
+          text=ans.text; if(text!==o.text) rewrite={from:o.text, by: text===v.rewrite ? 'claude' : 'you', why:v.reason};
+        }
+      }
+    }
+    const asVersion = i===0 && r.onto==null;
+    const nid=io.apply(()=>copyOne(o, parent, asVersion, r.by, text, rewrite), `Replay: #${id} re-sent as #${S.nextId}`);
+    made.push(nid); parent=nid; r.at=nid;
+    if(o.kind==='merge') continue;
+    r.status={what:'sending', id:nid}; io.update();
+    const wait=awaitReply(r.sid, nid); wantReplies([nid], r.sid); requests++;
+    const res=await wait;
+    if(res.error){ stoppedAt=id; why=r.stop ? 'stopped' : 'error'; r.error=res.error; break; }
   }
-  for(const rid of refsAt(line[line.length-1])) if(made.length) S.refs[rid].tip=made[made.length-1];
-  if(made.length) setActivePath(made[made.length-1]);
-  return made;
+  /* finished the whole line: branches that ended at the old tip carry on from the new one */
+  if(stoppedAt==null && made.length) io.apply(()=>{ for(const rid of withTree(t, ()=>refsAt(line[line.length-1]))) t.refs[rid].tip=made[made.length-1]; return null; }, null);
+  r.done=true; r.status=null;
+  return {made, requests, stoppedAt, why, rewrites, mismatch:r.mismatch, error:r.error};
 }
-function replay(from, onto=null, line=lineFrom(from)){
-  if(sampleState!=='ready' || !line.length) return [];
-  const n=replayCount(line); let made=[];
-  commit(onto!=null ? `Replaying ${n} prompt${n===1?'':'s'} on #${onto}. The original keeps its own.` : `Replaying from #${line[0]}. The current versions are kept.`, ()=>{
-    made=copyLine(line, onto);
-    replayAsk=null; simpleTip=null;
-    if(made.length) sel=made[0];
-  });
-  wantReplies(made.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge'));
-  return made;
+async function replay(from, onto=null, line=lineFrom(from)){
+  if(sampleState!=='ready' || !line.length) return;
+  const sid=DB.current, run={sid, from, onto, line, mode:fitMode(), at: onto ?? from, done:false};
+  replayAsk=null; simpleTip=null; replayRun=run;
+  const io={
+    apply(fn, msg){
+      let out;
+      if(run.sid===DB.current){ if(msg) commit(msg, ()=>{ out=fn(); if(out!=null) sel=out; }, {quiet:true}); else { out=fn(); save(); render(); } }
+      else { out=withTree(treeOf(run.sid), fn); save(); }
+      return out;
+    },
+    pause(info){ return new Promise(res=>{ run.resolve=res; if(run.sid===DB.current){ if(sel!==run.at) select(run.at); else animRender([run.at]); const t=document.getElementById('replayFitText'); if(t) t.focus({preventScroll:true}); } }); },
+    update(){ if(run.sid===DB.current){ const el=treeEl.querySelector('.replayrun'); if(el) el.outerHTML=replayRunHTML(); else animRender([run.at]); } }
+  };
+  animRender([run.at]);
+  const out=await runReplay(run, io);
+  if(replayRun===run) replayRun=null;
+  if(run.sid===DB.current) animRender([sel]);
+  const n=out.made.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge').length;
+  const rw = out.rewrites ? ` ${out.rewrites} rewritten to fit.` : '';
+  toast(out.stoppedAt==null ? `Replay finished: ${n} prompt${n===1?'':'s'} re-sent.${rw}`
+    : out.why==='mismatch' ? `Replay stopped before #${out.stoppedAt}, which no longer fit. ${n} re-sent.`
+    : out.why==='error' ? `Replay stopped: ${out.error}` : `Replay stopped. ${n} prompt${n===1?'':'s'} re-sent.`);
 }
-
+function replayRunHTML(){
+  const r=replayRun; if(!r || r.done) return '';
+  const st=r.status||{}, o=st.id!=null ? S.nodes[st.id] : null;
+  if(st.what==='paused'){
+    return `<div class="fan replay replayrun" data-key="rr"><div class="fanhead"><b>${AI}Replay paused</b><span class="note">before #${st.id}</span></div>
+      <p class="note"><b>#${st.id} may not fit anymore.</b> ${esc(st.reason||'The new reply went a different way.')}</p>
+      <p class="note">Written as: <q>${esc(clip(o ? o.text : '', 300))}</q></p>
+      <textarea id="replayFitText" rows="${Math.min(10, Math.max(3, (st.suggest||o&&o.text||'').split('\n').length+1))}" aria-label="Prompt to send">${esc(st.suggest || (o ? o.text : ''))}</textarea>
+      <div class="bar"><button class="btn primary" data-replayfitgo="edited">Send this</button><button class="btn" data-replayfitgo="original">Send the original</button><button class="btn" data-replayfitgo="stop">Stop here</button></div></div>`;
+  }
+  const what = st.what==='checking' ? `Checking that #${st.id} still fits…` : st.what==='sending' ? `Waiting for the reply to #${st.id}…` : 'Starting…';
+  return `<div class="fan replay replayrun" data-key="rr"><div class="fanhead"><b>${AI}Replaying</b><span class="note">${what}</span><button class="rmore" data-replaystop>Stop</button></div></div>`;
+}
 /* ---- Mainline ----
    main is just the branch named main; the straight line in the drawing follows it. */
 function onMain(id){
@@ -2507,24 +2597,28 @@ const Agent=(()=>{
       });
       return reply(sid, id, {...where(sid,id), replaced:a.prompt, message:`New version of #${a.prompt} (the old one is kept)`});
     },
-    /* replay: the line from a prompt to the end of a branch (or to the end of the line), as new versions */
+    /* replay: the line from a prompt to the end of a branch (or to the end of the line), one prompt at a time, as new
+       versions; onto carries it under another prompt (to continue after a stop), first_prompt replaces the first */
     replay_plan(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
-      const line=agentLine(t, a.prompt, a.branch);
-      return {count: withTree(t, ()=>replayCount(line)), line};
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt); if(a.onto!=null) need(t, a.onto);
+      const line=agentLine(t, a.prompt, a.branch), n=withTree(t, ()=>replayCount(line));
+      return {count: n + (a.on_mismatch==='ignore' ? 0 : Math.max(0, n-1) + (a.onto!=null ? 1 : 0))};
     },
     async replay(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
-      const line=agentLine(t, a.prompt, a.branch), by=a.agent||'agent';
-      const made=change(sid, ()=>copyLine(line, null, by));
-      const asks=made.filter(x=>t.nodes[x].kind!=='merge');
-      if(!asks.length) throw new Error('Nothing to replay.');
-      const last=asks[asks.length-1], waits=asks.map(x=>awaitReply(sid, x));
-      wantReplies(asks, sid);
-      const rs=await Promise.all(waits), bad=rs.findIndex(r=>r.error);
-      if(bad>=0) throw new Error(`#${asks[bad]} got no reply: ${rs[bad].error}`);
-      return {...where(sid,last), prompt:last, reply:rs[rs.length-1].reply, replayed:line.filter(x=>t.nodes[x].kind!=='merge'), made:asks,
-        message:`Replayed #${line[0]}${asks.length>1?`–#${line[line.length-1]}`:''} as new versions (#${asks[0]}${asks.length>1?`–#${last}`:''}); the old ones are kept`};
+      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt); if(a.onto!=null) need(t, a.onto);
+      const line=agentLine(t, a.prompt, a.branch);
+      const r={sid, from:a.prompt, onto:a.onto ?? null, line, by:a.agent||'agent', firstText:a.first_prompt ?? null,
+        mode: a.on_mismatch==='rewrite' ? 'rewrite' : a.on_mismatch==='ignore' ? 'off' : 'stop', done:false};
+      const out=await runReplay(r, {apply:fn=>change(sid, fn), pause:()=>Promise.resolve(null), update(){}});
+      const asks=out.made.filter(x=>t.nodes[x] && t.nodes[x].kind!=='merge'), last=asks[asks.length-1];
+      const lastReply = last!=null ? t.nodes[last].reply : undefined;
+      let message = asks.length ? `Replayed ${asks.length} prompt${asks.length===1?'':'s'} as new versions (#${asks[0]}${asks.length>1?`–#${last}`:''}); the old ones are kept` : 'Nothing was re-sent';
+      if(out.rewrites) message += `. ${out.rewrites} rewritten to fit`;
+      if(out.why==='mismatch'){ const m=out.mismatch;
+        message += `. Stopped before #${m.id}, which no longer fits: ${m.reason || 'the new reply went a different way'}${m.rewrite?` Suggested rewrite: "${m.rewrite}"`:''} To go on, call replay with prompt ${m.id}, onto ${last ?? (a.onto ?? '(the prompt before it)')}, and first_prompt set to your version (or ask after #${last} yourself).`; }
+      else if(out.why==='error') message += `. Stopped: ${out.error}`;
+      return {...(last!=null ? where(sid,last) : where(sid,a.prompt)), prompt:last, reply:lastReply, requests:out.requests, message};
     },
     async distill(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
@@ -2890,6 +2984,8 @@ function opsHTML(id){
 const AI='✦ ';
 const usesClaude = k => sampleState==='ready' && (k==='fan' || (k==='reroot' && opts.summary && opts.rerootBy==='claude') || (k==='squash' && opts.squashBy==='claude'));
 const opLabel=(k,id)=> k==='skip' && S.nodes[id] && S.nodes[id].skip ? 'Include' : (usesClaude(k) ? AI : '')+OPS[k].label;
+/* a prompt changed during a replay so it fits the new reply above it; the original wording stays on the prompt */
+const rwTitle = n => `${n.rewritten.by==='claude'?'Claude rewrote':'You rewrote'} this prompt during a replay${n.rewritten.why?` (${n.rewritten.why.replace(/\.$/,'')})`:''}. Written as: "${clip(n.rewritten.from||'',200)}"`;
 function rowHTML(id, pathSet){
   const n=S.nodes[id], isM=n.kind==='merge';
   const cls=['row'];
@@ -2904,7 +3000,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -2926,7 +3022,7 @@ function rowHTML(id, pathSet){
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${n.rewritten?`<span class="edtag rwnote" title="${esc(rwTitle(n))}">rewritten</span>`:''}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
     else if(id===sel){
       const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
       const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
@@ -2938,6 +3034,7 @@ function rowHTML(id, pathSet){
   if(fan && fan.id===id) h+=fanHTML();
   if(distill && distill.id===id) h+=distillHTML();
   if(replayAsk && replayAsk.at===id) h+=replayHTML();
+  if(replayRun && !replayRun.done && replayRun.sid===DB.current && replayRun.at===id) h+=replayRunHTML();
   return h;
 }
 /* which replies are open; Chat view is one thread, so it shows every reply in it */
@@ -3979,6 +4076,13 @@ treeEl.addEventListener('click', e=>{
   const rg=e.target.closest('[data-regen]'); if(rg){ regenerate(+rg.dataset.regen); return; }
   const rpa=e.target.closest('[data-replayask]'); if(rpa){ askReplay(+rpa.dataset.replayask); return; }
   if(e.target.closest('[data-replaygo]') && replayAsk){ const r=replayAsk; replay(r.from, r.onto, r.line); return; }
+  const rfm=e.target.closest('[data-replayfit]'); if(rfm){ opts.replayFit=rfm.dataset.replayfit; save(); if(replayAsk) animRender([replayAsk.at]); return; }
+  if(e.target.closest('[data-replaystop]') && replayRun){ const r=replayRun; r.stop=true; if(r.status && r.status.what==='sending') stopReply(r.status.id); if(r.resolve) r.resolve(null); return; }
+  const rfg=e.target.closest('[data-replayfitgo]'); if(rfg && replayRun && replayRun.resolve){ const r=replayRun, how=rfg.dataset.replayfitgo, res=r.resolve; r.resolve=null;
+    if(how==='stop'){ res(null); return; }
+    const o=S.nodes[r.status.id], t=document.getElementById('replayFitText'), v=how==='original' ? o.text : (t ? t.value : '');
+    if(!v.trim()){ r.resolve=res; toast('Write a prompt first.'); return; }
+    res({text:v}); return; }
   if(e.target.closest('[data-replaycancel]') && replayAsk){ const at=replayAsk.at; replayAsk=null; animRender([at]); return; }
   const vb=e.target.closest('[data-ver]'); if(vb){ switchVersion(+vb.dataset.ver, +vb.dataset.dir); return; }
   const rt=e.target.closest('[data-rtog]');

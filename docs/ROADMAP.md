@@ -13,8 +13,10 @@ foundation once the agent interface has been tried on a real task, then everythi
 - MCP server, read-only: list, search, get the context of a branch or prompt, get a prompt
 - Context fingerprint: each reply records a hash of exactly what was sent, and shows a small, neutral "Context
   changed: #3 reply edited" note when something above it changes (never sent to the model; can be turned off)
-- Replay: re-send a prompt and the ones below it against the context as it is now, as new versions, after
-  saying how many requests it takes; also carries the prompts below an edited prompt over to its new version
+- Replay: re-send a prompt and the ones below it against the context as it is now, one at a time, as new versions,
+  after saying what it can cost; a quick ✦ check before each prompt stops at one that no longer fits (or rewrites
+  it, if chosen, marked and with the original kept); also carries the prompts below an edited prompt over to its
+  new version
 
 ## Next
 - **Branch settings:** a system prompt, temperature, thinking and max tokens per branch, so a fork can try the same
