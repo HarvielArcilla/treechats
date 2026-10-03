@@ -1211,11 +1211,19 @@ function desc(id){
   const out=new Set(), st=[id]; while(st.length){ const c=st.pop(); for(const k of kids(c)) if(!out.has(k.id)){ out.add(k.id); st.push(k.id);} }
   if(G) G.desc.set(id, out); return new Set(out);
 }
-function path(id, memo=(G?G.path:new Map())){
-  if(memo.has(id)) return memo.get(id);
-  const n=S.nodes[id], res=[];
-  for(const p of n.parents) for(const x of path(p,memo)) if(!res.includes(x)) res.push(x);
-  res.push(id); memo.set(id,res); return res;
+/* every prompt a prompt sends, oldest first: its first parent's path, then what each other parent adds, then itself.
+   A post-order walk that skips what it has seen gives exactly that, in time linear in the ancestors (and without
+   recursion, so very long chats are fine) */
+function path(id){
+  if(G && G.path.has(id)) return G.path.get(id);
+  const res=[], seen=new Set(), stack=[[id,0]];
+  while(stack.length){
+    const top=stack[stack.length-1], n=S.nodes[top[0]], ps=n ? n.parents : [];
+    if(top[1]<ps.length){ const p=ps[top[1]++]; if(!seen.has(p) && S.nodes[p]){ seen.add(p); stack.push([p,0]); } continue; }
+    stack.pop(); res.push(top[0]);
+  }
+  if(G) G.path.set(id, res);
+  return res;
 }
 function chain(id){
   if(G && G.chain.has(id)) return G.chain.get(id).slice();
@@ -1907,7 +1915,11 @@ function switchVersion(id, dir){
   const vs=versions(id), i=vs.indexOf(id), t=vs[i+dir];
   if(t==null) return;
   if(!kids(id).length && !kids(t).length && !refsAt(t).length) for(const rid of refsAt(id)) S.refs[rid].tip=t;
+  /* the ‹ › you clicked stays under the pointer, however long the other version's reply is */
+  const was=treeEl.querySelector(`.ver [data-ver="${id}"]`), y0=was ? was.getBoundingClientRect().top : null;
   select(t);
+  const now=treeEl.querySelector(`.ver [data-ver="${t}"]`);
+  if(now && y0!=null){ const dy=now.getBoundingClientRect().top-y0; if(Math.abs(dy)>1) window.scrollBy(0, dy); }
 }
 
 /* model replies via the artifact's sample capability */
@@ -3696,10 +3708,13 @@ function renderTree(){
   /* what the selected prompt sends (its context path, merges included), then the line after it. A branch merged in
      further down isn't part of the selected prompt's context yet, so it folds into a note at the merge */
   const lineSet = opts.lineOnly && sel!=null && S.nodes[sel] ? (()=>{ const c=chain(threadTip(sel)), i=c.indexOf(sel); return new Set([...path(sel), ...(i<0 ? [] : c.slice(i))]); })() : null, lineRoot = lineSet ? chain(sel)[0] : null;
+  /* chats off screen are drawn lazily at an estimated height; carry each one's real height over from the last draw,
+     or the chats above you change size on every redraw and the page jumps */
+  const knownH=new Map(); for(const sec of treeEl.querySelectorAll('section.conv[data-key]')){ const cs=getComputedStyle(sec), box=parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom)+parseFloat(cs.borderTopWidth)+parseFloat(cs.borderBottomWidth), h=sec.getBoundingClientRect().height-box; if(h>0) knownH.set(sec.dataset.key, Math.round(h)); }
   for(const r of shown){
     curLine = r.id===lineRoot ? lineSet : null;
     const size=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1, k=convKey(r);
-    const est=60+size*44+(repliesMode()==='all'?size*140:0);
+    const est=knownH.get('cv'+k) ?? (60+size*44+(repliesMode()==='all'?size*140:0));
     h+=`<section class="conv" data-conv="${r.id}" data-key="cv${k}" style="contain-intrinsic-size:auto ${est}px"><div class="convHead" draggable="true" data-convdrag="${r.id}" title="Drag onto a project in the sidebar to move it"><span class="ctitle">${esc(convTitle(r))}</span><span class="cmeta">${size} prompt${size>1?'s':''}</span><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div><ul class="tree" style="--lane:var(--l0)">${runHTML(r.id,0,pathSet)}</ul></section>`;
   }
   curLine=null;
@@ -3979,8 +3994,15 @@ function select(id){
   const changed=sel!==id, prevSel=sel;
   sel=id; setActivePath(id); syncHead(); composeFor=null; if(changed) renaming=false; save();
   showSelection(prevSel);
+  /* Selecting never moves the page under you: it scrolls only when the prompt is entirely off screen (keyboard
+     navigation, or a jump from somewhere else), and never when you flip between versions of the same prompt */
   const el=treeEl.querySelector(`.row[data-id="${id}"]`);
-  if(el){ el.focus({preventScroll:true}); if(el.scrollIntoView) el.scrollIntoView({block:'nearest', behavior: Motion.reduced() ? 'auto' : 'smooth'}); }
+  const group=x=>S.nodes[x] ? (S.nodes[x].alt ?? x) : null, sameRow = prevSel!=null && group(prevSel)===group(id);
+  if(el){
+    el.focus({preventScroll:true});
+    const r=el.getBoundingClientRect(), offScreen = r.bottom<72 || r.top>innerHeight;
+    if(offScreen && !sameRow && el.scrollIntoView) el.scrollIntoView({block:'nearest', behavior: Motion.reduced() ? 'auto' : 'smooth'});
+  }
 }
 /* moving within a conversation glides; landing in a different one swaps the view */
 function showSelection(prevSel){ animRender([sel, prevSel], true); }
@@ -5533,7 +5555,7 @@ mapEl().addEventListener('keydown', e=>{
 });
 document.getElementById('mapBtn').addEventListener('click', ()=>openMapView());
 
-for(const name of ['render','renderTree','renderConvs','renderCtx','renderBranches','renderEditor','renderNotes','renderCompare','paletteCommands','treeMarkdown','pathMarkdown','drawMap','renderMapView']){
+for(const name of ['select','render','renderTree','renderConvs','renderCtx','renderBranches','renderEditor','renderNotes','renderCompare','paletteCommands','treeMarkdown','pathMarkdown','drawMap','renderMapView']){
   const f=window[name]; if(typeof f==='function') window[name]=function(...a){ return withGraph(()=>f.apply(this,a)); };
 }
 
