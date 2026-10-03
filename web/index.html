@@ -3030,7 +3030,7 @@ function rowHTML(id, pathSet){
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button><button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
     else if(id===sel){
       const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
       const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
@@ -3861,6 +3861,14 @@ function swapView(update){
   const aside=document.querySelector('aside'); if(aside && aside.offsetParent) aside.animate([{opacity:0},{opacity:1}], fade);
   return !!b;
 }
+/* Chat view → Editor on one message: that prompt is selected and stays where it is on screen, with the line you were
+   reading kept as the active one */
+function openInEditor(id){
+  if(!S.nodes[id]) return;
+  if(simpleTip!=null && S.nodes[simpleTip] && path(simpleTip).includes(id)) setActivePath(simpleTip);
+  sel=id; composeFor=null; syncHead(); save();
+  setView(false);
+}
 function setView(chat){
   if(!!opts.simple===chat) return;
   opts.simple=chat; simpleTip=null; pick=null; save();
@@ -4073,6 +4081,7 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-attach]')){ openPicker('prompt'); return; }
   const ua=e.target.closest('[data-unattach]'); if(ua){ pendingFiles.splice(+ua.dataset.unattach,1); const t=document.getElementById('contText')||document.getElementById('composeText'), keep=t?t.value:''; renderTree(); const t2=document.getElementById('contText')||document.getElementById('composeText'); if(t2) t2.value=keep; return; }
   const cr=e.target.closest('[data-copyreply]'); if(cr){ copyText(S.nodes[+cr.dataset.copyreply].reply||''); return; }
+  const oe=e.target.closest('[data-openeditor]'); if(oe){ openInEditor(+oe.dataset.openeditor); return; }
   const cp=e.target.closest('[data-copyprompt]'); if(cp){ copyText(S.nodes[+cp.dataset.copyprompt].text||''); return; }
   const ere=e.target.closest('[data-editreply]'); if(ere){ openReplyEdit(+ere.dataset.editreply); return; }
   const rea=e.target.closest('[data-replyedit]'); if(rea){ if(rea.dataset.replyedit==='save') saveReplyEdit(); else { const id=replyEditFor; replyEditFor=null; animRender([id]); } return; }
