@@ -844,6 +844,9 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .usage{margin:8px 0}
 .pe.sp .pe-head{gap:8px}
 .spname{flex:1;min-width:0;font-weight:600}
+.rvlinks{display:inline-flex;gap:4px}
+.rvlinks .linkbtn{font-size:.8rem;padding:2px 6px}
+.fan.review .segs{margin:4px 0 8px}
 .pinplace{margin-left:auto;font-size:.8rem}
 .rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .offbr{margin:2px 0 6px 18px}
@@ -1072,6 +1075,8 @@ const PROMPTS = {
   combine:{label:'Compare: combining the follow-ups', group:'tools', def:"Below is a conversation that branched into alternatives: each is a follow-up message and the reply to it, labelled with its number. Write one reply that combines the best parts of the alternative replies, following these instructions: {instructions}\n\nAlso write the follow-up message that the combined reply answers, in the person's voice, so the pair reads naturally after the conversation. Say which parts came from which alternative.\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
     help:'What Claude is asked by ✦ Combine in Compare. {instructions} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
     fmt:'Reply with only JSON: {"prompt":"The follow-up message, in the person\'s voice.","reply":"The combined reply, in Markdown.","sources":{"#12":"What came from it.","#14":"What came from it."}}'},
+  review:{label:'Review: second opinion', group:'tools', def:"Review the answer below with fresh eyes. Point out anything wrong, missing, unclear or weakly supported, most important first, and say what you would change. If it holds up, say so plainly.\n\n{material}",
+    help:'The first prompt of the new chat ✦ Review starts. {material} becomes the prompt and reply being reviewed, or the whole conversation up to it if you include it.'},
   reroot:{label:'Reroot summary', group:'ops', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
 /* ---- Saved prompts ----
@@ -2550,6 +2555,60 @@ function renderCompare(){
   for(const [k,v,f] of keep){ const x=document.getElementById(k); if(x){ x.value=v; if(f) x.focus({preventScroll:true}); } }
 }
 
+/* ---- ✦ Review: a second opinion ----
+   Starts a new chat that sees only what you include: the prompt and its reply, or the whole conversation up to it.
+   A reviewer that didn't write the answer has no reason to defend it. The first prompt is the review prompt (editable
+   here and in Settings › Prompts) with that material filled in, so the review chat shows exactly what was sent. The
+   reply and its review link to each other. */
+let reviewAsk=null;
+function reviewMaterial(id, whole){
+  const n=S.nodes[id];
+  if(whole) return `The conversation:\n\n${turnsFor(id, true).map(t=>`${t.role==='user'?'User':'Assistant'}: ${t.content}`).join('\n\n')}`;
+  return `The question:\n${n.text||''}\n\nThe answer:\n${n.reply||''}`;
+}
+/* adds the review chat to the tree in S; returns its first prompt */
+function addReviewChat(id, whole, instructions, by){
+  let t=(instructions!=null && instructions.trim() ? instructions : promptText('review'));
+  const material=reviewMaterial(id, whole);
+  t = t.includes('{material}') ? t.split('{material}').join(material) : t+'\n\n'+material;
+  const nid=S.nextId++;
+  S.nodes[nid]={id:nid, parents:[], text:t, reviewOf:{id, whole:!!whole}};
+  if(by) S.nodes[nid].by=by;
+  newRef('main', nid);
+  S.convs[nid]=Object.assign(S.convs[nid]||{}, {title:`Review of #${id}`});
+  return nid;
+}
+const reviewsOf = id => all().filter(n=>n.reviewOf && n.reviewOf.id===id);
+function openReview(id){
+  if(sampleState!=='ready'){ toast('Review needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
+  reviewAsk={id, whole:false, text:promptText('review')}; distill=null; fan=null;
+  if(sel!==id) select(id); else animRender([id]);
+  const el=treeEl.querySelector('.fan.review'); if(el) el.scrollIntoView({block:'nearest', behavior: Motion.reduced()?'auto':'smooth'});
+}
+function reviewHTML(){
+  const r=reviewAsk;
+  return `<div class="fan review" data-key="rv${r.id}"><div class="fanhead"><b>${AI}Review</b><span class="note">a new chat, 1 request</span><button class="rmore" data-rvcancel>Cancel</button></div>
+    <p class="note">A second opinion from a chat that didn’t write this reply. It sees only what you include.</p>
+    <div class="segs" role="group" aria-label="What the reviewer sees"><button class="seg" data-rvwhole="0" aria-pressed="${!r.whole}">This prompt and reply</button><button class="seg" data-rvwhole="1" aria-pressed="${r.whole}">The whole conversation up to it</button></div>
+    <label class="flabel" for="reviewText">What to ask the reviewer <span class="flhint">{material} becomes what you include</span></label>
+    <textarea id="reviewText" rows="4">${esc(r.text)}</textarea>
+    <div class="bar"><button class="btn primary" data-rvgo>${AI}Start review</button><button class="btn" data-rvcancel>Cancel</button></div></div>`;
+}
+function startReview(){
+  const r=reviewAsk; if(!r) return;
+  const t=document.getElementById('reviewText'); if(t) r.text=t.value;
+  let nid;
+  commit(`Started a review of #${r.id} in a new chat`, ()=>{ nid=addReviewChat(r.id, r.whole, r.text); });
+  reviewAsk=null;
+  wantReplies([nid]);
+  animRender([r.id]);
+}
+/* where a reply's reviews are, and what a review chat reviews */
+function reviewLinksHTML(id){
+  const rs=reviewsOf(id); if(!rs.length) return '';
+  return `<span class="rvlinks">${rs.map(n=>`<button class="linkbtn" data-goto="${n.id}" title="Open the review chat">${AI}Review #${n.id} ↗</button>`).join('')}</span>`;
+}
+
 /* ---- ✦ Judge and ✦ Combine (in Compare) ----
    Judge: one request with the context up to the prompt, each follow-up and its reply, and your criteria; Claude gives a
    reason for every follow-up and picks one. It changes nothing; you act on the verdict.
@@ -2836,6 +2895,13 @@ const Agent=(()=>{
         message += `. Stopped before #${m.id}, which no longer fits: ${m.reason || 'the new reply went a different way'}${m.rewrite?` Suggested rewrite: "${m.rewrite}"`:''} To go on, call replay with prompt ${m.id}, onto ${last ?? (a.onto ?? '(the prompt before it)')}, and first_prompt set to your version (or ask after #${last} yourself).`; }
       else if(out.why==='error') message += `. Stopped: ${out.error}`;
       return {...(last!=null ? where(sid,last) : where(sid,a.prompt)), prompt:last, reply:lastReply, requests:out.requests, message};
+    },
+    /* a second opinion: a new chat in the run that sees only the reply (or the conversation up to it) */
+    async review(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
+      if(!t.nodes[a.prompt].reply) throw new Error(`#${a.prompt} has no reply to review yet.`);
+      const id=change(sid, ()=>addReviewChat(a.prompt, !!a.include_conversation, a.instructions, a.agent||'agent'));
+      return reply(sid, id, {...where(sid,id), message:`Reviewed #${a.prompt} in a new chat, which saw ${a.include_conversation?'the conversation up to it':'only that prompt and reply'}`});
     },
     /* the follow-ups of a prompt (or the ones named), judged or combined as in Compare */
     async judge(a){
@@ -3234,7 +3300,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Branch settings from here on: '+setSummary(n.set))}">settings</span>`:'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Branch settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -3268,6 +3334,7 @@ function rowHTML(id, pathSet){
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
   if(distill && distill.id===id) h+=distillHTML();
+  if(reviewAsk && reviewAsk.id===id) h+=reviewHTML();
   if(replayAsk && replayAsk.at===id) h+=replayHTML();
   if(replayRun && !replayRun.done && replayRun.sid===DB.current && replayRun.at===id) h+=replayRunHTML();
   return h;
@@ -3295,7 +3362,8 @@ function replyFoot(id){
   const nOpt = id===sel && S.nodes[id].reply && !(fan && fan.id===id) ? listOptions(S.nodes[id].reply).options.length : 0;
   const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
   const ds = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(distill && distill.id===id) ? `<button class="rmore" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">✦ Distill</button>` : '';
-  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button>` : '')+fo+ds;
+  const rv = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(reviewAsk && reviewAsk.id===id) ? `<button class="rmore" data-review="${id}" title="A second opinion: a new chat that sees only this reply (and, if you choose, the conversation before it)">${AI}Review</button>` : '';
+  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button>` : '')+fo+ds+rv+reviewLinksHTML(id);
   const cm = ctxMarkHTML(id);
   const st = !cm && S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
   return sw||rg||st||cm ? `<div class="rfoot">${sw}${rg}${st}${cm ? `<span class="ctxwrap">${cm}</span>` : ''}</div>` : '';
@@ -3370,8 +3438,8 @@ function replyHTML(id){
   if(opts.simple){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
-    const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}${!(reviewAsk && reviewAsk.id===id)?`<button class="act" data-review="${id}" title="A second opinion from a new chat that sees only this reply">${AI}Review</button>`:''}` : '';
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
   return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
@@ -3758,6 +3826,7 @@ function select(id){
   if(distill && distill.id!==id){ if(distill.ctl) distill.ctl.abort(); distill=null; }
   if(fan && fan.id!==id) fan=null;
   if(replayAsk && replayAsk.at!==id) replayAsk=null;
+  if(reviewAsk && reviewAsk.id!==id) reviewAsk=null;
   if(variants && id!==sel) variants=null;
   if(S.nodes[id]) for(const x of path(id)) if(x!==id && S.fold[x]) delete S.fold[x];
   const changed=sel!==id, prevSel=sel;
@@ -4362,6 +4431,11 @@ treeEl.addEventListener('click', e=>{
   const uf=e.target.closest('[data-unfold]'); if(uf){ toggleFold(+uf.dataset.unfold); return; }
   const fb=e.target.closest('[data-fan]'); if(fb){ openFan(+fb.dataset.fan); return; }
   const dsb=e.target.closest('[data-distill]'); if(dsb){ openDistill(+dsb.dataset.distill); return; }
+  const rvb=e.target.closest('[data-review]'); if(rvb){ openReview(+rvb.dataset.review); return; }
+  const rvw=e.target.closest('[data-rvwhole]'); if(rvw && reviewAsk){ const t=document.getElementById('reviewText'); if(t) reviewAsk.text=t.value; reviewAsk.whole=rvw.dataset.rvwhole==='1'; animRender([reviewAsk.id]); return; }
+  if(e.target.closest('[data-rvgo]')){ startReview(); return; }
+  if(e.target.closest('[data-rvcancel]') && reviewAsk){ const id=reviewAsk.id; reviewAsk=null; animRender([id]); return; }
+  const gt=e.target.closest('[data-goto]'); if(gt){ e.stopPropagation(); gotoNode(+gt.dataset.goto); return; }
   if(variants){
     if(e.target.closest('[data-vcancel]')){ const keep=variants.rows[0].text; variants=null; draft=keep; animRender([sel]); return; }
     if(e.target.closest('[data-vsend]')){ sendVariants(); return; }

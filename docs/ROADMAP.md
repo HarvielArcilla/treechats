@@ -22,11 +22,15 @@ foundation once the agent interface has been tried on a real task, then everythi
 - Token counts and cost on every reply, with a running total along the context path; thinking kept, folded
 - Compare: ✦ Judge (a reason for every follow-up and a pick, against your criteria; changes nothing) and ✦ Combine
   (one reply from the best parts, as a draft you edit before adding; marked with its sources)
-- MCP: replay, judge and combine; spawn and fork take branch settings; get_prompt reports settings, usage and
+- Editing a prompt starts a new branch (Save in place is the exception)
+- ✦ Review: a second opinion from a new chat that sees only what you include, linked both ways
+- Saved prompts with {placeholders}, inserted with / ; starters for common strategies (plan first, interview me, …)
+- MCP: replay, review, judge, combine and list_saved_prompts; spawn and fork take branch settings; get_prompt reports settings, usage and
   context changes
 
 ## Next
 - `fan_out` over MCP, so agents can branch a reply's options the way people do
+- Range selection (Shift-click) with tools for a stretch of a line; recipes; running a prompt over many inputs
 - Try the subagent tools on a real task (Phase 1 below)
 
 ## Phase 1: subagents prototype

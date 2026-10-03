@@ -89,7 +89,7 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, review gets a fresh-eyes second opinion on a reply, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
@@ -255,6 +255,11 @@ export function buildMcpServer(read: () => State | null) {
       return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
+  server.registerTool('review', {
+    title: 'Get a second opinion',
+    description: 'A fresh-eyes review of a subagent reply: a new chat in your run that sees only that prompt and reply (or the whole conversation up to it), asked to point out what is wrong, missing or weak. A reviewer that did not write the answer has no reason to defend it. One request. Returns the review.',
+    inputSchema: { run, agent, model, prompt: promptNo.describe('The prompt whose reply to review.'), include_conversation: z.boolean().optional().describe('Also show the reviewer the conversation up to it. Defaults to false.'), instructions: z.string().optional().describe('What to ask the reviewer; {material} becomes what it sees. Defaults to the review prompt in Treechats.') },
+  }, act('review', true));
   server.registerTool('judge', {
     title: 'Judge follow-ups',
     description: 'Best-of-n: Claude reads the context up to a prompt and each follow-up with its reply (all of them, or the ones you name), gives a reason for each against your criteria, and picks one. One request. Nothing is changed; continue on the pick yourself (ask after it).',

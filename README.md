@@ -68,6 +68,17 @@ sense. If it doesn't, Replay stops and shows why, with a suggested rewrite you c
 if you choose, it sends the rewrite and keeps going (the prompt is marked as rewritten and keeps your wording). You can also replay any stretch with **✦ Replay from here** under a selected prompt, and after you send
 an edited prompt, the prompts that followed the original can be carried over with **✦ Replay N below**.
 
+## Second opinions and saved prompts
+
+**✦ Review** on a reply starts a new chat that sees only that prompt and reply (or, if you choose, the conversation
+up to it) and asks for an honest review. A reviewer that didn't write the answer has no reason to defend it. The review
+prompt is shown before it's sent and editable in Settings › Prompts, and the reply and its review link to each other.
+
+**Saved prompts** are your prompt library: insert one from **Saved prompts** under the input box, or type `/` in an
+empty box. Words in `{braces}` are placeholders; what you've typed fills the first. A few starters are included (plan
+first, ask me questions first, improve my prompt, critique your answer, and more). Edit them in Settings › Saved
+prompts.
+
 ## Compare, judge and combine
 
 Open **Compare** on a prompt with several follow-ups to read them side by side. **✦ Judge** sends one request with
@@ -99,7 +110,7 @@ in the browser.
 **Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and
 steer: `spawn` (start one with exactly the context it should have), `ask`, `fork`, `leave_out`, `edit_reply`,
 `regenerate`, `replay` (re-send from a prompt once the context above it has changed; it stops at a prompt that no
-longer fits, or rewrites it if asked), `judge` and `combine` (best-of-n across forks) and `distill` (get back a short brief instead of the whole chat). For example: "use
+longer fits, or rewrites it if asked), `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across forks) and `distill`; `list_saved_prompts` reads your prompt library (get back a short brief instead of the whole chat). For example: "use
 treechats to spawn three subagents that each review this design from a different angle, then distill each".
 
 - Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't
