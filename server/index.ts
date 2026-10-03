@@ -14,6 +14,7 @@ import { handleMcp } from './mcp.ts';
 import { attachPage, settle } from './relay.ts';
 import { loadState } from './context.ts';
 import { FolderError, listFolder, readFolderFiles, writeFolderFile } from './folders.ts';
+import { listSessions, parseSession, readSession, SessionError } from './sessions.ts';
 
 const app = new Hono();
 const STATE_KEY = 'treechats-v1';
@@ -110,6 +111,16 @@ const folderRoute = (fn: (b: any) => Promise<unknown>) => async (c: any) => {
 app.post('/api/folder/list', folderRoute((b) => listFolder(b.root)));
 app.post('/api/folder/read', folderRoute((b) => readFolderFiles(b.root, Array.isArray(b.paths) ? b.paths.map(String) : [])));
 app.post('/api/folder/write', folderRoute((b) => writeFolderFile(b.root, String(b.path || ''), String(b.text ?? ''), typeof b.mtime === 'number' ? b.mtime : null, !!b.force)));
+
+/* coding sessions from Claude Code and Codex, for the import dialog (see server/sessions.ts) */
+const sessionRoute = (fn: (b: any) => Promise<unknown> | unknown) => async (c: any) => {
+  let b: any = {}; try { b = await c.req.json(); } catch { /* no body */ }
+  try { return c.json(await fn(b)); }
+  catch (e) { return c.json({ code: e instanceof SessionError ? e.code : 'failed', message: (e as Error).message }, 400); }
+};
+app.post('/api/sessions/list', sessionRoute(() => listSessions()));
+app.post('/api/sessions/read', sessionRoute((b) => readSession(b.source === 'codex' ? 'codex' : 'claude-code', String(b.file || ''))));
+app.post('/api/sessions/parse', sessionRoute((b) => parseSession(String(b.text || ''))));
 
 /* MCP: lets Claude Code and other MCP clients read your spaces, conversations and context (see server/mcp.ts) */
 app.all('/mcp', (c) => handleMcp(c.req.raw, () => loadState()));

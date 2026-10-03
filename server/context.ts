@@ -10,6 +10,8 @@ type Node = { id: number; parents: number[]; text: string; reply?: string; kind?
 export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number }>; files?: { id: string; name: string }[] };
 type State = { db: { spaces: Record<string, { id: string; name: string; tree: Tree; sel?: number | null }>; order: string[]; current: string }; opts?: { prompts?: Record<string, string> } };
 
+/* the page's "How to show file changes" prompt, as it is by default */
+export const FILE_EDITS = "When you change one of these files, write the whole new file in a code block and put its path on the line just before the block (for example `src/app.ts`). Treechats shows it as a proposed change that the person can review and save.";
 export const SEAM = 'Separately, in a parallel thread that branched off earlier in this conversation, we discussed the following.';
 const KEY = 'treechats-v1';
 
@@ -93,7 +95,7 @@ export function turnsFor(state: State, tree: Tree, id: number) {
   const raw: { role: 'user' | 'assistant'; content: string }[] = [];
   const instr = (prompts.instructions ?? '').trim();
   if (instr) raw.push({ role: 'user', content: instr });
-  if (tree.files && tree.files.length) raw.push({ role: 'user', content: 'Files shared in this project:\n\n' + tree.files.map(fileStub).join('\n\n') });
+  if (tree.files && tree.files.length) { const fe = (prompts.fileEdits ?? FILE_EDITS).trim(); raw.push({ role: 'user', content: 'Files shared in this project:\n\n' + tree.files.map(fileStub).join('\n\n') + (fe ? '\n\n' + fe : '') }); }
   for (const e of v.entries(id, prompts.seam ?? SEAM)) {
     if (e.seam) { raw.push({ role: 'user', content: e.text }); continue; }
     const n = tree.nodes[e.id];
@@ -130,6 +132,8 @@ export function ctxSig(state: State, tree: Tree, id: number) {
   if (sys) at.push('y:' + h5(sys));
   if (instr) at.push('i:' + h5(instr));
   for (const f of tree.files || []) at.push('f' + h5(f.name) + ':' + h5(f.id));
+  const fe = (prompts.fileEdits ?? FILE_EDITS).trim();
+  if (tree.files && tree.files.length && fe) at.push('e:' + h5(fe));
   for (const e of v.entries(id, prompts.seam ?? SEAM)) {
     if (e.seam) { at.push('s' + e.merge + ':' + h5(e.text)); continue; }
     const n = tree.nodes[e.id];
@@ -154,8 +158,9 @@ export function ctxChanges(state: State, tree: Tree, id: number): string[] | nul
     was.delete('f'); for (const k of [...is.keys()]) if (isFile(k)) is.delete(k);
     if (!same) out.push('project files changed');
   }
+  if (!was.has('e')) is.delete('e');
   const fileName = (k: string) => (tree.files || []).find((f) => 'f' + h5(f.name) === k)?.name || 'a project file';
-  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'f' ? 'project files' : isFile(k) ? fileName(k) : k === 'y' ? 'system prompt' : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
+  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'e' ? 'how to show file changes' : k === 'f' ? 'project files' : isFile(k) ? fileName(k) : k === 'y' ? 'system prompt' : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
   const num = (k: string) => /^\d+$/.test(k);
   for (const [k, val] of is) {
     if (!was.has(k)) { out.push(`${name(k)} ${num(k) ? 'back in' : 'added'}`); continue; }

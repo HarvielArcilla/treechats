@@ -617,6 +617,34 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 /* settings */
 .setwrap{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb, var(--fg) 28%, transparent)}
 .setwrap[hidden]{display:none}
+.proposals{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 2px;padding:8px 10px;border:1px solid color-mix(in srgb, var(--accent) 35%, var(--line));border-radius:8px;background:color-mix(in srgb, var(--accent) 6%, var(--surface))}
+.proposals .plabel{font:500 .66rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin-right:2px}
+.propfile{display:inline-flex;align-items:baseline;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 8px;cursor:pointer;font:.78rem var(--mono);color:var(--fg)}
+.propfile:hover{border-color:var(--accent)}
+.propfile.done{cursor:default;opacity:.75}.propfile.done:hover{border-color:var(--line)}
+.pfstat{font-size:.72rem}.pfadd{color:var(--l1)}.pfdel{color:var(--danger)}.pfstat.bad{color:var(--danger)}
+.fvdiff{flex:1;overflow:auto;font:.78rem/1.5 var(--mono);background:var(--bg);padding:6px 0}
+.dline{display:grid;grid-template-columns:3.2em 3.2em 1.4em minmax(0,1fr);white-space:pre}
+.dline .dno{color:var(--muted);text-align:right;padding-right:6px;user-select:none}
+.dline .dsig{user-select:none;text-align:center}
+.dline .dtxt{white-space:pre-wrap;overflow-wrap:anywhere;padding-right:12px}
+.dadd{background:color-mix(in srgb, var(--l1) 14%, transparent)}
+.ddel{background:color-mix(in srgb, var(--danger) 12%, transparent)}
+.dline.off{opacity:.45}.ddel.off{background:none}.dadd.off .dtxt{text-decoration:line-through}
+.dhunk{padding:6px 12px 2px;border-top:1px solid var(--line);margin-top:4px;font-size:.78rem}
+.dgap{color:var(--muted);padding:2px 12px;user-select:none}
+.dnote{padding:10px 18px 0;margin:0}
+
+.impsess{display:grid;gap:8px;margin:4px 0 10px}
+.impsess>.note{font-size:.8rem}
+ul.sesslist{list-style:none;margin:0;padding:0;display:grid;gap:4px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px}
+.sessrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;width:100%;text-align:left;border:0;background:none;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--fg)}
+.sessrow:hover:not(:disabled){background:var(--accent-soft)}
+.sessrow:disabled{opacity:.6;cursor:default}
+.sessrow .sesst{font-size:.86rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessrow .note{grid-column:1;font-size:.74rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessrow .sessgo{grid-row:1/span 2;grid-column:2;align-self:center;font-size:.8rem;color:var(--accent)}
+
 .setbox.fsheet{display:flex;flex-direction:column;width:min(720px,100%);height:auto;max-height:calc(100vh - 32px)}
 .fsheet .sethead{flex:none}
 .fbody{flex:1;min-height:0;overflow:auto;padding:4px 20px 18px}
@@ -1033,9 +1061,10 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="impbox" role="dialog" aria-modal="true" aria-labelledby="impTitle">
     <div class="sethead"><h2 id="impTitle">Import chats</h2><button class="btn" data-impclose>Cancel</button></div>
     <div class="impbody">
-      <p class="note">Paste a chat, or choose a file. Treechats reads chats copied with their speaker labels (<code>You:</code> / <code>Claude:</code>, <code>User:</code> / <code>Assistant:</code>, <code>ChatGPT:</code>), its own Markdown export, and the <code>conversations.json</code> file in a Claude or ChatGPT data export. ChatGPT exports keep their edited messages and regenerated replies as versions.</p>
+      <p class="note">Paste a chat, or choose a file. Treechats reads chats copied with their speaker labels (<code>You:</code> / <code>Claude:</code>, <code>User:</code> / <code>Assistant:</code>, <code>ChatGPT:</code>), its own Markdown export, and the <code>conversations.json</code> file in a Claude or ChatGPT data export. ChatGPT exports keep their edited messages and regenerated replies as versions. Claude Code and Codex session logs (<code>.jsonl</code>) work too.</p>
       <textarea id="impText" rows="7" spellcheck="false" placeholder="You: How do I rate-limit an API?&#10;Claude: Start by deciding what you are limiting…&#10;You: Show me a token bucket."></textarea>
       <div class="bar"><button class="btn" data-impfile>Choose a file…</button><span class="note" id="impFileName"></span></div>
+      <div id="impSessions"></div>
       <div id="impPreview" aria-live="polite"></div>
     </div>
     <div class="impfoot"><label class="model"><span>Into</span><select id="impSpace"></select></label><button class="btn primary" data-impgo disabled>Import</button></div>
@@ -1143,6 +1172,8 @@ const PROMPTS = {
   loopCheck:{label:'Loop: is the condition met?', group:'tools', def:"Someone is sending the same message to Claude again after each reply, until a condition is met. Read the latest turns of the conversation and decide whether this condition is met now: {condition}\n\nThe conversation (most recent part):\n{conversation}",
     help:'Sent after each reply of a /loop that has an until: condition. {condition} becomes the condition, {conversation} the latest turns.',
     fmt:'Reply with only JSON: {"met":false,"why":"One short sentence."}\nmet is true only when the condition is clearly met by the latest reply.'},
+  fileEdits:{label:'How to show file changes', group:'every', def:"When you change one of these files, write the whole new file in a code block and put its path on the line just before the block (for example `src/app.ts`). Treechats shows it as a proposed change that the person can review and save.",
+    help:'Sent with the project files, when a project has any, so Claude writes changes in a form Treechats can show as a diff. Empty sends nothing; code blocks are still recognized when Claude names the file.'},
   judge:{label:'Compare: judging the follow-ups', group:'tools', def:"You are judging alternative follow-ups in a branching conversation. Below is the conversation up to the point where it branched, then each alternative: the follow-up message and the reply to it, labelled with its number.\n\nJudge them only against these criteria: {criteria}\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
     help:'What Claude is asked by ✦ Judge in Compare. {criteria} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
     fmt:'Reply with only JSON: {"best":"#12","reasons":{"#12":"One sentence on how it meets the criteria.","#14":"One sentence."},"summary":"One or two sentences on the choice."}\nUse the labels exactly as given, and give a reason for every alternative.'},
@@ -1279,7 +1310,7 @@ function panelHTML(forId){
     const ents=contextEntries(at), parts=[], add=(label, text, extra='')=>{ if(text) parts.push({label, b:enc?enc.encode(text).length:text.length, t:Math.ceil(text.length/4), extra}); };
     add('System prompt (model settings)', (settingsFor(at).values.system||'').trim());
     add('Standing instructions', promptText('instructions').trim());
-    if(S.files && S.files.length) add(`Project files (${S.files.length})`, S.files.map(fileBlock).join('\n\n'));
+    if(S.files && S.files.length){ add(`Project files (${S.files.length})`, S.files.map(fileBlock).join('\n\n')); add('How to show file changes', promptText('fileEdits').trim()); }
     const turns=[]; let pText='', rText='', fText='', seams=0, skipped=0, np=0, nr=0;
     for(const e of ents){
       if(e.seam){ seams++; pText+=e.text; continue; }
@@ -2035,7 +2066,7 @@ function openFileView(where){
 }
 function closeFileView(force){
   const fv=fileView; if(!fv) return;
-  if(!force && fv.mode==='edit'){ const t=fviewEl.querySelector('#fvText'), r=Files.get(fv.id); if(t && r && t.value!==r.text){ toast('You have unsaved edits. Save them, or Cancel to drop them.'); return; } }
+  if(!force && fv.mode==='edit'){ const t=fviewEl.querySelector('#fvText'), r=Files.get(fv.id); if(t && r && t.value!==r.text && t.value!==fv.draft){ toast('You have unsaved edits. Save them, or Cancel to drop them.'); return; } }
   fileView=null; fviewEl.hidden=true; if(fv.url) URL.revokeObjectURL(fv.url);
   if(fv.ret && fv.ret.focus && document.contains(fv.ret)) fv.ret.focus({preventScroll:true});
 }
@@ -2049,12 +2080,18 @@ function paintFileView(){
   const m=fileAt(fv.where), r=m && Files.get(m.id); if(!m || !r){ closeFileView(true); return; }
   const box=fviewEl.querySelector('.fview'), isImg=r.kind==='image', text=r.text||'', lines=isImg?0:text.replace(/\n$/,'').split('\n').length;
   const isMd=!isImg && /\.(md|markdown)$/i.test(m.name), editable=!isImg;
-  const tools = fv.mode==='edit' ? '' : `${editable?'<button class="btn" data-fvedit>Edit</button>':''}${isMd?`<div class="segs"><button class="seg" data-fvmode="preview" aria-pressed="${fv.mode==='preview'}">Preview</button><button class="seg" data-fvmode="view" aria-pressed="${fv.mode==='view'}">Source</button></div>`:''}${isImg?'':'<button class="btn" data-fvcopy>Copy</button>'}<button class="btn" data-fvdownload>Download</button>`;
+  const tools = fv.mode==='edit' || fv.mode==='diff' ? '' : `${editable?'<button class="btn" data-fvedit>Edit</button>':''}${isMd?`<div class="segs"><button class="seg" data-fvmode="preview" aria-pressed="${fv.mode==='preview'}">Preview</button><button class="seg" data-fvmode="view" aria-pressed="${fv.mode==='view'}">Source</button></div>`:''}${isImg?'':'<button class="btn" data-fvcopy>Copy</button>'}<button class="btn" data-fvdownload>Download</button>`;
   let body;
   if(isImg){ if(!fv.url) fv.url=URL.createObjectURL(r.blob); body=`<div class="fvimg"><img src="${fv.url}" alt="${esc(m.name)}"></div>`; }
+  else if(fv.mode==='diff'){
+    const d=fv.diff, kept=d.hunks.filter(h=>h.on).length, canDisk=!!(m.src && m.src.root && hasServer());
+    body=`${d.note?`<p class="note dnote ${d.warn?'err':''}">${esc(d.note)}</p>`:''}<div class="fvdiff">${diffHTML(fv)}</div>
+      <div class="bar fvbar"><button class="btn primary" data-dsave ${kept?'':'disabled'}>Save ${kept} of ${d.hunks.length} change${d.hunks.length===1?'':'s'}</button><button class="btn" data-dedit title="Open the result in the editor before saving">Edit the result</button><button class="btn" data-fvclose>Cancel</button>${canDisk?`<label class="chk"><input type="checkbox" data-fvdisk ${fv.saveDisk?'checked':''}> Also save to disk</label>`:''}</div>
+      <p class="note">Proposed in the reply to #${d.from}. Nothing changes until you save; saving makes a new version of the file, and Undo brings this one back.</p>`;
+  }
   else if(fv.mode==='edit'){
     const canDisk=!!(m.src && m.src.root && hasServer());
-    body=`<textarea id="fvText" class="fvedit" spellcheck="false" aria-label="Edit ${esc(m.name)}">${esc(text)}</textarea>
+    body=`<textarea id="fvText" class="fvedit" spellcheck="false" aria-label="Edit ${esc(m.name)}">${esc(fv.draft ?? text)}</textarea>
       <div class="bar fvbar"><button class="btn primary" data-fvsave>Save <kbd class="inv">${IS_MAC?'⌘S':'Ctrl S'}</kbd></button><button class="btn" data-fvcancel>Cancel</button>${canDisk?`<label class="chk"><input type="checkbox" data-fvdisk ${fv.saveDisk?'checked':''}> Also save to disk</label>`:''}</div>
       <p class="note">Saving makes a new version of the file. Replies written before it are marked “context changed”, and Undo brings this version back.</p>`;
   }
@@ -2063,14 +2100,14 @@ function paintFileView(){
     const hl=window.TreechatsMarkdown && window.TreechatsMarkdown.highlightFile ? window.TreechatsMarkdown.highlightFile(text, m.name) : esc(text);
     body=`<div class="fvcode"><pre class="fvgutter" aria-hidden="true">${Array.from({length:lines}, (_,i)=>i+1).join('\n')}</pre><pre class="fvsrc"><code class="hljs">${hl}</code></pre></div>`;
   }
-  box.innerHTML=`<div class="fvhead"><div class="fvtitle"><h2 id="fvTitle" title="${esc(m.name)}">${esc(m.name)}</h2><p class="note">${fmtSize(m.size)}${lines?` · ${lines.toLocaleString()} line${lines===1?'':'s'}`:''} · ${fileSource(m, fv.where)}</p></div><button class="btn" data-fvclose>Close</button></div>
+  box.innerHTML=`<div class="fvhead"><div class="fvtitle"><h2 id="fvTitle" title="${esc(m.name)}">${fv.mode==='diff'?'Proposed change · ':''}${esc(m.name)}</h2><p class="note">${fmtSize(m.size)}${lines?` · ${lines.toLocaleString()} line${lines===1?'':'s'}`:''} · ${fileSource(m, fv.where)}</p></div><button class="btn" data-fvclose>Close</button></div>
     ${tools?`<div class="bar fvtools">${tools}</div>`:''}<div class="fvbody">${body}</div>`;
   if(fv.mode==='edit'){ const t=box.querySelector('#fvText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(0,0); } }
 }
-async function saveFileEdit(){
+async function saveFileEdit(given){
   const fv=fileView; if(!fv) return;
-  const t=fviewEl.querySelector('#fvText'), m=fileAt(fv.where), r=m && Files.get(m.id); if(!t || !r) return;
-  const text=t.value;
+  const t=fviewEl.querySelector('#fvText'), m=fileAt(fv.where), r=m && Files.get(m.id); if((!t && given==null) || !r) return;
+  const text = given ?? t.value; fv.draft=null;
   if(text===r.text){ fv.mode='view'; paintFileView(); return; }
   const id=newFileId(), size=enc?enc.encode(text).length:text.length;
   if(size>MAX_TEXT_FILE){ toast(`Files can be up to ${MAX_TEXT_FILE/1024} KB here.`); return; }
@@ -2082,11 +2119,14 @@ async function saveFileEdit(){
   }
   const nm={...m, id, size}; if(src) nm.src=src; if(dirty) nm.dirty=true; else delete nm.dirty;
   const [k, i]=fv.where.split(':'), idx=+i;
-  fv.id=id; fv.mode='view';
+  /* a change saved from a reply's proposal: that reply isn't marked as having a changed context by it */
+  const fromReply = fv.diff ? fv.diff.from : null;
+  fv.id=id; fv.mode='view'; fv.diff=null;
+  const noteApplied = () => { const rn=fromReply!=null && S.nodes[fromReply]; if(rn){ rn.applied=Object.assign({}, rn.applied, {[nm.name]:h5(id)}); } };
   const action = fv.conflict ? {label:'Overwrite the disk copy', fn:()=>forceDiskSave(fv.where)} : undefined; fv.conflict=false;
   if(k==='p'){ pendingFiles[idx]=nm; keepDraft(()=>renderTree()); toast(`Saved ${m.name}${diskNote}.`, false, action); }
-  else if(k==='s') commit(`Saved ${m.name}${diskNote}.`, ()=>{ S.files[idx]=nm; }, {touch:false, action});
-  else commit(`Saved ${m.name} attached to #${k.slice(1)}${diskNote}.`, ()=>{ S.nodes[+k.slice(1)].files[idx]=nm; }, {touch:false, action});
+  else if(k==='s') commit(`Saved ${m.name}${diskNote}.`, ()=>{ S.files[idx]=nm; noteApplied(); }, {touch:false, action});
+  else commit(`Saved ${m.name} attached to #${k.slice(1)}${diskNote}.`, ()=>{ S.nodes[+k.slice(1)].files[idx]=nm; noteApplied(); }, {touch:false, action});
   paintFileView();
 }
 async function forceDiskSave(where){
@@ -2099,13 +2139,18 @@ fviewEl.addEventListener('click', e=>{
   const c=s=>e.target.closest(s);
   if(e.target===fviewEl || c('[data-fvclose]')){ closeFileView(); return; }
   if(c('[data-fvedit]')){ fv.mode='edit'; paintFileView(); return; }
-  if(c('[data-fvcancel]')){ fv.mode='view'; paintFileView(); return; }
+  if(c('[data-fvcancel]')){ fv.mode='view'; fv.draft=null; paintFileView(); return; }
+  if(c('[data-dsave]') && fv.diff){ saveFileEdit(diffResult(fv)); return; }
+  if(c('[data-dedit]') && fv.diff){ fv.draft=diffResult(fv); fv.mode='edit'; paintFileView(); return; }
   if(c('[data-fvsave]')){ saveFileEdit(); return; }
   const mo=c('[data-fvmode]'); if(mo){ fv.mode=mo.dataset.fvmode; paintFileView(); return; }
   if(c('[data-fvcopy]')){ const r=Files.get(fv.id); if(r) copyText(r.text, true).then(ok=>{ if(ok) toast('Copied the file.'); }); return; }
   if(c('[data-fvdownload]')){ const m=fileAt(fv.where), r=Files.get(fv.id); if(!m || !r) return; const url=URL.createObjectURL(r.blob || new Blob([r.text], {type:'text/plain'})); const a=document.createElement('a'); a.href=url; a.download=m.name.split('/').pop(); a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000); return; }
 });
-fviewEl.addEventListener('change', e=>{ if(fileView && e.target.matches('[data-fvdisk]')) fileView.saveDisk=e.target.checked; });
+fviewEl.addEventListener('change', e=>{
+  if(fileView && e.target.matches('[data-fvdisk]')) fileView.saveDisk=e.target.checked;
+  if(fileView && fileView.diff && e.target.dataset.dhunk!=null){ fileView.diff.hunks[+e.target.dataset.dhunk].on=e.target.checked; const sc=fviewEl.querySelector('.fvdiff'), top=sc?sc.scrollTop:0; paintFileView(); const sc2=fviewEl.querySelector('.fvdiff'); if(sc2) sc2.scrollTop=top; }
+});
 fviewEl.addEventListener('keydown', e=>{
   if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); if(fileView && fileView.mode==='edit'){ const t=fviewEl.querySelector('#fvText'), r=Files.get(fileView.id); if(t && r && t.value!==r.text){ toast('You have unsaved edits. Save them, or Cancel to drop them.'); return; } fileView.mode='view'; paintFileView(); } else closeFileView(); return; }
   if(e.target.id==='fvText'){
@@ -2113,6 +2158,182 @@ fviewEl.addEventListener('keydown', e=>{
     if(e.key==='Tab' && !e.shiftKey){ e.preventDefault(); const t=e.target, ind=/\n\t/.test(t.value) ? '\t' : '  '; t.setRangeText(ind, t.selectionStart, t.selectionEnd, 'end'); }
   }
 });
+
+/* ---- Proposed changes ----
+   When a reply contains code for one of the project's files, it is shown as a proposed change under the reply:
+   which files, and how many lines each adds and removes. Review opens the change as a diff in the file panel, where
+   each part can be kept or dropped, and the result edited, before it is saved as a new version of the file (and to
+   disk, for a linked folder). Nothing changes until you save.
+
+   A code block belongs to a file when its path is on the line just before it (`src/app.ts`, **src/app.ts**, a heading),
+   or in the block's first line (```ts src/app.ts, ```ts title="src/app.ts"), or when it is a unified diff naming the
+   file. When Claude shows only part of a file, the part is placed where its first and last lines match the file;
+   if they don't, the diff says so before anything is saved. Any other code block can be applied to a file you choose. */
+
+/* the files a reply could change: the project's, then the prompt's own attachments */
+function changeTargets(id){
+  const out=[];
+  (S.files||[]).forEach((m,i)=>{ if(m.kind!=='image') out.push({where:'s:'+i, m}); });
+  for(const x of path(id)){ const n=S.nodes[x]; (n && n.files || []).forEach((m,i)=>{ if(m.kind!=='image') out.push({where:`n${x}:${i}`, m}); }); }
+  return out;
+}
+const pathKey = m => (m.src && m.src.path) || m.name;
+function findTarget(id, p){
+  if(!p) return null;
+  const q=p.replace(/^\.?\//,'').replace(/^[ab]\//,'').trim(); if(!q || q.length>200) return null;
+  const ts=changeTargets(id);
+  return ts.find(t=>pathKey(t.m)===q || t.m.name===q) || ts.find(t=>t.m.name.endsWith('/'+q) || pathKey(t.m).endsWith('/'+q)) || null;
+}
+/* code blocks in a reply, with the path each names, if any */
+function codeBlocks(reply){
+  const out=[], re=/(^|\n)([^\n]*)\n?```([^\n`]*)\n([\s\S]*?)\n```/g; let m;
+  while((m=re.exec(reply))){
+    const before=m[2]||'', info=(m[3]||'').trim(), body=m[4];
+    const pathRe=/([\w.@-]+\/)*[\w.@-]+\.[A-Za-z0-9]{1,8}\b/;
+    let p=null;
+    const t=info.match(/(?:title|file|path)=["']?([^"'\s]+)/); if(t) p=t[1];
+    else { const parts=info.split(/\s+/); if(parts.length>1 && pathRe.test(parts[1])) p=parts[1]; else if(parts[0] && /[/.]/.test(parts[0]) && pathRe.test(parts[0]) && !/^[a-z]+$/i.test(parts[0])) p=parts[0]; }
+    if(!p){ const b=before.match(/`([^`]+)`\s*:?\s*$|\*\*([^*]+)\*\*\s*:?\s*$|^#{1,6}\s+(.+?)\s*:?\s*$|^([\w.@/-]+\.[A-Za-z0-9]{1,8})\s*:?\s*$/); const c=b && (b[1]||b[2]||b[3]||b[4]); if(c){ const pm=c.match(pathRe); if(pm) p=pm[0]; } }
+    const isDiff = /^diff\b|^patch\b/i.test(info) || /^(---|\+\+\+) /m.test(body) && /^@@ /m.test(body);
+    if(isDiff && !p){ const h=body.match(/^\+\+\+ (?:b\/)?(\S+)/m); if(h && h[1]!=='/dev/null') p=h[1]; }
+    out.push({i:out.length, path:p, lang:info.split(/\s+/)[0]||'', body, diff:isDiff});
+  }
+  return out;
+}
+
+/* ---- line diff (Myers), and the hunks people keep or drop ---- */
+function diffLines(a, b){
+  const n=a.length, m=b.length, max=n+m, v=new Map([[1,0]]), trace=[];
+  if(n*m > 4e7) return [{op:'del', a:0, b:0, lines:a}, {op:'add', a:n, b:0, lines:b}]; /* too big to compare line by line */
+  outer: for(let d=0; d<=max; d++){
+    trace.push(new Map(v));
+    for(let k=-d; k<=d; k+=2){
+      let x = (k===-d || (k!==d && (v.get(k-1)??-1) < (v.get(k+1)??-1))) ? (v.get(k+1)??0) : (v.get(k-1)??0)+1;
+      let y=x-k;
+      while(x<n && y<m && a[x]===b[y]){ x++; y++; }
+      v.set(k, x);
+      if(x>=n && y>=m) break outer;
+    }
+  }
+  /* walk back to a list of equal / deleted / added runs */
+  const ops=[]; let x=n, y=m;
+  for(let d=trace.length-1; d>=0 && (x>0 || y>0); d--){
+    const vv=trace[d], k=x-y;
+    const prevK = (k===-d || (k!==d && (vv.get(k-1)??-1) < (vv.get(k+1)??-1))) ? k+1 : k-1;
+    const px=vv.get(prevK)??0, py=px-prevK;
+    while(x>px && y>py){ ops.push(['eq', a[x-1]]); x--; y--; }
+    if(d>0){ if(x===px) ops.push(['add', b[y-1]]); else ops.push(['del', a[x-1]]); }
+    x=px; y=py;
+  }
+  ops.reverse();
+  return ops;
+}
+/* runs of changes with up to 3 lines of context, each one kept or dropped as a whole */
+function makeHunks(ops){
+  const hunks=[]; let cur=null, lastChange=-99;
+  ops.forEach((o,i)=>{ if(o[0]!=='eq'){ if(!cur || i-lastChange>6){ cur={start:i, end:i, on:true}; hunks.push(cur); } cur.end=i; lastChange=i; } });
+  return hunks;
+}
+function applyHunks(ops, hunks){
+  const out=[];
+  ops.forEach((o,i)=>{
+    const h=hunks.find(h=>i>=h.start && i<=h.end), keep=h ? h.on : true;
+    if(o[0]==='eq') out.push(o[1]);
+    else if(o[0]==='add' && keep) out.push(o[1]);
+    else if(o[0]==='del' && !keep) out.push(o[1]);
+  });
+  return out.join('\n');
+}
+/* a unified diff applied to text, each hunk found by its context (allowing it to have moved) */
+function applyPatch(text, patch){
+  let lines=text.split('\n'); const hs=[]; let h=null;
+  for(const l of patch.replace(/\n+$/,'').split('\n')){
+    if(/^@@ /.test(l)){ h={old:[], neu:[]}; hs.push(h); continue; }
+    if(!h || /^(---|\+\+\+|diff |index )/.test(l)) continue;
+    if(l.startsWith('+')) h.neu.push(l.slice(1)); else if(l.startsWith('-')) h.old.push(l.slice(1)); else if(l.startsWith(' ') || l===''){ h.old.push(l.slice(1)); h.neu.push(l.slice(1)); }
+  }
+  if(!hs.length) return null;
+  let from=0;
+  for(const hk of hs){
+    let at=-1;
+    for(let i=from; i<=lines.length-hk.old.length; i++){ let ok=true; for(let j=0;j<hk.old.length;j++) if(lines[i+j].trimEnd()!==hk.old[j].trimEnd()){ ok=false; break; } if(ok){ at=i; break; } }
+    if(at<0) return null;
+    lines=[...lines.slice(0,at), ...hk.neu, ...lines.slice(at+hk.old.length)]; from=at+hk.neu.length;
+  }
+  return lines.join('\n');
+}
+/* what the file would become: the whole block, a part placed where it matches, or a patch applied */
+function proposedText(cur, block){
+  if(block.diff){ const t=applyPatch(cur, block.body); return t==null ? {text:null, note:'The diff’s context doesn’t match the file as it is now, so it can’t be applied.'} : {text:t, note:null}; }
+  const a=cur.replace(/\n$/,'').split('\n'), b=block.body.replace(/\n$/,'').split('\n'), trail=/\n$/.test(cur)?'\n':'';
+  if(b.length >= a.length*0.6 || a.length<20) return {text:block.body.replace(/\n$/,'')+trail, note:null};
+  /* looks like part of the file: place it between the lines its first and last lines match */
+  const firstLine=b.find(l=>l.trim()), lastLine=[...b].reverse().find(l=>l.trim());
+  const i=a.findIndex(l=>l.trim()===firstLine.trim()), j=i<0 ? -1 : a.findIndex((l,k)=>k>=i && l.trim()===lastLine.trim());
+  if(i>=0 && j>=i) return {text:[...a.slice(0,i), ...b, ...a.slice(j+1)].join('\n')+trail, note:`Claude showed part of the file; it replaces lines ${i+1}–${j+1}.`, partial:true};
+  return {text:block.body.replace(/\n$/,'')+trail, note:'This looks like only part of the file, and it couldn’t be placed, so the diff replaces the whole file. Drop the parts you don’t want, or copy what you need instead.', warn:true};
+}
+function changeStats(cur, nu){ const ops=diffLines(cur.split('\n'), nu.split('\n')); return {add:ops.filter(o=>o[0]==='add').length, del:ops.filter(o=>o[0]==='del').length}; }
+const propCache=new Map();
+function proposalsFor(id){
+  const n=S.nodes[id]; if(!n || !n.reply) return [];
+  const key=n.reply+'|'+changeTargets(id).map(t=>t.m.id).join(',');
+  const hit=propCache.get(id); if(hit && hit.key===key) return hit.list;
+  const list=[];
+  for(const b of codeBlocks(n.reply)){
+    const t=findTarget(id, b.path); if(!t) continue;
+    const r=Files.get(t.m.id); if(!r || r.kind!=='text') continue;
+    const p=proposedText(r.text, b); if(p.text==null){ list.push({b, t, error:p.note}); continue; }
+    if(p.text===r.text) continue;
+    list.push({b, t, ...changeStats(r.text, p.text)});
+  }
+  propCache.set(id, {key, list});
+  return list;
+}
+function proposalsHTML(id){
+  const n=S.nodes[id]; if(!n || !n.reply || liveGen(id)) return '';
+  const ps=proposalsFor(id), blocks=codeBlocks(n.reply), files=changeTargets(id).length;
+  const applied=Object.keys(n.applied||{});
+  if(!ps.length && !applied.length && !(blocks.length && files)) return '';
+  const row=p=>`<button class="propfile" data-propview="${id}:${p.b.i}" title="${esc(p.error || 'Review this change as a diff before saving it')}"><span class="pfname">${esc(clipStart(pathKey(p.t.m), 48))}</span>${p.error?'<span class="pfstat bad">can’t apply</span>':`<span class="pfstat"><span class="pfadd">+${p.add}</span> <span class="pfdel">−${p.del}</span></span>`}</button>`;
+  const other = blocks.length>ps.length && files ? `<button class="rmore" data-propany="${id}" title="Choose a code block and the file it should go in">Apply a code block to a file…</button>` : '';
+  const done=applied.filter(nm=>!ps.some(p=>p.t.m.name===nm)).map(nm=>`<span class="propfile done" title="Saved from this reply">${esc(clipStart(nm.replace(/^[^/]+\//,''), 48))} <span class="pfstat">saved</span></span>`).join('');
+  return `<div class="proposals" data-key="pr${id}">${ps.length?`<span class="plabel">Proposed change${ps.length===1?'':'s'}</span>${ps.map(row).join('')}`:applied.length?'<span class="plabel">Changes</span>':''}${done}${other}</div>`;
+}
+/* the diff in the file panel */
+function openProposal(id, blockIdx, where){
+  const n=S.nodes[id]; if(!n) return;
+  const b=codeBlocks(n.reply||'')[blockIdx]; if(!b) return;
+  const t = where ? {where, m:fileAt(where)} : findTarget(id, b.path); if(!t || !t.m) return;
+  const r=Files.get(t.m.id); if(!r){ toast(`${t.m.name} isn’t stored in this browser.`); return; }
+  const p=proposedText(r.text, b);
+  if(p.text==null){ toast(p.note); return; }
+  const ops=diffLines(r.text.split('\n'), p.text.split('\n'));
+  fileView={where:t.where, id:t.m.id, mode:'diff', saveDisk:true, ret:document.activeElement, diff:{from:id, block:blockIdx, ops, hunks:makeHunks(ops), note:p.note, warn:!!p.warn}};
+  fviewEl.hidden=false; paintFileView();
+}
+function diffHTML(fv){
+  const d=fv.diff; let h='', ln=0, rn=0;
+  const ctx=new Set(); d.ops.forEach((o,i)=>{ if(o[0]!=='eq') for(let k=i-3;k<=i+3;k++) ctx.add(k); });
+  let gap=false;
+  d.ops.forEach((o,i)=>{
+    if(o[0]!=='del') rn++; if(o[0]!=='add') ln++;
+    if(!ctx.has(i)){ if(!gap){ h+='<div class="dgap">⋯</div>'; gap=true; } return; }
+    gap=false;
+    const hk=d.hunks.findIndex(x=>i===x.start);
+    if(hk>=0){ const x=d.hunks[hk]; h+=`<div class="dhunk"><label class="chk"><input type="checkbox" data-dhunk="${hk}" ${x.on?'checked':''}> Keep this change</label></div>`; }
+    const inH=d.hunks.find(x=>i>=x.start && i<=x.end), off = inH && !inH.on;
+    const cls=o[0]==='add'?'dadd':o[0]==='del'?'ddel':'deq';
+    h+=`<div class="dline ${cls}${off?' off':''}"><span class="dno">${o[0]==='add'?'':ln}</span><span class="dno">${o[0]==='del'?'':rn}</span><span class="dsig">${o[0]==='add'?'+':o[0]==='del'?'−':' '}</span><span class="dtxt">${esc(o[1])||' '}</span></div>`;
+  });
+  return h || '<p class="note">No differences.</p>';
+}
+function diffResult(fv){ return applyHunks(fv.diff.ops, fv.diff.hunks); }
+function proposalAnyMenu(anchor, id){
+  const n=S.nodes[id], blocks=codeBlocks(n.reply||''), ts=changeTargets(id);
+  const label=b=>`${b.path?b.path+' · ':''}${b.lang||'code'} · ${clip(b.body.split('\n').find(l=>l.trim())||'', 40)}`;
+  openMenu(anchor, [{heading:'Which code block?'}, ...blocks.map(b=>({label:label(b), run:()=>setTimeout(()=>openMenu(anchor, [{heading:'Into which file?'}, ...ts.map(t=>({label:pathKey(t.m), run:()=>openProposal(id, b.i, t.where)}))]), 0)}))]);
+}
 
 /* history */
 function commit(msg, fn, o={}){
@@ -2663,7 +2884,7 @@ const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
 function turnsFor(id, includeLastReply){
   const raw=[], instr=promptText('instructions').trim();
   if(instr) raw.push({role:'user', content:instr});
-  if(S.files && S.files.length) raw.push({role:'user', content:'Files shared in this project:\n\n'+S.files.map(fileBlock).join('\n\n')});
+  if(S.files && S.files.length){ const fe=promptText('fileEdits').trim(); raw.push({role:'user', content:'Files shared in this project:\n\n'+S.files.map(fileBlock).join('\n\n')+(fe?'\n\n'+fe:'')}); }
   for(const e of contextEntries(id)){
     if(e.seam){ raw.push({role:'user', content:e.text}); continue; }
     const n=S.nodes[e.id];
@@ -2708,6 +2929,7 @@ function ctxSig(id){
   if(instr) at.push('i:'+h5(instr));
   /* one entry per project file, so the marker can say which file changed (an edit gives a file a new id) */
   for(const f of S.files||[]) at.push('f'+h5(f.name)+':'+h5(f.id));
+  if(S.files && S.files.length && promptText('fileEdits').trim()) at.push('e:'+h5(promptText('fileEdits').trim()));
   for(const e of contextEntries(id)){
     if(e.seam){ at.push('s'+e.merge+':'+h5(e.text)); continue; }
     const n=S.nodes[e.id];
@@ -2731,8 +2953,11 @@ function ctxChanges(id){
     was.delete('f'); for(const k of [...is.keys()]) if(/^f[0-9a-z]{5}$/.test(k)) is.delete(k);
     if(!same) out.push({k:'f', what:'changed'});
   }
+  if(!was.has('e')) is.delete('e'); /* replies written before this note existed */
+  /* files saved from this reply's own proposed changes */
+  if(n.applied) for(const f of S.files||[]){ const k='f'+h5(f.name); if(n.applied[f.name]===is.get(k)) { if(was.has(k)) is.set(k, was.get(k)); else is.delete(k); } }
   const fileName = k => { const f=(S.files||[]).find(f=>'f'+h5(f.name)===k); return f ? f.name : 'a project file'; };
-  const name = k => k==='i' ? 'standing instructions' : k==='f' ? 'project files' : /^f[0-9a-z]{5}$/.test(k) ? fileName(k) : k==='y' ? 'system prompt' : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
+  const name = k => k==='i' ? 'standing instructions' : k==='e' ? 'how to show file changes' : k==='f' ? 'project files' : /^f[0-9a-z]{5}$/.test(k) ? fileName(k) : k==='y' ? 'system prompt' : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
   for(const [k,v] of is){
     if(!was.has(k)){ out.push({k, what: /^\d+$/.test(k) ? 'back in' : 'added'}); continue; }
     const w=was.get(k); if(w===v) continue;
@@ -4220,7 +4445,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(n.loop?`<span class="tag rwtag" title="${esc(`Sent by /loop, ${n.loop.i} of ${n.loop.of}${n.loop.until?`, until: ${n.loop.until}`:''}`)}">loop ${n.loop.i}/${n.loop.of}</span>`:'')+(n.btw?'<span class="tag rwtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(n.imported?`<span class="tag agenttag" title="${esc(`From a ${n.imported.from} session${n.imported.model?`, ${n.imported.model}`:''}. Tool calls are summarized in the reply, with an excerpt of each result.${n.imported.notes?` ${n.imported.notes} note${n.imported.notes===1?'':'s'} ${n.imported.from} added to this message (the time, reminders) ${n.imported.notes===1?'is':'are'} left out.`:''}`)}">${esc(n.imported.from)}</span>${n.imported.tag?`<span class="tag summary" title="Here the agent’s context was compacted: everything before was replaced by this summary">${esc(n.imported.tag)}</span>`:''}`:'')+(n.loop?`<span class="tag rwtag" title="${esc(`Sent by /loop, ${n.loop.i} of ${n.loop.of}${n.loop.until?`, until: ${n.loop.until}`:''}`)}">loop ${n.loop.i}/${n.loop.of}</span>`:'')+(n.btw?'<span class="tag rwtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -4362,10 +4587,10 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}${!(reviewAsk && reviewAsk.id===id)?`<button class="act" data-review="${id}" title="A second opinion from a new chat that sees only this reply">${AI}Review</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -5415,6 +5640,8 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-showall]')){ showAll(); return; }
   const co=e.target.closest('[data-co]'); if(co && !pick){ checkout(co.dataset.co); return; }
   if(e.target.closest('[data-renamehead]')){ renaming=true; animRender([sel]); return; }
+  const pv=e.target.closest('[data-propview]'); if(pv){ const [a,b]=pv.dataset.propview.split(':'); openProposal(+a, +b); return; }
+  const pa=e.target.closest('[data-propany]'); if(pa){ proposalAnyMenu(pa, +pa.dataset.propany); return; }
   const fop=e.target.closest('[data-fileopen]'); if(fop){ e.stopPropagation(); openFileView(fop.dataset.fileopen); return; }
   const sp=e.target.closest('[data-stop]'); if(sp){ stopReply(+sp.dataset.stop); return; }
   if(e.target.closest('[data-cmdclose]')){ const at=cmdPanel && cmdPanel.at; cmdPanel=null; paintCmds(at); return; }
@@ -6142,7 +6369,7 @@ function openImport(){
   if(!setEl.hidden) closeSettings();
   impReturn=document.activeElement; closeMenu && menuEl && closeMenu();
   const t=document.getElementById('impText'); t.value=''; document.getElementById('impFileName').textContent='';
-  impParsed={convs:[], error:null}; impChecked=new Set();
+  impParsed={convs:[], error:null}; impChecked=new Set(); impSess=null; renderImpSessions();
   const sp=document.getElementById('impSpace');
   sp.innerHTML=spaceIds().map(id=>`<option value="${id}" ${id===DB.current?'selected':''}>${esc(DB.spaces[id].name)}</option>`).join('')+'<option value="new">A new project</option>';
   renderImportPreview(); impEl().hidden=false; document.body.style.overflow='hidden'; t.focus({preventScroll:true});
@@ -6159,12 +6386,37 @@ function renderImportPreview(){
   el.innerHTML = `<div class="imphead"><b>Found ${convs.length} chat${convs.length===1?'':'s'}</b>${convs.length>1?`<button class="rmore" data-impall>${impChecked.size===convs.length?'Select none':'Select all'}</button>`:''}</div><ul class="implist">${convs.map(row).join('')}</ul>`;
   const n=impChecked.size; go.disabled=!n; go.textContent = n ? `Import ${n} chat${n===1?'':'s'}` : 'Import';
 }
+/* Claude Code and Codex sessions from this computer: listed on request, each read into a chat for the list above */
+let impSess=null;
+function renderImpSessions(){
+  const el=document.getElementById('impSessions'); if(!el) return;
+  if(!hasServer()){ el.innerHTML=''; return; }
+  if(!impSess){ el.innerHTML=`<div class="impsess"><button class="btn" data-sesslist>Coding sessions on this computer…</button><span class="note">Claude Code and Codex keep a log of every session. Open one as a chat to see what the agent saw at each step, then fork, leave turns out or replay.</span></div>`; return; }
+  if(impSess.loading){ el.innerHTML='<p class="note thinking">Looking for sessions…</p>'; return; }
+  if(impSess.error){ el.innerHTML=`<p class="note imperr">${esc(impSess.error)}</p>`; return; }
+  const list=impSess.sessions, q=(impSess.q||'').toLowerCase(), shown=list.filter(x=>!q || (x.title+' '+(x.cwd||'')).toLowerCase().includes(q));
+  if(!list.length){ el.innerHTML=`<p class="note">No sessions found in ${esc(impSess.dirs['claude-code'])} or ${esc(impSess.dirs.codex)}.</p>`; return; }
+  const ago=t=>{ const m=Math.round((Date.now()-t)/60000); return m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} d ago`; };
+  el.innerHTML=`<div class="impsess"><div class="frowin"><input type="search" id="sessFilter" placeholder="Filter by title or folder" value="${esc(impSess.q||'')}" aria-label="Filter sessions"></div>
+    <ul class="sesslist">${shown.slice(0,80).map(x=>{ const i=list.indexOf(x), added=impSess.added.has(i); return `<li><button class="sessrow" data-sessadd="${i}" ${added||impSess.reading===i?'disabled':''}><span class="sesst">${esc(x.title)}</span><span class="note">${x.source==='codex'?'Codex':'Claude Code'} · ${esc(x.cwd||'')} · ${ago(x.updated)} · ${fmtSize(x.size)}</span><span class="sessgo">${added?'Added':impSess.reading===i?'Reading…':'Add'}</span></button></li>`; }).join('')}</ul></div>`;
+}
+async function addSessionConv(load, label){
+  try{
+    const c=await load();
+    if(!c.turns || !c.turns.length){ toast(`${label}: no prompts found in that log.`); return false; }
+    c.title=c.cwd ? `${c.title}` : c.title;
+    impParsed={convs:[...(impParsed.convs||[]), c], error:null}; impChecked.add(impParsed.convs.length-1); renderImportPreview();
+    return true;
+  }catch(e){ toast(e.message); return false; }
+}
 function insertImported(c){
   const map=new Map();
   for(const t of c.turns){
     const nid=S.nextId++; map.set(t.k, nid);
     S.nodes[nid]={id:nid, parents: t.parent!=null ? [map.get(t.parent)] : [], text:t.text||''};
     if(t.reply) S.nodes[nid].reply=t.reply;
+    if(t.usage) S.nodes[nid].usage=t.usage; if(t.thinking) S.nodes[nid].thinking=t.thinking;
+    if(c.source==='Claude Code' || c.source==='Codex') S.nodes[nid].imported={from:c.source, ...(t.model?{model:t.model}:{}), ...(t.tag?{tag:t.tag}:{}), ...(t.notes?{notes:t.notes}:{})};
   }
   for(const t of c.turns) if(t.alt!=null && map.has(t.alt)) S.nodes[map.get(t.k)].alt=map.get(t.alt);
   const leaf=map.get(c.mainLeaf ?? c.turns[c.turns.length-1].k);
@@ -6194,12 +6446,13 @@ function runImport(){
   }
 }
 document.getElementById('impText').addEventListener('input', e=>{ clearTimeout(parseImportNow.t); parseImportNow.t=setTimeout(()=>parseImportNow(e.target.value), 250); });
-const impPicker=document.createElement('input'); impPicker.type='file'; impPicker.accept='.json,.md,.markdown,.txt,application/json,text/*'; impPicker.hidden=true; document.body.append(impPicker);
+const impPicker=document.createElement('input'); impPicker.type='file'; impPicker.accept='.json,.jsonl,.md,.markdown,.txt,application/json,text/*'; impPicker.hidden=true; document.body.append(impPicker);
 impPicker.addEventListener('change', async ()=>{
   const f=impPicker.files[0]; if(!f) return;
   if(f.size>200*1024*1024){ toast('That file is over 200 MB. Try exporting fewer chats.'); return; }
   document.getElementById('impFileName').textContent=`${f.name} · ${fmtSize(f.size)}`;
   const txt=await f.text();
+  if(/\.jsonl$/i.test(f.name)){ addSessionConv(()=>folderApi('/api/sessions/parse', {text:txt}), f.name); return; }
   const ta=document.getElementById('impText'); ta.value = txt.length>20000 ? '' : txt; ta.placeholder = txt.length>20000 ? `Read ${f.name}. Its chats are listed below.` : ta.placeholder;
   parseImportNow(txt);
 });
@@ -6209,7 +6462,10 @@ impEl().addEventListener('click', e=>{
   if(c('[data-impfile]')){ impPicker.value=''; impPicker.click(); return; }
   if(c('[data-impall]')){ if(impChecked.size===impParsed.convs.length) impChecked.clear(); else impParsed.convs.forEach((_,i)=>impChecked.add(i)); renderImportPreview(); return; }
   if(c('[data-impgo]')){ runImport(); return; }
+  if(c('[data-sesslist]')){ impSess={loading:true}; renderImpSessions(); folderApi('/api/sessions/list', {}).then(d=>{ impSess={sessions:d.sessions, dirs:d.dirs, added:new Set(), q:''}; renderImpSessions(); }).catch(e=>{ impSess={error:e.message}; renderImpSessions(); }); return; }
+  const sa=c('[data-sessadd]'); if(sa && impSess && impSess.sessions){ const i=+sa.dataset.sessadd, x=impSess.sessions[i]; impSess.reading=i; renderImpSessions(); addSessionConv(()=>folderApi('/api/sessions/read', {source:x.source, file:x.file}), x.title).then(ok=>{ impSess.reading=null; if(ok) impSess.added.add(i); renderImpSessions(); }); return; }
 });
+impEl().addEventListener('input', e=>{ if(e.target.id==='sessFilter' && impSess){ impSess.q=e.target.value; const pos=e.target.selectionStart; renderImpSessions(); const f=document.getElementById('sessFilter'); if(f){ f.focus(); f.setSelectionRange(pos,pos); } } });
 impEl().addEventListener('change', e=>{ const i=e.target.dataset && e.target.dataset.impc; if(i!=null){ e.target.checked?impChecked.add(+i):impChecked.delete(+i); renderImportPreview(); } });
 document.addEventListener('click', e=>{ if(e.target.closest && e.target.closest('[data-openimport]')) openImport(); });
 
