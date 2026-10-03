@@ -842,6 +842,7 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .bsrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;font-size:.84rem}
 .bsrow input,.bsrow select{width:9rem}
 .usage{margin:8px 0}
+.pinplace{margin-left:auto;font-size:.8rem}
 .rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .offbr{margin:2px 0 6px 18px}
 .offbr .linkbtn{font-size:.78rem;padding:3px 6px}
@@ -2165,21 +2166,27 @@ async function summarizeInto(id, conversation, fallback){
   render(editorFor===id);
   if(failed) toast(failed==='cancelled' ? 'Summary stopped. The plain version was kept.' : 'Claude couldn\u2019t write the summary, so the plain version was kept.');
 }
-/* a new reply is a new version: the old one, and anything built on it, stays one ‹ › away */
+/* A new reply is a new version: the old one, and anything built on it, stays one ‹ › away.
+   An edited prompt (newText) is a new line of thought, so it also gets its own branch, checked out: the original keeps
+   its branch and everything after it. Asking again with the same prompt just adds a version in place. */
 function regenerate(id, newText){
   if(sampleState!=='ready'){ toast('To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats.'); return; }
   const n=S.nodes[id]; if(!n) return;
   resendFor=null;
-  let nid;
-  const below = newText!=null ? replayCount(lineFrom(id).slice(1)) : 0;
-  commit(newText!=null ? `Sent your edit as a new version of #${id}. The original is kept${below?` with the ${below} prompt${below===1?'':'s'} below it`:''}.` : `Asking for another reply to #${id}. The old one is kept.`, ()=>{
+  let nid, name='';
+  const edit = newText!=null;
+  const below = edit ? replayCount(lineFrom(id).slice(1)) : 0;
+  const was = edit ? (refsAt(id).includes(S.head) ? refName(S.head) : refsAt(id).map(refName)[0] || refsThrough(id).map(refName)[0] || '') : '';
+  commit(edit ? '' : `Asking for another reply to #${id}. The old one is kept.`, ()=>{
     const gid = n.alt ?? n.id; n.alt = gid;
     nid=S.nextId++;
-    S.nodes[nid]={id:nid, parents:[...n.parents], text: newText!=null ? newText : n.text, alt:gid}; if(n.kind) S.nodes[nid].kind=n.kind; if(n.files) S.nodes[nid].files=clone(n.files);
+    S.nodes[nid]={id:nid, parents:[...n.parents], text: edit ? newText : n.text, alt:gid}; if(n.kind) S.nodes[nid].kind=n.kind; if(n.files) S.nodes[nid].files=clone(n.files);
     S.active[gid]=nid;
-    for(const rid of refsAt(id)) S.refs[rid].tip=nid;
+    if(edit){ name=autoName(convOf(id)); S.head=newRef(name, nid); }
+    else for(const rid of refsAt(id)) S.refs[rid].tip=nid;
     sel=nid;
-  }, below ? {action:{label:`${AI}Replay ${below} below`, fn:()=>askReplay(id, nid)}} : {});
+  }, {quiet:edit});
+  if(edit) toast(`Sent your edit as #${nid} on a new branch, ${name}.${was?` The original stays on ${was}${below?` with the ${below} prompt${below===1?'':'s'} after it`:''}.`:''}`, true, below ? {label:`${AI}Replay ${below} below`, fn:()=>askReplay(id, nid)} : undefined);
   generate(nid);
 }
 
@@ -3205,7 +3212,7 @@ function rowHTML(id, pathSet){
     : `<span class="txt">${n.pending && !n.text ? '<em class="thinking">Claude is summarizing…</em>' : esc(RICH_RE.test(n.text||'') ? plainText(n.text) : n.text)}</span>`;
   const editingHere = promptEditFor===id && !isM && !pick;
   const txtE = editingHere ? `<div class="txt pedit" data-key="pe${id}"><textarea id="promptEditText" rows="${Math.min(14, Math.max(2, (n.text||'').split('\n').length+1))}" aria-label="Edit prompt #${id}">${esc(n.text||'')}</textarea>
-    <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Claude answers the edited prompt. The original and its reply stay as the other version.">Send as new version <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button><button class="btn" data-pedit="save" title="Change the prompt where it is. Its reply and everything below stay as they are.">Save in place</button>`}<button class="btn" data-pedit="cancel">Cancel</button></div></div>` : null;
+    <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Starts a new branch with your edit and gets a reply. The original stays on its branch with everything after it.">Send on a new branch <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>`}<button class="btn" data-pedit="cancel">Cancel</button>${opts.simple?'':'<button class="linkbtn pinplace" data-pedit="save" title="Change the text where it is, without a new reply. The reply and everything after it stay as they were, and they\u2019re marked as written for the old wording.">Save in place instead</button>'}</div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files)) : txt;
   let h=opts.simple && !pick && n.rewritten ? `<div class="ptop"><span class="edtag" title="${esc(rwTitle(n))}">rewritten</span></div>` : '';
   h+=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
@@ -3298,8 +3305,8 @@ function resendHTML(id){
   return `<div class="reply resend" data-key="r${id}"><span class="who">Edit prompt</span>
     <textarea id="resendText" rows="3" aria-label="Edited prompt">${esc(n.text)}</textarea>
     ${fileChips(n.files)}
-    <div class="bar"><button class="btn primary" data-resend="go">Send as new version <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-resend="cancel">Cancel</button></div>
-    <p class="note">The original prompt and its reply stay as the other version. Switch between them with ‹ ›.</p></div>`;
+    <div class="bar"><button class="btn primary" data-resend="go">Send on a new branch <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-resend="cancel">Cancel</button></div>
+    <p class="note">The original prompt and its reply stay on their branch. Switch between them with ‹ ›.</p></div>`;
 }
 function replyHTML(id){
   const n=S.nodes[id];
