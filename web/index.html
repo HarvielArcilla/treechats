@@ -842,6 +842,8 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .bsrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;font-size:.84rem}
 .bsrow input,.bsrow select{width:9rem}
 .usage{margin:8px 0}
+.pe.sp .pe-head{gap:8px}
+.spname{flex:1;min-width:0;font-weight:600}
 .pinplace{margin-left:auto;font-size:.8rem}
 .rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .offbr{margin:2px 0 6px 18px}
@@ -1072,6 +1074,41 @@ const PROMPTS = {
     fmt:'Reply with only JSON: {"prompt":"The follow-up message, in the person\'s voice.","reply":"The combined reply, in Markdown.","sources":{"#12":"What came from it.","#14":"What came from it."}}'},
   reroot:{label:'Reroot summary', group:'ops', def:'Summary of cut context: {context}', help:'Text of the summary root a reroot adds. {context} becomes the cut prompts, joined with arrows.'}
 };
+/* ---- Saved prompts ----
+   Your prompt library: plain text you insert into the input box, never sent until you send it. Words in {braces} are
+   placeholders: what you've already typed goes into the first one, and the next one left is selected for you to fill
+   in. The starters are common ways of working with a model, written out so you can see and change them. */
+const SAVED_STARTERS=[
+  {id:'plan', name:'Plan first', text:'Before you answer, outline your plan in a few bullet points and wait for me to confirm it.\n\n{task}'},
+  {id:'interview', name:'Ask me questions first', text:'Before you start, ask me the questions you need answered to do this well, as one short list.\n\n{task}'},
+  {id:'improve', name:'Improve my prompt', text:'Rewrite the prompt below so it is clearer and more specific, keeping my intent. Reply with only the rewritten prompt.\n\n{prompt}'},
+  {id:'critique', name:'Critique your answer', text:'Critique your last answer: what is wrong, missing or weakly supported? Be specific, then give a corrected version.'},
+  {id:'simpler', name:'Explain more simply', text:'Explain that again more simply, as if I am new to the topic, with one concrete example.'},
+  {id:'steps', name:'Step by step', text:'Work through this step by step, then give the final answer on its own line.\n\n{task}'},
+  {id:'where', name:'Where are we?', text:'Summarize where we are: decisions made, open questions, and the next step.'},
+];
+const savedPrompts = () => Array.isArray(opts.saved) ? opts.saved : [];
+/* puts a saved prompt into a box: what's typed fills its first placeholder (or goes before it), then the next
+   placeholder is selected */
+function insertSaved(t, sp){
+  const typed=t.value.trim();
+  let text=sp.text;
+  const ph=text.match(/\{[a-z][a-z _-]*\}/i);
+  if(typed) text = ph ? text.replace(ph[0], typed) : typed+'\n\n'+text;
+  t.value=text; t.dispatchEvent(new Event('input', {bubbles:true})); t.focus({preventScroll:true});
+  const next=text.match(/\{[a-z][a-z _-]*\}/i);
+  if(next){ const i=text.indexOf(next[0]); t.setSelectionRange(i, i+next[0].length); } else t.setSelectionRange(text.length, text.length);
+}
+function savedMenu(anchor, t){
+  if(!t) return;
+  const list=savedPrompts();
+  openMenu(anchor, [
+    ...(list.length ? [{heading:'Saved prompts'}, ...list.map(sp=>({label:sp.name, run:()=>insertSaved(t, sp)}))] : [{label:'No saved prompts yet', disabled:true}]),
+    {sep:true},
+    {label:'Save what’s typed as a prompt', disabled:!t.value.trim() || t.value.trim()==='/', run:()=>{ const text=t.value.trim(); opts.saved=[...savedPrompts(), {id:'u'+Date.now().toString(36), name:clip(text.replace(/\s+/g,' '),40), text}]; save(); toast('Saved. Rename it or add {placeholders} in Settings › Saved prompts.', false, {label:'Open', fn:()=>openSettings('saved')}); }},
+    {label:'Manage saved prompts…', run:()=>openSettings('saved')}
+  ]);
+}
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
 /* A prompt with its {placeholders} filled. A value whose placeholder was edited out is added at the end, so Claude
    always gets the material. Tools that need a set answer shape get it appended, since Treechats reads the answer. */
@@ -1116,6 +1153,7 @@ function load(){
   if(!DB.order.length) DB.current=addSpace('My project', null);
   if(!DB.spaces[DB.current]) DB.current=DB.order[0];
   opts.prompts=Object.assign({}, opts.prompts);
+  if(!Array.isArray(opts.saved)) opts.saved=clone(SAVED_STARTERS);
   opts.open=Object.assign({ops:true}, opts.open);
   opts.collapsed=Object.assign({spaces:false, convs:false}, opts.collapsed);
   enterSpace(DB.current);
@@ -3118,7 +3156,7 @@ function composerHTML(forId){
   if(forId==='root') return `<div class="composer root">
     <textarea id="composeText" placeholder="First prompt of a new chat" aria-label="First prompt">${esc(draftRoot)}</textarea>
     ${fileChips(pendingFiles, true)}
-    <div class="bar"><button class="btn primary" data-compose="add-root">Start chat <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}</div>
+    <div class="bar"><button class="btn primary" data-compose="add-root">Start chat <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button><button class="btn" data-savedmenu="composeText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}</div>
     <p class="note">${sendNote()} Have a chat elsewhere? <button class="rmore" data-openimport>Import it</button>.</p></div>`;
   const onTip = S.head && S.refs[S.head] && S.refs[S.head].tip===forId;
   const here = refsAt(forId);
@@ -3137,7 +3175,7 @@ function composerHTML(forId){
     ${also}
     <textarea id="contText" placeholder="Your next prompt" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
     ${fileChips(pendingFiles, true)}
-    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:opts.simple?'Send':'Continue'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
+    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:opts.simple?'Send':'Continue'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach title="Attach text, code or image files. You can also drop or paste them.">Attach files</button><button class="btn" data-savedmenu="contText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
     ${replyBusy(forId)?'<p class="note">You can send now. Claude answers it as soon as the reply above is done.</p>':''}
     ${sampleState==='off'?'<p class="note">To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats. Prompts still get added.</p>':''}</div>`;
 }
@@ -4365,6 +4403,7 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
   const gr=e.target.closest('[data-genreply]'); if(gr){ generate(+gr.dataset.genreply); return; }
   const lm=e.target.closest('[data-linemode]'); if(lm){ const on=lm.dataset.linemode==='line'; if(!!opts.lineOnly!==on){ opts.lineOnly=on; save(); Motion.run(treeEl, renderTree, [sel]); } return; }
+  const svm=e.target.closest('[data-savedmenu]'); if(svm){ savedMenu(svm, document.getElementById(svm.dataset.savedmenu)); return; }
   const rg=e.target.closest('[data-regen]'); if(rg){ regenerate(+rg.dataset.regen); return; }
   const rpa=e.target.closest('[data-replayask]'); if(rpa){ askReplay(+rpa.dataset.replayask); return; }
   if(e.target.closest('[data-replaygo]') && replayAsk){ const r=replayAsk; replay(r.from, r.onto, r.line); return; }
@@ -4480,6 +4519,7 @@ async function addFiles(list, target){
 treeEl.addEventListener('input', e=>{
   if(e.target.id==='distillText' && distill){ distill.text=e.target.value; const has=!!e.target.value.trim(); for(const b of treeEl.querySelectorAll('[data-dgo]')) if(b.dataset.dgo!=='again') b.disabled=!has; }
   if(e.target.id==='contText') draft=e.target.value; else if(e.target.id==='composeText') draftRoot=e.target.value;
+  if((e.target.id==='contText' || e.target.id==='composeText') && e.target.value==='/' && e.inputType==='insertText'){ e.target.value=''; e.target.id==='contText' ? draft='' : draftRoot=''; savedMenu(e.target, e.target); }
   if(variants && e.target.dataset.vtext!=null){ const i=+e.target.dataset.vtext, r=variants.rows[i], was=!!r.text.trim(); r.text=e.target.value; if(i===0) draft=r.text;
     if(was!==!!r.text.trim()){ const n=variants.rows.filter(x=>x.text.trim()).length, b=treeEl.querySelector('[data-vsend]'); if(b){ b.disabled=!n; b.textContent=`Send ${n} variant${n===1?'':'s'}`; } const sg=treeEl.querySelector('[data-vsuggest]'); if(sg && i===0) sg.disabled=variants.suggesting||!r.text.trim(); } }
   if(fan){ const d=e.target.dataset; if(d.ftitle!=null) fan.options[+d.ftitle].title=e.target.value; if(d.fprompt!=null){ const o=fan.options[+d.fprompt], was=!!o.prompt.trim(); o.prompt=e.target.value; if(was!==!!o.prompt.trim()){ const b=treeEl.querySelector('[data-fango]'), n=fan.options.filter(x=>x.on&&x.prompt.trim()).length; if(b){ b.disabled=!n; b.firstChild.textContent=fanGoLabel(n)+' '; } } } }
@@ -4683,7 +4723,7 @@ function applyAppearance(){
 if(darkMQ.addEventListener) darkMQ.addEventListener('change', ()=>{ if(set('theme')==='system'){ applyAppearance(); if(!setEl.hidden) renderSettings(); } });
 
 const setEl=document.getElementById('settings'), setBodyEl=document.getElementById('setBody'), setTabsEl=document.getElementById('setTabs');
-const SET_TABS=[['look','Personalization'],['system','System'],['prompts','Prompts'],['ops','Operations'],['bar','Quick access'],['keys','Keyboard']];
+const SET_TABS=[['look','Personalization'],['system','System'],['saved','Saved prompts'],['prompts','Prompts'],['ops','Operations'],['bar','Quick access'],['keys','Keyboard']];
 const PROMPT_GROUPS=[['every','Sent with every request',''], ['ops','Operations','Used by Merge, Reroot and Squash.'], ['tools',AI+'Tools','What Claude is asked when you use a '+AI+'tool.'], ['naming',AI+'Naming','Used when Claude names branches, chats and projects (turn these on under System).']];
 let setReturn=null;
 const segs=(key, choices, label)=>`<div class="segs" role="group" aria-label="${esc(label)}">${choices.map(([v,l])=>`<button class="seg" data-set="${key}" data-val="${v}" aria-pressed="${String(set(key))===String(v)}">${esc(l)}</button>`).join('')}</div>`;
@@ -4736,6 +4776,11 @@ function renderSettings(){
     </section>`;
     h+=themeEditorHTML();
     if(!activeMine) h+=`<section class="setsec"><h3>Accent color</h3><p class="note">Used for buttons, the selected prompt and the main branch line.</p><div class="accents">${Object.entries(ACCENTS).map(([k,a])=>`<button class="acc" data-set="accent" data-val="${k}" aria-pressed="${set('accent')===k}" aria-label="${a.name}" title="${a.name}" style="background:${a[shownMode()]}"></button>`).join('')}</div></section>`;
+  } else if(tab==='saved'){
+    const list=savedPrompts(), missing=SAVED_STARTERS.filter(x=>!list.some(y=>y.id===x.id));
+    h+=`<section class="setsec"><h3>Saved prompts</h3><p class="note">Insert one with <b>Saved prompts</b> under the input box, or by typing <kbd>/</kbd> in an empty box. Nothing is sent until you send it. Words in {braces} are placeholders: what you’ve already typed goes into the first one, and the next is selected for you to fill in. Agents can read this list through MCP.</p>
+      ${list.map((sp,i)=>`<div class="pe sp"><div class="pe-head"><input class="spname" data-spname="${i}" value="${esc(sp.name)}" aria-label="Name" maxlength="60"><button class="btn xs danger" data-spdel="${i}">Delete</button></div><textarea data-sptext="${i}" rows="${Math.min(10, Math.max(3, sp.text.split('\n').length+1))}" aria-label="${esc(sp.name)}">${esc(sp.text)}</textarea></div>`).join('')}
+      <div class="tbar"><button class="btn" data-spadd>+ New saved prompt</button>${missing.length?`<button class="rmore" data-sprestore>Restore ${missing.length} starter prompt${missing.length===1?'':'s'}</button>`:''}</div></section>`;
   } else if(tab==='system'){
     h+=`<section class="setsec"><h3>Replies</h3>
       <p class="note">${AI}marks tools where Claude does the work, such as Distill or Fan out. Each use sends a request.</p>
@@ -4849,6 +4894,9 @@ setEl.addEventListener('click', e=>{
   const qm=e.target.closest('[data-qmove]'); if(qm){ const k=qm.dataset.qmove, d=+qm.dataset.dir, list=quickList().slice(), i=list.indexOf(k), j=i+d; if(i<0||j<0||j>=list.length) return; [list[i],list[j]]=[list[j],list[i]]; opts.quick=list; afterQuick(); const b=setEl.querySelector(`[data-qmove="${k}"][data-dir="${d}"]`); (b && !b.disabled ? b : setEl.querySelector(`[data-qmove="${k}"]:not(:disabled)`))?.focus({preventScroll:true}); return; }
   if(e.target.closest('[data-qreset]')){ delete opts.quick; afterQuick(); refocus('[data-settab="bar"]'); toast('The quick-access bar is back to its default.'); return; }
   if(e.target.closest('[data-setquick]')){ opts.setTab='bar'; save(); renderSettings(); refocus('[data-settab="bar"]'); return; }
+  const spd=e.target.closest('[data-spdel]'); if(spd){ const l=savedPrompts().slice(); l.splice(+spd.dataset.spdel,1); opts.saved=l; save(); renderSettings(); return; }
+  if(e.target.closest('[data-spadd]')){ opts.saved=[...savedPrompts(), {id:'u'+Date.now().toString(36), name:'New prompt', text:''}]; save(); renderSettings(); const t=setEl.querySelector(`[data-sptext="${opts.saved.length-1}"]`); if(t) t.focus(); return; }
+  if(e.target.closest('[data-sprestore]')){ opts.saved=[...savedPrompts(), ...SAVED_STARTERS.filter(x=>!savedPrompts().some(y=>y.id===x.id)).map(clone)]; save(); renderSettings(); return; }
   if(e.target.closest('[data-setprompts]')){ opts.setTab='prompts'; save(); renderSettings(); setBodyEl.scrollTop=0; refocus('[data-settab="prompts"]'); return; }
   const pr=e.target.closest('[data-reset]'); if(pr){ resetPrompt(pr.dataset.reset); return; }
   if(e.target.closest('[data-resetprompts]')){ opts.prompts={}; syncPromptFields(); renderSettings(); refocus('[data-settab="prompts"]'); toast('Every prompt is back to its default.'); return; }
@@ -4868,6 +4916,8 @@ setEl.addEventListener('change', e=>{
 setEl.addEventListener('input', e=>{
   const d=e.target.dataset;
   if(d.prompt!=null){ setPrompt(d.prompt, e.target.value, e.target); return; }
+  if(d.spname!=null){ const sp=savedPrompts()[+d.spname]; if(sp){ sp.name=e.target.value.trim()||'Untitled'; save(); } return; }
+  if(d.sptext!=null){ const sp=savedPrompts()[+d.sptext]; if(sp){ sp.text=e.target.value; save(); } return; }
   if(d.tc!=null) setThemeColor(d.tc, normHex(e.target.value), e.target);
   if(d.tname!=null){ const th=themeFor(editingTheme); if(th){ th.name=e.target.value.trim()||'Untitled'; refreshPalCard(editingTheme); } }
 });

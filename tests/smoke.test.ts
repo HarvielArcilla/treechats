@@ -169,7 +169,7 @@ test('MCP: Claude Code can list, search and read the context of a saved chat', a
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_chats', 'list_projects', 'regenerate', 'replay', 'search', 'spawn', 'combine', 'judge'].sort());
+  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_chats', 'list_projects', 'regenerate', 'replay', 'search', 'spawn', 'combine', 'judge', 'list_saved_prompts'].sort());
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
 
   const full = (await call('get_context', { branch: 'main' })).content[0].text, ctx = full.slice(full.indexOf('<conversation>'));

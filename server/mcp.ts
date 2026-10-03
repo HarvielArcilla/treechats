@@ -174,6 +174,12 @@ export function buildMcpServer(read: () => State | null) {
       ].filter(Boolean).join('\n'));
     }));
 
+  server.registerTool('list_saved_prompts', { title: 'List saved prompts', description: "The person's saved prompts in Treechats (their prompt library): name and text. Words in {braces} are placeholders to fill in. Use one as the prompt of spawn, ask or fork.", inputSchema: {} },
+    withState((s) => {
+      const list = ((s.opts as { saved?: { name: string; text: string }[] } | undefined)?.saved) || [];
+      return text(list.length ? list.map((p) => `## ${p.name}\n${p.text}`).join('\n\n') : 'No saved prompts yet.');
+    }));
+
   /* ---- subagents ---- */
   const run = z.string().min(1).max(60).describe('A short name for this piece of work, such as "auth-review". Each run gets its own project ("Run: auth-review"); use the same name to keep working in it.');
   const agent = z.string().max(40).optional().describe('Your name, shown on everything you add. Defaults to "agent".');
