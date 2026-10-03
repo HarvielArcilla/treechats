@@ -85,7 +85,7 @@ export function turnsFor(state: State, tree: Tree, id: number) {
   const raw: { role: 'user' | 'assistant'; content: string }[] = [];
   const instr = (prompts.instructions ?? '').trim();
   if (instr) raw.push({ role: 'user', content: instr });
-  if (tree.files && tree.files.length) raw.push({ role: 'user', content: 'Files shared in this space:\n\n' + tree.files.map(fileStub).join('\n\n') });
+  if (tree.files && tree.files.length) raw.push({ role: 'user', content: 'Files shared in this project:\n\n' + tree.files.map(fileStub).join('\n\n') });
   for (const e of v.entries(id, prompts.seam ?? SEAM)) {
     if (e.seam) { raw.push({ role: 'user', content: e.text }); continue; }
     const n = tree.nodes[e.id];

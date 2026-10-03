@@ -1504,7 +1504,7 @@ function renameSpace(sid, name){
   storeCommit(`Renamed project to ${name}`, ()=>{ DB.spaces[sid].name=name; });
 }
 function deleteSpace(sid){
-  if(spaceIds().length<2){ toast('Keep at least one space. Create another before deleting this one.'); return; }
+  if(spaceIds().length<2){ toast('Keep at least one project. Create another before deleting this one.'); return; }
   const name=DB.spaces[sid].name;
   storeCommit(`Deleted ${name}`, ()=>{
     delete DB.spaces[sid]; DB.order=DB.order.filter(x=>x!==sid);
@@ -1661,12 +1661,12 @@ const OPS = {
     detail:'The branch running through this prompt becomes main and is drawn as the straight line. The old main takes that branch’s name, so nothing is lost. No prompts move.'},
   skip:{label:'Leave out', key:'l', hint:'Keep this prompt in the tree but stop sending it to Claude.',
     detail:'Keeps the prompt and its reply where they are, but leaves them out of the context sent from the prompts below it. It shows faded with a “left out” tag. Run it again to bring it back. A prompt is always sent when Claude is answering that prompt itself.'},
-  clone:{label:'Clone…', key:'d', hint:'Copy this prompt into a new chat: its path, its path and everything below, or the whole conversation.',
+  clone:{label:'Clone…', key:'d', hint:'Copy this prompt into a new chat: its path, its path and everything below, or the whole chat.',
     detail:'Makes an independent copy as a new chat at the top of the project, and opens it. Each option includes this prompt. <em>Up to here</em>: everything before it, the exact context it was written in, with no side branches. <em>From here on</em>: it and everything after it, as a fresh chat with no earlier context. <em>Through here</em>: both together. Replies, versions, files and branch names come along; the original never changes. To copy a whole chat, use Clone in its ⋯ menu.'},
   branch:{label:'Branch', key:'b', hint:'Start a new branch at this prompt and switch to it.',
     detail:'Adds a branch at the selected prompt with a default name like branch-1 and checks it out, without adding a prompt. If other branches point at the same prompt, tap a branch chip or use the picker above the Continue box to choose which one your next prompt goes on. Rename it any time under Branches or with Rename above the Continue box. As in git, a branch is only a label on a tip, so deleting one never deletes prompts.'},
   reroot:{label:'Reroot', key:'r', hint:'Cut this prompt from its parent and start a new chat from it.',
-    detail:'Cuts the link to the parent, so the prompt and everything below it become a separate conversation. The model no longer sees any earlier turns, except through the optional summary root, which the template or Claude can write.'},
+    detail:'Cuts the link to the parent, so the prompt and everything below it become a separate chat. The model no longer sees any earlier turns, except through the optional summary root, which the template or Claude can write.'},
   splice:{label:'Splice out', key:'s', hint:'Remove only this prompt. Its follow-ups attach to its parent.',
     detail:'Deletes just this prompt. Its children move up to its parent, so their context loses this one turn and keeps everything else. Useful for dropping a bad or off-topic turn.'},
   prune:{label:'Delete subtree', key:'x', hint:'Delete this prompt and everything below it.', danger:true,
@@ -1949,7 +1949,7 @@ const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
 function turnsFor(id, includeLastReply){
   const raw=[], instr=promptText('instructions').trim();
   if(instr) raw.push({role:'user', content:instr});
-  if(S.files && S.files.length) raw.push({role:'user', content:'Files shared in this space:\n\n'+S.files.map(fileBlock).join('\n\n')});
+  if(S.files && S.files.length) raw.push({role:'user', content:'Files shared in this project:\n\n'+S.files.map(fileBlock).join('\n\n')});
   for(const e of contextEntries(id)){
     if(e.seam){ raw.push({role:'user', content:e.text}); continue; }
     const n=S.nodes[e.id];
@@ -2829,7 +2829,7 @@ async function useDistill(how){
     distill=null; draftRoot=`${text}\n\n---\n\n`; composeFor='root'; pick=null;
     render(true); Motion.swap(treeEl); window.scrollTo({top:0});
     const ct=document.getElementById('composeText'); if(ct){ ct.focus({preventScroll:true}); ct.setSelectionRange(ct.value.length, ct.value.length); ct.scrollTop=ct.scrollHeight; }
-    toast('The brief is in a new conversation. Write your question under it and send.');
+    toast('The brief is in a new chat. Write your question under it and send.');
   }
 }
 /* ---- Agents (Phase 1: subagents over MCP) ----
