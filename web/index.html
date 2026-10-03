@@ -3693,7 +3693,9 @@ function renderTree(){
   const offN=rs.length-shown.length;
   if(!shown.length && rs.length && !composing) h+=`<div class="empty" data-key="offnote">All ${rs.length} chats in this project are hidden. Choose which to show from the chat list, or <button class="linkbtn" data-showall style="color:var(--accent)">show them all</button>.</div>`;
   /* Prompts: Context path: in the selected prompt's chat, only the line it's on (with whatever merges bring in) */
-  const lineSet = opts.lineOnly && sel!=null && S.nodes[sel] ? new Set(path(threadTip(sel))) : null, lineRoot = lineSet ? chain(sel)[0] : null;
+  /* what the selected prompt sends (its context path, merges included), then the line after it. A branch merged in
+     further down isn't part of the selected prompt's context yet, so it folds into a note at the merge */
+  const lineSet = opts.lineOnly && sel!=null && S.nodes[sel] ? (()=>{ const c=chain(threadTip(sel)), i=c.indexOf(sel); return new Set([...path(sel), ...(i<0 ? [] : c.slice(i))]); })() : null, lineRoot = lineSet ? chain(sel)[0] : null;
   for(const r of shown){
     curLine = r.id===lineRoot ? lineSet : null;
     const size=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1, k=convKey(r);
