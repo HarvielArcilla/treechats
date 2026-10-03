@@ -6,7 +6,8 @@ import { caps, costOf, prices, type Usage } from './models.ts';
 /* Calls to Claude go through here. The browser never sees the API key: it sends the turns to
    /api/sample and reads the reply back as a stream of newline-separated JSON events:
      {"t":"text","d":"…"}                         a piece of the reply
-     {"t":"done","text","truncated","tier","model","usage","notes"}   usage: tokens and cost; notes: settings the model didn't use
+     {"t":"done","text","truncated","tier","model","usage","notes","thinking"}   usage: tokens and cost; notes: settings the
+                                                                       model didn't use; thinking: what the API returned of it
      {"t":"error","code","message"}                                                          */
 
 export type Turn = { role: 'user' | 'assistant'; content: string };
@@ -143,11 +144,13 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
         }
         if (!config.apiKey) throw Object.assign(new Error('No API key.'), { code: 'no_api_key' });
         const stream = getClient().messages.stream(params, { signal });
+        let thinking = '';
         stream.on('text', (d) => { text += d; send({ t: 'text', d }); });
+        stream.on('thinking', (d) => { thinking += d; });
         const msg = await stream.finalMessage();
         const mu = msg.usage, u: Usage = { input: mu.input_tokens || 0, output: mu.output_tokens || 0, cacheWrite: mu.cache_creation_input_tokens || 0, cacheRead: mu.cache_read_input_tokens || 0 };
         u.cost = costOf(u, prices(model, process.env['TREECHATS_PRICE_' + tier.toUpperCase()]));
-        send({ t: 'done', text, truncated: msg.stop_reason === 'max_tokens', tier, model, usage: u, notes });
+        send({ t: 'done', text, truncated: msg.stop_reason === 'max_tokens', tier, model, usage: u, notes, thinking: thinking || undefined });
       } catch (e) {
         const { code, message } = errorCode(e);
         if (code !== 'cancelled') console.warn(`  Reply failed (${code})${message ? ': ' + message : ''}`);

@@ -16,7 +16,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
-import { contextPrompt, ctxChanges, loadState, TreeView, turnsFor, type Tree } from './context.ts';
+import { contextPrompt, ctxChanges, loadState, settingsFor, TreeView, turnsFor, type Tree } from './context.ts';
 import { pageOpen, refund, relay, RelayError, spend } from './relay.ts';
 
 type State = NonNullable<ReturnType<typeof loadState>>;
@@ -166,6 +166,9 @@ export function buildMcpServer(read: () => State | null) {
         `Follows: ${n.parents.map((p) => '#' + p).join(', ') || 'nothing (starts the chat)'} · Followed by: ${kids.join(', ') || 'nothing'} · Branches: ${bs.join(', ') || 'none'}`,
         n.kind === 'merge' ? `Merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}` : `\nPrompt:\n${n.text}`,
         n.reply ? `\nClaude's reply:\n${n.reply}` : '',
+        (() => { const st = settingsFor(t, n.id); const keys = Object.keys(st); return keys.length ? `\nBranch settings in effect: ${keys.map((k) => `${k} ${k === 'system' ? JSON.stringify(st[k]) : st[k]}`).join(', ')}` : ''; })(),
+        n.usage ? `Usage: ${n.usage.input} tokens in, ${n.usage.output} out${n.usage.cost != null ? `, $${n.usage.cost.toFixed(4)}` : ''}` : '',
+        n.thinking ? `\nThe model's thinking (never sent back to it):\n${n.thinking}` : '',
         (() => { const ch = ctxChanges(s, t, n.id); return ch ? `\nContext changed since this reply was written: ${ch.join('; ')}. (For you only; the model never sees this. replay re-sends from here.)` : ''; })(),
         n.note ? `\nNote (never sent to Claude):\n${n.note}` : '',
       ].filter(Boolean).join('\n'));
@@ -176,6 +179,14 @@ export function buildMcpServer(read: () => State | null) {
   const agent = z.string().max(40).optional().describe('Your name, shown on everything you add. Defaults to "agent".');
   const model = z.enum(['quick', 'default', 'complex']).optional().describe('Which model answers: quick, default or complex. Defaults to the model chosen in Treechats.');
   const promptNo = z.number().int().describe('A prompt number in the run project, as returned by spawn, ask or fork.');
+  /* branch settings: sent with this prompt and every prompt after it; models that don't use one skip it and say so */
+  const bset = {
+    system: z.string().optional().describe('A system prompt for this subagent from here on.'),
+    thinking: z.boolean().optional().describe('Let the model think before replying (its thinking is kept, folded, and never sent back).'),
+    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('How much effort the model spends (newer models only).'),
+    temperature: z.number().min(0).max(1).optional().describe('Sampling temperature (older models only; newer ones skip it).'),
+    max_tokens: z.number().int().min(256).max(128000).optional().describe('The longest reply allowed, in tokens.'),
+  };
   const act = (op: string, spends: boolean) => async (a: Record<string, unknown>) => {
     let left: number | undefined;
     try {
@@ -193,7 +204,7 @@ export function buildMcpServer(read: () => State | null) {
     title: 'Start a subagent',
     description: 'Start a subagent: a new chat in your run project, with exactly the context you give it, and get its reply. Context can be text you pass (a brief, notes, file contents) and/or the context of an existing Treechats branch or prompt (copied in, the original is not changed). Returns the chat, its first prompt number and the reply.',
     inputSchema: {
-      run, agent, model,
+      run, agent, model, ...bset,
       prompt: z.string().min(1).describe('What to ask the subagent.'),
       title: z.string().max(80).optional().describe('A title for the subagent chat.'),
       context: z.string().optional().describe('Material the subagent should have before your prompt: a brief, notes, code, file contents.'),
@@ -210,7 +221,7 @@ export function buildMcpServer(read: () => State | null) {
     return act('spawn', true)({ ...a, context: ctx });
   });
   server.registerTool('ask', { title: 'Continue a subagent', description: 'Send a follow-up to a subagent, continuing after a prompt (or at the end of a branch), and get the reply.', inputSchema: { run, agent, model, after: promptNo.optional().describe('Continue after this prompt number.'), branch: z.string().optional().describe('Or continue at the end of this branch.'), prompt: z.string().min(1) } }, act('ask', true));
-  server.registerTool('fork', { title: 'Fork a subagent', description: 'Try an alternative: start a new branch after any prompt of a subagent, with a different follow-up, and get the reply. The original line is kept.', inputSchema: { run, agent, model, at: promptNo.describe('Branch off after this prompt number.'), prompt: z.string().min(1), name: z.string().max(40).optional().describe('A name for the new branch.') } }, act('fork', true));
+  server.registerTool('fork', { title: 'Fork a subagent', description: 'Try an alternative: start a new branch after any prompt of a subagent, with a different follow-up and optionally different settings (system prompt, thinking, effort, temperature, max_tokens), and get the reply. The original line is kept.', inputSchema: { run, agent, model, ...bset, at: promptNo.describe('Branch off after this prompt number.'), prompt: z.string().min(1), name: z.string().max(40).optional().describe('A name for the new branch.') } }, act('fork', true));
   server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
   server.registerTool('edit_reply', { title: 'Correct a reply', description: 'Replace what the subagent said at a prompt. Prompts after it see your version. Marked as edited.', inputSchema: { run, agent, prompt: promptNo, reply: z.string() } }, act('edit_reply', false));
   server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));

@@ -96,7 +96,7 @@
       throw fail('network', text, e && e.message);
     }
     if (!done) throw fail('network', text, 'The reply ended early.');
-    return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage, notes: done.notes || [] };
+    return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage, notes: done.notes || [], thinking: done.thinking || '' };
   }
 
   /* the reply as JSON: the whole reply, else a code fence, else from the first { or [ to the last } or ] */

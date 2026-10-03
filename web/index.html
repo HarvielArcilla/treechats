@@ -820,6 +820,19 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .ptop .edtag{margin-left:0}
 .fitmodes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px}
 .fitmodes>span{font-size:.82rem;color:var(--muted);margin-right:4px}
+.thinkbox{margin:0 0 8px;border-left:2px solid var(--line);padding:2px 0 2px 10px}
+.thinkbox summary{cursor:pointer;font-size:.8rem;color:var(--muted)}
+.thinkbox .rbody{font-size:.88em;color:var(--muted);margin-top:6px}
+.tag.settag{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
+.bset{margin:10px 0;padding-top:8px;border-top:1px solid var(--line)}
+.bsetlist{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:3px;font-size:.82rem}
+.bsetlist li{display:flex;justify-content:space-between;gap:10px}
+.bsetlist li>span:first-child{color:var(--muted)}
+.bsetlist .note{margin-left:4px}
+.bset textarea{width:100%;margin-bottom:6px}
+.bsrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;font-size:.84rem}
+.bsrow input,.bsrow select{width:9rem}
+.usage{margin:8px 0}
 .rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .offbr{margin:2px 0 6px 18px}
 .offbr .linkbtn{font-size:.78rem;padding:3px 6px}
@@ -1058,7 +1071,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
    DB holds every space; S is always the current space's tree, so tree code works on S unchanged. */
 let DB = null, renamingSpace = null, foreignTree = false, saveWarned = false;
 const spaceIds = () => DB.order.filter(id=>DB.spaces[id]);
-const emptyTree = () => ({nextId:1, nextRef:1, nodes:{}, refs:{}, head:null, active:{}, convs:{}, fold:{}, files:[], views:[], pins:[], nextPin:1});
+const emptyTree = () => ({nextId:1, nextRef:1, nodes:{}, refs:{}, head:null, active:{}, convs:{}, fold:{}, files:[], views:[]});
 function withTree(tree, fn){ const prevS=S, prevF=foreignTree, prevG=G; S=tree; foreignTree=true; G=null; try{ return fn(); } finally{ S=prevS; foreignTree=prevF; G=prevG; } }
 function addSpace(name, tree){ const id='s'+(DB.nextSpace++); DB.spaces[id]={id, name, tree: tree || emptyTree()}; DB.order.unshift(id); return id; }
 function uniqueSpaceName(base){ const used=new Set(spaceIds().map(id=>DB.spaces[id].name)); if(!used.has(base)) return base; let k=2; while(used.has(`${base} ${k}`)) k++; return `${base} ${k}`; }
@@ -1208,8 +1221,6 @@ function migrate(){
   }
   if(!S.active) S.active={};
   if(!S.convs) S.convs={};
-  if(!Array.isArray(S.pins)) S.pins=[];
-  if(!S.nextPin) S.nextPin=1+S.pins.length;
   if(S.vis && S.vis!=='focus') S.vis='select';
   if(!Array.isArray(S.files)) S.files=[];
   if(!Array.isArray(S.views)) S.views=[];
@@ -1870,28 +1881,12 @@ function settingsFor(id){
   return {values:out, from};
 }
 const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
-/* ---- Pinned context ----
-   Reusable pieces of context (a spec, a style guide, a brief) pinned to the project, or to a prompt: then they're sent
-   from that prompt on, just before it, so the shared start of other branches is unchanged. Each can be switched off
-   without unpinning it. */
-function pinsFor(id){
-  const top=[], at=new Map(), p=new Set(path(id));
-  for(const pin of (S.pins||[])){
-    if(pin.off) continue;
-    if(pin.at==null) top.push(pin);
-    else if(p.has(pin.at)){ if(!at.has(pin.at)) at.set(pin.at, []); at.get(pin.at).push(pin); }
-  }
-  return {top, at};
-}
-const pinBlock = pin => `<document name="${pin.name}">\n${pin.text}\n</document>`;
 function turnsFor(id, includeLastReply){
-  const raw=[], instr=promptText('instructions').trim(), pins=pinsFor(id);
+  const raw=[], instr=promptText('instructions').trim();
   if(instr) raw.push({role:'user', content:instr});
   if(S.files && S.files.length) raw.push({role:'user', content:'Files shared in this space:\n\n'+S.files.map(fileBlock).join('\n\n')});
-  for(const pin of pins.top) raw.push({role:'user', content:pinBlock(pin)});
   for(const e of contextEntries(id)){
     if(e.seam){ raw.push({role:'user', content:e.text}); continue; }
-    for(const pin of (pins.at.get(e.id)||[])) raw.push({role:'user', content:pinBlock(pin)});
     const n=S.nodes[e.id];
     if(n.skip && e.id!==id) continue;
     const fl=(n.files||[]).map(fileBlock).join('\n\n');
@@ -1929,15 +1924,12 @@ function turnParts(n){
 }
 /* what a request from this prompt sends, as in turnsFor(id): one entry per part, in order */
 function ctxSig(id){
-  const at=[], instr=promptText('instructions').trim(), pins=pinsFor(id), sys=(settingsFor(id).values.system||'').trim();
+  const at=[], instr=promptText('instructions').trim(), sys=(settingsFor(id).values.system||'').trim();
   if(sys) at.push('y:'+h5(sys));
   if(instr) at.push('i:'+h5(instr));
   if(S.files && S.files.length) at.push('f:'+h5(S.files.map(f=>f.id+'/'+f.name).join('|')));
-  const pinSig = pin => at.push('p'+pin.id+':'+h5(pin.name+'\u0000'+pin.text));
-  pins.top.forEach(pinSig);
   for(const e of contextEntries(id)){
     if(e.seam){ at.push('s'+e.merge+':'+h5(e.text)); continue; }
-    (pins.at.get(e.id)||[]).forEach(pinSig);
     const n=S.nodes[e.id];
     if(n.kind==='merge' || (n.skip && e.id!==id)) continue;
     const p=turnParts(n);
@@ -1953,8 +1945,7 @@ function ctxChanges(id){
   if(!n || !n.ctx || !n.reply || liveGen(id) || set('ctxMarks')===false) return null;
   const now=ctxSig(id); if(now.h===n.ctx.h) return null;
   const was=sigMap(n.ctx), is=sigMap(now), out=[];
-  const pinName = k => { const p=(S.pins||[]).find(x=>'p'+x.id===k); return p ? `pinned “${clip(p.name,30)}”` : 'a pinned item'; };
-  const name = k => k==='i' ? 'standing instructions' : k==='f' ? 'project files' : k==='y' ? 'system prompt' : k[0]==='p' ? pinName(k) : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
+  const name = k => k==='i' ? 'standing instructions' : k==='f' ? 'project files' : k==='y' ? 'system prompt' : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
   for(const [k,v] of is){
     if(!was.has(k)){ out.push({k, what: /^\d+$/.test(k) ? 'back in' : 'added'}); continue; }
     const w=was.get(k); if(w===v) continue;
@@ -2049,7 +2040,7 @@ async function startReply(sid, id){
     const settings=withTree(tree, ()=>settingsFor(id).values);
     const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal, settings,
       onText:({text})=>{ g.text=text; paintGen(g); }});
-    g.usage=r.usage||null;
+    g.usage=r.usage||null; g.thinking=r.thinking||'';
     const unused=(r.notes||[]).length ? `Branch settings not used by this model: ${r.notes.join(', ')}.` : null;
     finishGen(g, r.text, r.modelTierApplied, [r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null), unused].filter(Boolean).join(' ') || null);
   }catch(e){
@@ -2062,7 +2053,7 @@ function finishGen(g, text, tier, note){
   gens.delete(gkey(g.sid,g.id));
   const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
   if(n){
-    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; withTree(tree, ()=>touch(g.id)); }
+    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; if(g.thinking) n.thinking=g.thinking; else delete n.thinking; withTree(tree, ()=>touch(g.id)); }
     if(note) genNotes[gkey(g.sid,g.id)]=note;
     delete n.askTier;
     save();
@@ -2587,6 +2578,16 @@ const Agent=(()=>{
     });
   }
   const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
+  /* branch settings an agent asks for on spawn or fork: they apply to that prompt and the ones after it */
+  function agentSettings(a){
+    const st={};
+    if(typeof a.system==='string' && a.system.trim()) st.system=a.system.trim();
+    if(typeof a.thinking==='boolean') st.thinking=a.thinking;
+    if(EFFORT_OPTS.includes(a.effort)) st.effort=a.effort;
+    if(typeof a.temperature==='number') st.temperature=Math.min(1, Math.max(0, a.temperature));
+    if(Number.isFinite(a.max_tokens)) st.maxTokens=Math.round(a.max_tokens);
+    return hasSettings(st) ? st : null;
+  }
   function addTurn(t, parent, text, by, tier){
     const nid=t.nextId++; t.nodes[nid]={id:nid, parents: parent==null ? [] : [parent], text, by};
     if(tier) t.nodes[nid].askTier=tier;
@@ -2607,6 +2608,7 @@ const Agent=(()=>{
       const text=(a.context ? `${a.context.trim()}\n\n---\n\n` : '')+a.prompt;
       const id=change(sid, ()=>{
         const nid=addTurn(S, null, text, by, tierOf(a.model));
+        const st=agentSettings(a); if(st) S.nodes[nid].set=st;
         const rid=newRef('main', nid); S.head=rid;
         if(a.title) S.convs[nid]={title:String(a.title).slice(0,80)};
         return nid;
@@ -2631,6 +2633,7 @@ const Agent=(()=>{
       need(t, a.at);
       const id=change(sid, ()=>{
         const nid=addTurn(S, a.at, a.prompt, by, tierOf(a.model));
+        const st=agentSettings(a); if(st) S.nodes[nid].set=st;
         const name = a.name && NAME_RE.test(a.name) && !namesIn(convOf(a.at)).has(a.name) ? a.name : slugName(a.name || 'fork', convOf(a.at));
         newRef(name, nid);
         return nid;
@@ -3064,7 +3067,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'');
+  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Branch settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -3201,10 +3204,10 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -3422,6 +3425,77 @@ function branchesHTML(rootId){
     <button class="btn xs danger" data-delbr="${rid}" ${rids.length<2?'disabled title="A chat keeps at least one branch"':''} aria-label="Delete branch ${esc(refName(rid))}">Delete</button></li>`).join('')}</ul>
     <p class="note">Edit a name to rename it. Deleting a branch keeps its prompts.</p></details>`;
 }
+/* thinking the model did before its reply, as the API returned it; folded, never sent back to Claude */
+const thinkHTML = n => n.thinking ? `<details class="thinkbox"><summary>Thinking <span class="note">· ${Math.ceil(n.thinking.length/4).toLocaleString()} tok · not sent to Claude again</span></summary><div class="rbody">${md(n.thinking)}</div></details>` : '';
+/* tokens and cost, as the API (or Claude Code) reported them for each reply */
+const fmtCost = c => c==null ? '' : c<0.01 ? '<$0.01' : '$'+c.toFixed(c<1?3:2);
+function usageHTML(id){
+  const n=S.nodes[id], u=n.usage;
+  const line = u ? `This reply: ${u.input.toLocaleString()} in${u.cacheRead?` (+${u.cacheRead.toLocaleString()} from cache)`:''}${u.cacheWrite?` (+${u.cacheWrite.toLocaleString()} cached)`:''} · ${u.output.toLocaleString()} out${u.cost!=null?` · ${fmtCost(u.cost)}`:''}${u.via==='claude-code'?' · as reported by Claude Code':''}` : '';
+  const withU=path(id).map(x=>S.nodes[x]).filter(m=>m && m.usage), total=withU.reduce((a,m)=>a+(m.usage.cost||0),0), anyCost=withU.some(m=>m.usage.cost!=null);
+  const sum = withU.length>1 && anyCost ? `Context path so far: ${fmtCost(total)} across ${withU.length} replies` : '';
+  return line||sum ? `<p class="meta usage" title="Token counts come from each reply; cost uses the published price of the model (TREECHATS_PRICE_* in .env overrides it).">${[line,sum].filter(Boolean).join('<br>')}</p>` : '';
+}
+/* ---- Branch settings in the inspector ---- */
+let bsetFor=null;
+const EFFORT_OPTS=['low','medium','high','xhigh','max'];
+function setSummary(st){
+  const v=st||{}, out=[];
+  if('system' in v) out.push(v.system ? `system prompt “${clip(v.system,40)}”` : 'no system prompt');
+  if('thinking' in v) out.push(v.thinking ? 'thinking on' : 'thinking off');
+  if('effort' in v) out.push(v.effort ? `effort ${v.effort}` : 'model’s default effort');
+  if('temperature' in v) out.push(v.temperature!=null ? `temperature ${v.temperature}` : 'default temperature');
+  if('maxTokens' in v) out.push(v.maxTokens ? `up to ${v.maxTokens.toLocaleString()} tokens` : 'default reply length');
+  return out.join(', ');
+}
+/* which tiers' models use a setting, from what the server reports */
+function capsNote(){
+  const c=(window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.caps) || null; if(!c) return '';
+  const label=t=>(TIERS.find(x=>x[0]===t)||[t,t])[1].split(' · ')[0];
+  if(Object.values(c).some(x=>x.systemOnly)) return 'Replies come from Claude Code, which uses the system prompt only.';
+  const who=f=>Object.keys(c).filter(t=>f(c[t])).map(label);
+  const temp=who(x=>x.temperature), eff=who(x=>x.effort);
+  return `Temperature is used by ${temp.length?temp.join(', '):'none of your models'}; effort by ${eff.length?eff.join(', '):'none of them'}. Others skip it, and the reply says so.`;
+}
+function inheritedSettings(id){ const p=S.nodes[id].parents[0]; return p!=null && S.nodes[p] ? settingsFor(p).values : {}; }
+function bsetHTML(id){
+  const n=S.nodes[id], {values:v, from}=settingsFor(id);
+  const src=f=>from[f]!=null ? (from[f]===id ? ' · set here' : ` · from #${from[f]}`) : '';
+  const rows=[
+    ['System prompt', v.system ? `“${esc(clip(v.system,80))}”` : 'none', 'system'],
+    ['Thinking', v.thinking ? 'on' : 'off', 'thinking'],
+    ['Effort', v.effort || 'model default', 'effort'],
+    ['Temperature', v.temperature!=null ? String(v.temperature) : 'model default', 'temperature'],
+    ['Reply length', v.maxTokens ? `up to ${v.maxTokens.toLocaleString()} tokens` : 'default', 'maxTokens'],
+  ];
+  if(bsetFor!==id) return `<div class="bset"><p class="flabel">Branch settings <span class="flhint">for #${id} and the prompts after it</span></p>
+    <ul class="bsetlist">${rows.map(([l,val,f])=>`<li><span>${l}</span><span>${val}<span class="note">${src(f)}</span></span></li>`).join('')}</ul>
+    <div class="bar"><button class="btn xs" data-bsetedit="${id}">Change from #${id}</button>${hasSettings(n.set)?`<button class="btn xs" data-bsetclear="${id}" title="Go back to what the prompts above use">Clear what’s set here</button>`:''}</div></div>`;
+  return `<div class="bset editing"><p class="flabel">Branch settings <span class="flhint">from #${id} on</span></p>
+    <label class="flabel" for="bsSystem">System prompt</label><textarea id="bsSystem" rows="3" placeholder="None">${esc(v.system||'')}</textarea>
+    <div class="bsrow"><span>Thinking</span><span class="segs" role="group" aria-label="Thinking">${[['off','Off'],['on','On']].map(([k,l])=>`<button class="seg" data-bsthink="${k}" aria-pressed="${(k==='on')===!!v.thinking}">${l}</button>`).join('')}</span></div>
+    <div class="bsrow"><label for="bsEffort">Effort</label><select id="bsEffort"><option value="">Model default</option>${EFFORT_OPTS.map(e=>`<option ${v.effort===e?'selected':''}>${e}</option>`).join('')}</select></div>
+    <div class="bsrow"><label for="bsTemp">Temperature</label><input id="bsTemp" type="number" min="0" max="1" step="0.1" placeholder="Model default" value="${v.temperature!=null?v.temperature:''}"></div>
+    <div class="bsrow"><label for="bsMax">Reply length (tokens)</label><input id="bsMax" type="number" min="256" max="128000" step="256" placeholder="Default" value="${v.maxTokens||''}"></div>
+    <p class="note">${capsNote()}</p>
+    <div class="bar"><button class="btn primary xs" data-bsetsave="${id}">Save</button><button class="btn xs" data-bsetcancel>Cancel</button></div></div>`;
+}
+function saveBset(id){
+  const n=S.nodes[id]; if(!n) return;
+  const box=document.querySelector('.bset.editing');
+  const want={
+    system: document.getElementById('bsSystem').value.trim() || undefined,
+    thinking: box.querySelector('[data-bsthink][aria-pressed="true"]')?.dataset.bsthink==='on' || undefined,
+    effort: document.getElementById('bsEffort').value || undefined,
+    temperature: document.getElementById('bsTemp').value==='' ? undefined : Math.min(1, Math.max(0, +document.getElementById('bsTemp').value)),
+    maxTokens: document.getElementById('bsMax').value==='' ? undefined : Math.round(+document.getElementById('bsMax').value) || undefined,
+  };
+  const inh=inheritedSettings(id), next={};
+  for(const f of SET_FIELDS){ if(want[f]===inh[f]) continue; next[f] = want[f]===undefined ? null : want[f]; }
+  bsetFor=null;
+  commit(hasSettings(next) ? `Branch settings from #${id}: ${setSummary(next)}` : `#${id} uses the same settings as the prompts above it`, ()=>{ if(hasSettings(next)) n.set=next; else delete n.set; });
+  renderCtx();
+}
 let ctxFor;
 /* ---- The inspector ----
    The right column has one job: what Claude sees from the selected prompt, and how to shape it. Every turn that
@@ -3433,6 +3507,8 @@ function renderCtx(){
   const changed = ctxFor!==sel; ctxFor=sel;
   /* a note being typed survives redraws (a reply landing elsewhere redraws everything) */
   const a=document.activeElement, keepNote = a && a.id==='editNote' && card.contains(a) ? {s:a.selectionStart, e:a.selectionEnd} : null;
+  /* branch settings being edited survive redraws too */
+  const bsDraft = bsetFor!=null && document.querySelector('.bset.editing') ? ['bsSystem','bsEffort','bsTemp','bsMax'].map(k=>[k, document.getElementById(k).value]).concat([['think', document.querySelector('.bset.editing [data-bsthink][aria-pressed="true"]')?.dataset.bsthink]]) : null, bsFocus = a && a.closest && a.closest('.bset.editing') ? a.id : null;
   if(sel==null||!S.nodes[sel]){ setCard(card,'ctx','<h2>Context</h2><p class="note">Select a prompt to see exactly what Claude would be sent from there, and to shape it.</p>'); return; }
   const n=S.nodes[sel];
   if(n.kind==='merge'){
@@ -3445,7 +3521,8 @@ function renderCtx(){
   }
   const ents=contextEntries(sel), msgs=turnsFor(sel,true), merged=ents.some(e=>e.seam), instr=promptText('instructions').trim(), fs=S.files||[];
   const tok=t=>Math.ceil(t.length/4);
-  const items=(instr?`<li class="seam instr" data-gotoprompts title="Standing instructions, sent first. Change them in Settings › Prompts."><span class="cid">✎</span><span class="ct">${esc(instr)}</span><span></span></li>`:'')
+  const bsv=settingsFor(sel), sysTxt=(bsv.values.system||'').trim();
+  const items=(sysTxt?`<li class="seam instr" ${set('branchSettings')?`data-bsetedit="${bsv.from.system}"`:''} title="System prompt from #${bsv.from.system}'s branch settings, sent alongside every message"><span class="cid">⚙</span><span class="ct">System prompt: ${esc(sysTxt)}</span><span></span></li>`:'')+(instr?`<li class="seam instr" data-gotoprompts title="Standing instructions, sent first. Change them in Settings › Prompts."><span class="cid">✎</span><span class="ct">${esc(instr)}</span><span></span></li>`:'')
     +(fs.length?`<li class="files" data-openspacefiles title="Sent with every request in this project"><span class="cid">⎘</span><span class="ct">${fs.length} project file${fs.length===1?'':'s'}: ${esc(fs.map(f=>f.name).join(', '))}</span><span></span></li>`:'')
     +ents.map(e=>{
       if(e.seam) return `<li class="seam" data-sel="${e.merge}"><span class="cid">⑂</span><span class="ct">${esc(e.text)}</span><span></span></li>`;
@@ -3469,7 +3546,10 @@ function renderCtx(){
       <textarea id="editNote" rows="2" placeholder="Decisions, reminders, what to try next…">${esc(n.note||'')}</textarea>
       ${n.files && n.files.length ? `<p class="flabel">Attached files</p><ul class="flist">${n.files.map((m,i)=>`<li><span class="fkind">${m.kind==='image'?'IMG':'TXT'}</span><span class="fname" title="${esc(m.name)}">${esc(m.name)}</span><span class="meta">${fmtSize(m.size)}</span><button class="btn xs danger" data-rmnodefile="${i}">Remove</button></li>`).join('')}</ul>` : ''}
       ${n.kind==='summary'?'<p class="note">A summary root made by a reroot. Edit it into a proper recap of the context you cut.</p>':''}
+      ${usageHTML(sel)}
+      ${set('branchSettings') ? bsetHTML(sel) : ''}
       <p class="meta">${facts}</p></div>`);
+  if(bsDraft && document.querySelector('.bset.editing')){ for(const [k,v] of bsDraft){ if(k==='think'){ if(v) for(const x of document.querySelectorAll('.bset.editing [data-bsthink]')) x.setAttribute('aria-pressed', x.dataset.bsthink===v); } else { const el=document.getElementById(k); if(el) el.value=v; } } if(bsFocus){ const f=document.getElementById(bsFocus); if(f) f.focus({preventScroll:true}); } }
   if(keepNote){ const t=document.getElementById('editNote'); if(t){ t.focus({preventScroll:true}); try{ t.setSelectionRange(keepNote.s, keepNote.e); }catch(e){} } }
   if(changed) Motion.fade(card);
 }
@@ -4226,6 +4306,11 @@ const ctxCardEl=document.getElementById('ctxCard');
 ctxCardEl.addEventListener('click', e=>{
   const sk=e.target.closest('[data-ctxskip]'); if(sk){ e.stopPropagation(); run('skip', +sk.dataset.ctxskip); return; }
   if(e.target.closest('[data-gotoprompts]')){ openSettings('prompts'); return; }
+  const be=e.target.closest('[data-bsetedit]'); if(be){ bsetFor=+be.dataset.bsetedit; renderCtx(); const t=document.getElementById('bsSystem'); if(t) t.focus({preventScroll:true}); return; }
+  if(e.target.closest('[data-bsetcancel]')){ bsetFor=null; renderCtx(); return; }
+  const bs=e.target.closest('[data-bsetsave]'); if(bs){ saveBset(+bs.dataset.bsetsave); return; }
+  const bc=e.target.closest('[data-bsetclear]'); if(bc){ const id=+bc.dataset.bsetclear; commit(`Cleared the branch settings on #${id}`, ()=>{ delete S.nodes[id].set; }); renderCtx(); return; }
+  const bt=e.target.closest('[data-bsthink]'); if(bt){ for(const x of bt.parentElement.children) x.setAttribute('aria-pressed', x===bt); return; }
   if(e.target.closest('[data-openspacefiles]')){ openSpaceFiles(); return; }
   const rf=e.target.closest('[data-rmnodefile]'); if(rf && S.nodes[sel]){ const i=+rf.dataset.rmnodefile, m=S.nodes[sel].files[i]; commit(`Removed ${m.name} from #${sel}`, ()=>{ S.nodes[sel].files.splice(i,1); if(!S.nodes[sel].files.length) delete S.nodes[sel].files; }, {touch:false}); return; }
   const g=e.target.closest('[data-sel]'); if(g){ select(+g.dataset.sel); return; }
@@ -4402,7 +4487,7 @@ const ACCENTS={
 };
 const TEXT_SIZES={small:['Small',15], default:['Default',16], large:['Large',17.5], xl:['Larger',19]};
 const FONTS={plex:['Treechats', null], system:['System', '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif']};
-const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
+const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, branchSettings:false, font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
 const set = k => opts[k]!=null ? opts[k] : SET_DEFAULTS[k];
 const darkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : {matches:false};
 const resolvedMode = () => set('theme')==='system' ? (darkMQ.matches?'dark':'light') : set('theme');
@@ -4529,6 +4614,7 @@ function renderSettings(){
       ${setRow('Replies','Chat view always shows every reply in the chat.', segs('replies',[['all','All'],['path','Context path'],['selected','Selected']],'Replies'))}
       ${setRow('Reply length','Shorten cuts long replies away from the selected prompt.', segs('replyLen',[['full','Full'],['short','Shorten']],'Reply length'))}
       ${setRow('Prompts sent to Claude','Standing instructions, merge notes, and what every '+AI+'tool asks Claude.','<button class="btn" data-setprompts>Edit prompts</button>')}
+      ${setRow('Branch settings','Advanced. A system prompt, thinking, effort, temperature and reply length for a prompt and the ones after it, set from the inspector in Editor. Settings already made keep applying when this is off, and stay marked on their prompt.', segs('branchSettings',[['false','Off'],['true','On']],'Branch settings'))}
       ${setRow('Quick-access bar','Which operations sit above the input box. The rest are under More.','<button class="btn" data-setquick>Choose</button>')}</section>`;
     h+=`<section class="setsec"><h3>Input</h3>
       ${setRow('Send with', set('sendKey')==='mod'?'Enter adds a new line.':'Shift+Enter adds a new line.', segs('sendKey',[['enter','Enter'],['mod',IS_MAC?'⌘ Enter':'Ctrl+Enter']],'Send with'))}
@@ -4586,6 +4672,7 @@ function afterSetting(key){
   if(key==='replies'){ openReplies.clear(); renderTree(); }
   if(key==='replyLen'){ fullReplies.clear(); renderTree(); }
   if(key==='sendKey' || key==='model' || key==='ctxMarks'){ renderTree(); }
+  if(key==='branchSettings'){ bsetFor=null; renderCtx(); }
   if(key==='opKeys' || key==='sendKey') renderOpsCard();
   if(key==='map') drawMap();
   if(['theme','palette','accent','textSize','font','density'].includes(key)) scheduleMap();
@@ -4620,7 +4707,7 @@ setEl.addEventListener('click', e=>{
   if(e.target===setEl || e.target.closest('[data-setclose]')){ closeSettings(); return; }
   const t=e.target.closest('[data-settab]'); if(t){ opts.setTab=t.dataset.settab; save(); renderSettings(); setBodyEl.scrollTop=0; refocus(`[data-settab="${t.dataset.settab}"]`); return; }
   const b=e.target.closest('[data-set]');
-  if(b){ const key=b.dataset.set; let v=b.dataset.val; if(['opKeys','map','ctxMarks','nameBranches','nameConvs','nameSpaces'].includes(key)) v = v==='true';
+  if(b){ const key=b.dataset.set; let v=b.dataset.val; if(['opKeys','map','ctxMarks','branchSettings','nameBranches','nameConvs','nameSpaces'].includes(key)) v = v==='true';
     if(key==='palette' && editingTheme && v!==editingTheme){ editingTheme=null; previewMode=null; }
     opts[key]=v;
     if(key==='theme'){ previewMode=null; if(editingTheme){ editMode=resolvedMode(); previewMode=editMode; } } afterSetting(key); renderSettings(); refocus(`[data-set="${key}"][data-val="${b.dataset.val}"]`); return; }
