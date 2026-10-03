@@ -1058,7 +1058,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
    DB holds every space; S is always the current space's tree, so tree code works on S unchanged. */
 let DB = null, renamingSpace = null, foreignTree = false, saveWarned = false;
 const spaceIds = () => DB.order.filter(id=>DB.spaces[id]);
-const emptyTree = () => ({nextId:1, nextRef:1, nodes:{}, refs:{}, head:null, active:{}, convs:{}, fold:{}, files:[], views:[]});
+const emptyTree = () => ({nextId:1, nextRef:1, nodes:{}, refs:{}, head:null, active:{}, convs:{}, fold:{}, files:[], views:[], pins:[], nextPin:1});
 function withTree(tree, fn){ const prevS=S, prevF=foreignTree, prevG=G; S=tree; foreignTree=true; G=null; try{ return fn(); } finally{ S=prevS; foreignTree=prevF; G=prevG; } }
 function addSpace(name, tree){ const id='s'+(DB.nextSpace++); DB.spaces[id]={id, name, tree: tree || emptyTree()}; DB.order.unshift(id); return id; }
 function uniqueSpaceName(base){ const used=new Set(spaceIds().map(id=>DB.spaces[id].name)); if(!used.has(base)) return base; let k=2; while(used.has(`${base} ${k}`)) k++; return `${base} ${k}`; }
@@ -1208,6 +1208,8 @@ function migrate(){
   }
   if(!S.active) S.active={};
   if(!S.convs) S.convs={};
+  if(!Array.isArray(S.pins)) S.pins=[];
+  if(!S.nextPin) S.nextPin=1+S.pins.length;
   if(S.vis && S.vis!=='focus') S.vis='select';
   if(!Array.isArray(S.files)) S.files=[];
   if(!Array.isArray(S.views)) S.views=[];
@@ -1857,12 +1859,39 @@ function contextEntries(id){
   return out;
 }
 /* Messages for the API: user/assistant turns, with back-to-back turns of one role joined so they alternate. */
+/* ---- Branch settings ----
+   A system prompt, thinking, effort, temperature and a reply length limit, set on a prompt and used by it and every
+   prompt after it, unless a later prompt sets its own. Forking and changing one setting compares the same
+   conversation under a different setup. Each field is inherited on its own; null means "back to the default". */
+const SET_FIELDS=['system','thinking','effort','temperature','maxTokens'];
+function settingsFor(id){
+  const out={}, from={};
+  for(const x of chain(id).reverse()){ const st=S.nodes[x] && S.nodes[x].set; if(!st) continue; for(const f of SET_FIELDS) if(!(f in from) && f in st){ from[f]=x; if(st[f]!=null) out[f]=st[f]; } }
+  return {values:out, from};
+}
+const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
+/* ---- Pinned context ----
+   Reusable pieces of context (a spec, a style guide, a brief) pinned to the project, or to a prompt: then they're sent
+   from that prompt on, just before it, so the shared start of other branches is unchanged. Each can be switched off
+   without unpinning it. */
+function pinsFor(id){
+  const top=[], at=new Map(), p=new Set(path(id));
+  for(const pin of (S.pins||[])){
+    if(pin.off) continue;
+    if(pin.at==null) top.push(pin);
+    else if(p.has(pin.at)){ if(!at.has(pin.at)) at.set(pin.at, []); at.get(pin.at).push(pin); }
+  }
+  return {top, at};
+}
+const pinBlock = pin => `<document name="${pin.name}">\n${pin.text}\n</document>`;
 function turnsFor(id, includeLastReply){
-  const raw=[], instr=promptText('instructions').trim();
+  const raw=[], instr=promptText('instructions').trim(), pins=pinsFor(id);
   if(instr) raw.push({role:'user', content:instr});
   if(S.files && S.files.length) raw.push({role:'user', content:'Files shared in this space:\n\n'+S.files.map(fileBlock).join('\n\n')});
+  for(const pin of pins.top) raw.push({role:'user', content:pinBlock(pin)});
   for(const e of contextEntries(id)){
     if(e.seam){ raw.push({role:'user', content:e.text}); continue; }
+    for(const pin of (pins.at.get(e.id)||[])) raw.push({role:'user', content:pinBlock(pin)});
     const n=S.nodes[e.id];
     if(n.skip && e.id!==id) continue;
     const fl=(n.files||[]).map(fileBlock).join('\n\n');
@@ -1900,11 +1929,15 @@ function turnParts(n){
 }
 /* what a request from this prompt sends, as in turnsFor(id): one entry per part, in order */
 function ctxSig(id){
-  const at=[], instr=promptText('instructions').trim();
+  const at=[], instr=promptText('instructions').trim(), pins=pinsFor(id), sys=(settingsFor(id).values.system||'').trim();
+  if(sys) at.push('y:'+h5(sys));
   if(instr) at.push('i:'+h5(instr));
   if(S.files && S.files.length) at.push('f:'+h5(S.files.map(f=>f.id+'/'+f.name).join('|')));
+  const pinSig = pin => at.push('p'+pin.id+':'+h5(pin.name+'\u0000'+pin.text));
+  pins.top.forEach(pinSig);
   for(const e of contextEntries(id)){
     if(e.seam){ at.push('s'+e.merge+':'+h5(e.text)); continue; }
+    (pins.at.get(e.id)||[]).forEach(pinSig);
     const n=S.nodes[e.id];
     if(n.kind==='merge' || (n.skip && e.id!==id)) continue;
     const p=turnParts(n);
@@ -1920,7 +1953,8 @@ function ctxChanges(id){
   if(!n || !n.ctx || !n.reply || liveGen(id) || set('ctxMarks')===false) return null;
   const now=ctxSig(id); if(now.h===n.ctx.h) return null;
   const was=sigMap(n.ctx), is=sigMap(now), out=[];
-  const name = k => k==='i' ? 'standing instructions' : k==='f' ? 'project files' : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
+  const pinName = k => { const p=(S.pins||[]).find(x=>'p'+x.id===k); return p ? `pinned “${clip(p.name,30)}”` : 'a pinned item'; };
+  const name = k => k==='i' ? 'standing instructions' : k==='f' ? 'project files' : k==='y' ? 'system prompt' : k[0]==='p' ? pinName(k) : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
   for(const [k,v] of is){
     if(!was.has(k)){ out.push({k, what: /^\d+$/.test(k) ? 'back in' : 'added'}); continue; }
     const w=was.get(k); if(w===v) continue;
@@ -2012,9 +2046,12 @@ async function startReply(sid, id){
     const imgs=(n.files||[]).filter(m=>m.kind==='image').map(m=>Files.get(m.id)).filter(r=>r && r.blob).map(r=>r.blob);
     const extra = imgs.length && imageLimits ? {images: imgs.slice(0, imageLimits.maxCount)} : {};
     if(imgs.length && !imageLimits) toast('Images can’t be sent from this view, so Claude only sees their names.');
-    const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal,
+    const settings=withTree(tree, ()=>settingsFor(id).values);
+    const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal, settings,
       onText:({text})=>{ g.text=text; paintGen(g); }});
-    finishGen(g, r.text, r.modelTierApplied, r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null));
+    g.usage=r.usage||null;
+    const unused=(r.notes||[]).length ? `Branch settings not used by this model: ${r.notes.join(', ')}.` : null;
+    finishGen(g, r.text, r.modelTierApplied, [r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null), unused].filter(Boolean).join(' ') || null);
   }catch(e){
     const code = e && e.code;
     if(PERMANENT.includes(code)) sampleState='denied';
@@ -2025,7 +2062,7 @@ function finishGen(g, text, tier, note){
   gens.delete(gkey(g.sid,g.id));
   const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
   if(n){
-    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; withTree(tree, ()=>touch(g.id)); }
+    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; withTree(tree, ()=>touch(g.id)); }
     if(note) genNotes[gkey(g.sid,g.id)]=note;
     delete n.askTier;
     save();
@@ -2684,8 +2721,8 @@ const Agent=(()=>{
    Exactly what the next request from a prompt would send (standing instructions, space files, merge notes, every
    turn and reply, minus what's left out), as one block to paste into Claude anywhere and ask your question after. */
 function contextPrompt(id){
-  const turns=turnsFor(id, true);
-  const body=turns.map(t=>`<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
+  const turns=turnsFor(id, true), sys=(settingsFor(id).values.system||'').trim();
+  const body=(sys ? `<system>\n${sys}\n</system>\n\n` : '')+turns.map(t=>`<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
   return `Here is an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`;
 }
 function copyContextPrompt(id){

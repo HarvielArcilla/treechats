@@ -6,8 +6,9 @@
    by name only. */
 import { getValue } from './store.ts';
 
-type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string } };
-export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number }>; files?: { id: string; name: string }[] };
+type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string }; set?: Record<string, unknown> };
+export type Pin = { id: number; name: string; text: string; at?: number | null; off?: boolean };
+export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number }>; files?: { id: string; name: string }[]; pins?: Pin[] };
 type State = { db: { spaces: Record<string, { id: string; name: string; tree: Tree; sel?: number | null }>; order: string[]; current: string }; opts?: { prompts?: Record<string, string> } };
 
 export const SEAM = 'Separately, in a parallel thread that branched off earlier in this conversation, we discussed the following.';
@@ -70,15 +71,36 @@ export class TreeView {
 
 const fileStub = (f: { name: string; kind?: string }) => f.kind === 'image' ? `[Attached image: ${f.name}]` : `<file name="${f.name}">\n(The contents of this file are kept in the browser, so they aren't included here.)\n</file>`;
 
+/* branch settings in effect at a prompt (page: settingsFor), and the pins it sends (page: pinsFor) */
+const SET_FIELDS = ['system', 'thinking', 'effort', 'temperature', 'maxTokens'];
+export function settingsFor(tree: Tree, id: number) {
+  const v = new TreeView(tree), out: Record<string, unknown> = {}, seen = new Set<string>();
+  for (const x of v.chain(id).reverse()) { const st = tree.nodes[x]?.set; if (!st) continue; for (const f of SET_FIELDS) if (!seen.has(f) && f in st) { seen.add(f); if (st[f] != null) out[f] = st[f]; } }
+  return out;
+}
+function pinsFor(tree: Tree, id: number) {
+  const top: Pin[] = [], at = new Map<number, Pin[]>(), p = new Set(new TreeView(tree).path(id));
+  for (const pin of tree.pins || []) {
+    if (pin.off) continue;
+    if (pin.at == null) top.push(pin);
+    else if (p.has(pin.at)) { if (!at.has(pin.at)) at.set(pin.at, []); at.get(pin.at)!.push(pin); }
+  }
+  return { top, at };
+}
+const pinBlock = (pin: Pin) => `<document name="${pin.name}">\n${pin.text}\n</document>`;
+const systemOf = (tree: Tree, id: number) => String(settingsFor(tree, id).system ?? '').trim();
+
 /* The turns a request from this prompt sends, including its own reply, as the page's turnsFor(id, true) does */
 export function turnsFor(state: State, tree: Tree, id: number) {
-  const v = new TreeView(tree), prompts = state.opts?.prompts || {};
+  const v = new TreeView(tree), prompts = state.opts?.prompts || {}, pins = pinsFor(tree, id);
   const raw: { role: 'user' | 'assistant'; content: string }[] = [];
   const instr = (prompts.instructions ?? '').trim();
   if (instr) raw.push({ role: 'user', content: instr });
   if (tree.files && tree.files.length) raw.push({ role: 'user', content: 'Files shared in this space:\n\n' + tree.files.map(fileStub).join('\n\n') });
+  for (const pin of pins.top) raw.push({ role: 'user', content: pinBlock(pin) });
   for (const e of v.entries(id, prompts.seam ?? SEAM)) {
     if (e.seam) { raw.push({ role: 'user', content: e.text }); continue; }
+    for (const pin of pins.at.get(e.id) || []) raw.push({ role: 'user', content: pinBlock(pin) });
     const n = tree.nodes[e.id];
     if (n.skip && e.id !== id) continue;
     const fl = (n.files || []).map(fileStub).join('\n\n');
@@ -92,7 +114,8 @@ export function turnsFor(state: State, tree: Tree, id: number) {
 
 /* the same block as the page's "Copy as a prompt" */
 export function contextPrompt(state: State, tree: Tree, id: number) {
-  const body = turnsFor(state, tree, id).map((t) => `<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
+  const sys = systemOf(tree, id);
+  const body = (sys ? `<system>\n${sys}\n</system>\n\n` : '') + turnsFor(state, tree, id).map((t) => `<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
   return `Here is an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`;
 }
 
@@ -107,12 +130,16 @@ export function hash53(str: string, seed = 0) {
 }
 const h5 = (str: string) => hash53(str).slice(-5);
 export function ctxSig(state: State, tree: Tree, id: number) {
-  const v = new TreeView(tree), prompts = state.opts?.prompts || {}, at: string[] = [];
+  const v = new TreeView(tree), prompts = state.opts?.prompts || {}, at: string[] = [], pins = pinsFor(tree, id), sys = systemOf(tree, id);
   const instr = (prompts.instructions ?? '').trim();
+  if (sys) at.push('y:' + h5(sys));
   if (instr) at.push('i:' + h5(instr));
   if (tree.files && tree.files.length) at.push('f:' + h5(tree.files.map((f) => f.id + '/' + f.name).join('|')));
+  const pinSig = (pin: Pin) => at.push('p' + pin.id + ':' + h5(pin.name + '\u0000' + pin.text));
+  pins.top.forEach(pinSig);
   for (const e of v.entries(id, prompts.seam ?? SEAM)) {
     if (e.seam) { at.push('s' + e.merge + ':' + h5(e.text)); continue; }
+    (pins.at.get(e.id) || []).forEach(pinSig);
     const n = tree.nodes[e.id];
     if (n.kind === 'merge' || (n.skip && e.id !== id)) continue;
     const files = (n.files || []).map((f) => f.id + '/' + f.name).join('|');
@@ -129,7 +156,7 @@ export function ctxChanges(state: State, tree: Tree, id: number): string[] | nul
   const now = ctxSig(state, tree, id); if (now.h === n.ctx.h) return null;
   const map = (at: string) => new Map(at ? at.split(',').map((x) => { const i = x.indexOf(':'); return [x.slice(0, i), x.slice(i + 1)] as [string, string]; }) : []);
   const was = map(n.ctx.at), is = map(now.at), out: string[] = [];
-  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'f' ? 'project files' : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
+  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'f' ? 'project files' : k === 'y' ? 'system prompt' : k[0] === 'p' ? `pinned "${(tree.pins || []).find((x) => 'p' + x.id === k)?.name ?? 'item'}"` : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
   const num = (k: string) => /^\d+$/.test(k);
   for (const [k, val] of is) {
     if (!was.has(k)) { out.push(`${name(k)} ${num(k) ? 'back in' : 'added'}`); continue; }

@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from './config.ts';
 import { buildParams, type SampleRequest } from './claude.ts';
+import type { Usage } from './models.ts';
 import { claudeSearchDirs, findExecutable, isWin, start, stopTree } from './proc.ts';
 
 /* Replies through your own Claude Code CLI (`claude -p`), so they use whatever that CLI is signed in
@@ -28,10 +29,11 @@ writeFileSync(SYSTEM_FILE, [
 
 let safeModeOk = true; /* older CLIs don't know --safe-mode; dropped after the first refusal */
 
-function args(model: string) {
+function args(model: string, system?: string) {
   const a = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--model', model, '--tools', '', '--disallowedTools', 'mcp__*', '--strict-mcp-config', '--disable-slash-commands',
     '--no-session-persistence', '--system-prompt-file', SYSTEM_FILE];
+  if (system) a.push('--append-system-prompt', system);
   if (safeModeOk) a.push('--safe-mode');
   return a;
 }
@@ -55,14 +57,15 @@ function transcript(req: SampleRequest): { blocks: object[] } {
   return { blocks: [...images, { type: 'text', text }] };
 }
 
-export type CliEvent = { t: 'text'; d: string } | { t: 'done'; text: string; truncated: boolean } | { t: 'error'; code: string; message: string };
+export type CliEvent = { t: 'text'; d: string } | { t: 'done'; text: string; truncated: boolean; usage?: Usage } | { t: 'error'; code: string; message: string };
 
 export function runCli(req: SampleRequest, model: string, signal: AbortSignal, onEvent: (e: CliEvent) => void): Promise<void> {
   return new Promise((resolve) => {
     const cmd = claudePath();
     if (!cmd) { onEvent({ t: 'error', code: 'cli_missing', message: `Couldn't find "${config.cliPath}".` }); resolve(); return; }
     let child: ChildProcess;
-    try { child = start(cmd, args(model), { cwd: workDir }); } catch (e) { onEvent({ t: 'error', code: 'cli_missing', message: String(e) }); resolve(); return; }
+    const system = typeof req.settings?.system === 'string' ? req.settings.system.trim() : '';
+    try { child = start(cmd, args(model, system || undefined), { cwd: workDir }); } catch (e) { onEvent({ t: 'error', code: 'cli_missing', message: String(e) }); resolve(); return; }
     let text = '', buf = '', err = '', finished = false;
     const finish = (e: CliEvent) => { if (finished) return; finished = true; onEvent(e); resolve(); };
     const stop = () => { stopTree(child); finish({ t: 'error', code: 'cancelled', message: '' }); };
@@ -85,7 +88,9 @@ export function runCli(req: SampleRequest, model: string, signal: AbortSignal, o
             finish({ t: 'error', code: /log ?in|auth|credential|api key/i.test(msg) ? 'cli_auth' : /rate|limit|usage/i.test(msg) ? 'rate_limited' : 'cli_error', message: msg });
           } else {
             if (!text && typeof ev.result === 'string') { text = ev.result; onEvent({ t: 'text', d: text }); }
-            finish({ t: 'done', text, truncated: ev.stop_reason === 'max_tokens' });
+            const u = ev.usage || {};
+            const usage: Usage | undefined = ev.usage ? { input: u.input_tokens || 0, output: u.output_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cost: typeof ev.total_cost_usd === 'number' ? ev.total_cost_usd : undefined, via: 'claude-code' } : undefined;
+            finish({ t: 'done', text, truncated: ev.stop_reason === 'max_tokens', usage });
           }
         }
       }

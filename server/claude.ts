@@ -1,11 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config, type Tier } from './config.ts';
 import { runCli } from './cli.ts';
+import { caps, costOf, prices, type Usage } from './models.ts';
 
 /* Calls to Claude go through here. The browser never sees the API key: it sends the turns to
    /api/sample and reads the reply back as a stream of newline-separated JSON events:
      {"t":"text","d":"…"}                         a piece of the reply
-     {"t":"done","text","truncated","tier","model","usage"}
+     {"t":"done","text","truncated","tier","model","usage","notes"}   usage: tokens and cost; notes: settings the model didn't use
      {"t":"error","code","message"}                                                          */
 
 export type Turn = { role: 'user' | 'assistant'; content: string };
@@ -14,7 +15,11 @@ export type SampleRequest = {
   modelTier?: Tier;
   images?: { mediaType: string; data: string }[];
   maxTokens?: number;
+  /* branch settings (see "Branch settings" in web/index.html) */
+  settings?: { system?: string; temperature?: number; thinking?: boolean; effort?: string; maxTokens?: number };
 };
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const BUDGET: Record<string, number> = { low: 2048, medium: 6000, high: 12000, xhigh: 24000, max: 32000 };
 
 let client: Anthropic | null = null;
 const getClient = () => (client ??= new Anthropic({ apiKey: config.apiKey }));
@@ -57,8 +62,24 @@ export function buildParams(req: SampleRequest) {
     blocks.push({ type: 'text', text: t.content, ...(last && total > 6000 ? { cache_control: { type: 'ephemeral' as const } } : {}) });
     return { role: t.role, content: blocks };
   });
-  const maxTokens = Math.min(Math.max(256, req.maxTokens || config.maxTokens), 128000);
-  return { tier, model: config.models[tier], params: { model: config.models[tier], max_tokens: maxTokens, messages } };
+  const model = config.models[tier], c = caps(model), st = req.settings || {}, notes: string[] = [];
+  let maxTokens = Math.min(Math.max(256, st.maxTokens || req.maxTokens || config.maxTokens), 128000);
+  const params: Record<string, unknown> = { model, messages };
+  const system = typeof st.system === 'string' ? st.system.trim() : '';
+  if (system) params.system = system;
+  const effort = EFFORTS.includes(st.effort || '') ? st.effort! : '';
+  if (st.thinking) {
+    if (c.thinking === 'adaptive') params.thinking = { type: 'adaptive' };
+    else { const budget = BUDGET[effort] || 8000; params.thinking = { type: 'enabled', budget_tokens: budget }; if (maxTokens <= budget + 1024) maxTokens = Math.min(budget + 8000, 128000); }
+  }
+  if (effort) { if (c.effort) params.output_config = { effort }; else if (!st.thinking) notes.push('effort'); }
+  if (typeof st.temperature === 'number' && Number.isFinite(st.temperature)) {
+    if (!c.temperature) notes.push('temperature');
+    else if (st.thinking) notes.push('temperature (not used while thinking is on)');
+    else params.temperature = Math.min(1, Math.max(0, st.temperature));
+  }
+  params.max_tokens = maxTokens;
+  return { tier, model, notes, params: params as unknown as Anthropic.Messages.MessageStreamParams & { messages: Anthropic.Messages.MessageParam[] } };
 }
 
 export function errorCode(e: unknown): { code: string; message: string } {
@@ -78,6 +99,15 @@ export function errorCode(e: unknown): { code: string; message: string } {
   return { code: 'network', message: err?.message || String(e) };
 }
 
+/* Claude Code takes our system prompt (appended to its own), but not the sampling settings */
+function cliNotes(req: SampleRequest) {
+  const st = req.settings || {}, n: string[] = [];
+  if (typeof st.temperature === 'number') n.push('temperature');
+  if (st.thinking) n.push('thinking');
+  if (st.effort) n.push('effort');
+  if (st.maxTokens) n.push('max tokens');
+  return n.map((x) => x + ' (not used with Claude Code)');
+}
 export const provider = (): 'api' | 'claude-code' => config.provider === 'auto' ? (config.apiKey ? 'api' : 'claude-code') : config.provider;
 
 /* Streams one reply as NDJSON. `signal` fires when the browser stops the request (Stop, or closing the page). */
@@ -88,23 +118,25 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
       const send = (o: object) => ctl.enqueue(enc.encode(JSON.stringify(o) + '\n'));
       let text = '';
       try {
-        const { tier, model, params } = buildParams(req);
+        const { tier, model, params, notes } = buildParams(req);
         if (config.fake) {
           const last = params.messages[params.messages.length - 1];
           const said = (last.content as Block[]).filter((b) => b.type === 'text').map((b) => (b as Anthropic.Messages.TextBlockParam).text).join(' ');
-          const reply = fakeReply(said);
+          const reply = (params.system ? '[system prompt set] ' : '') + fakeReply(said);
           for (const piece of reply.match(/.{1,12}/gs) || []) {
             if (signal.aborted) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
             text += piece; send({ t: 'text', d: piece });
             await new Promise((r) => setTimeout(r, config.fakeDelay));
           }
-          send({ t: 'done', text, truncated: false, tier, model: 'fake', usage: null });
+          const input = JSON.stringify(params.messages).length, u: Usage = { input: Math.ceil(input / 4), output: Math.ceil(text.length / 4), cacheWrite: 0, cacheRead: 0 };
+          u.cost = costOf(u, prices(model, process.env['TREECHATS_PRICE_' + tier.toUpperCase()]));
+          send({ t: 'done', text, truncated: false, tier, model: 'fake', usage: u, notes });
           return;
         }
         if (provider() === 'claude-code') {
           await runCli(req, model, signal, (e) => {
             if (e.t === 'text') { text += e.d; send(e); }
-            else if (e.t === 'done') send({ t: 'done', text, truncated: e.truncated, tier, model, usage: null });
+            else if (e.t === 'done') send({ t: 'done', text, truncated: e.truncated, tier, model, usage: e.usage || null, notes: cliNotes(req) });
             else { if (e.code !== 'cancelled') console.warn(`  Claude Code reply failed (${e.code})${e.message ? ': ' + e.message : ''}`); send({ t: 'error', code: e.code, message: e.message, text }); }
           });
           return;
@@ -113,7 +145,9 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
         const stream = getClient().messages.stream(params, { signal });
         stream.on('text', (d) => { text += d; send({ t: 'text', d }); });
         const msg = await stream.finalMessage();
-        send({ t: 'done', text, truncated: msg.stop_reason === 'max_tokens', tier, model, usage: msg.usage });
+        const mu = msg.usage, u: Usage = { input: mu.input_tokens || 0, output: mu.output_tokens || 0, cacheWrite: mu.cache_creation_input_tokens || 0, cacheRead: mu.cache_read_input_tokens || 0 };
+        u.cost = costOf(u, prices(model, process.env['TREECHATS_PRICE_' + tier.toUpperCase()]));
+        send({ t: 'done', text, truncated: msg.stop_reason === 'max_tokens', tier, model, usage: u, notes });
       } catch (e) {
         const { code, message } = errorCode(e);
         if (code !== 'cancelled') console.warn(`  Reply failed (${code})${message ? ': ' + message : ''}`);

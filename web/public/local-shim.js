@@ -66,7 +66,7 @@
     try {
       res = await fetch('/api/sample', {
         method: 'POST', headers: { 'content-type': 'application/json' }, signal: o.signal,
-        body: JSON.stringify({ input: input, modelTier: o.modelTier, images: images, maxTokens: o.maxTokens })
+        body: JSON.stringify({ input: input, modelTier: o.modelTier, images: images, maxTokens: o.maxTokens, settings: o.settings })
       });
     } catch (e) { throw fail(e && e.name === 'AbortError' ? 'cancelled' : 'network', '', e && e.message); }
     if (!res.ok || !res.body) {
@@ -96,7 +96,7 @@
       throw fail('network', text, e && e.message);
     }
     if (!done) throw fail('network', text, 'The reply ended early.');
-    return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage };
+    return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage, notes: done.notes || [] };
   }
 
   /* the reply as JSON: the whole reply, else a code fence, else from the first { or [ to the last } or ] */
