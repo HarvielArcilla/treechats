@@ -7,6 +7,10 @@ thought back together, and see exactly what context Claude gets from wherever yo
 Treechats runs on your own computer. Your chats are saved in a file on your machine, and replies come
 either from your Anthropic API key or from your installed Claude Code (which can use a Claude subscription).
 
+It's also a place to work on code with Claude: link a folder, review Claude's proposed changes as diffs, attach test
+output and git diffs, open your Claude Code and Codex sessions as trees to see where their context went wrong, and
+let coding agents use it over MCP.
+
 ## Run it
 
 Treechats runs on Windows, macOS and Linux. You need [Node.js](https://nodejs.org) 22.13 or newer; the current
@@ -57,39 +61,68 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
 > shared with other people, they should use their own API keys: Anthropic doesn't allow third-party apps to
 > offer claude.ai sign-in without approval.
 
-## Change context, then replay
+## The basics
 
-Fix an earlier prompt, correct one of Claude's replies, or leave a turn out, and every reply below it now rests on
-context that has changed. Each reply remembers what it was sent, so it shows a small note, such as **Context
-changed: #3 reply edited** (only you see it; Claude never does, and you can turn it off in Settings). Click
-**Replay** to re-send from there, one prompt at a time: each gets a new reply as a new version, and the old ones stay
-one ‹ › away. A new reply can go a different way, so before each prompt a quick ✦ check asks whether it still makes
-sense. If it doesn't, Replay stops and shows why, with a suggested rewrite you can edit, send as is, or stop at; or,
-if you choose, it sends the rewrite and keeps going (the prompt is marked as rewritten and keeps your wording). You can also replay any stretch with **✦ Replay from here** under a selected prompt, and after you send
-an edited prompt, the prompts that followed the original can be carried over with **✦ Replay N below**.
+- **Two views.** **Editor** shows every chat as a tree, with an inspector for the selected prompt and every tool.
+  **Chat** reads like any chat app: one conversation, replies in full, the input box at the bottom, and ‹ › to switch
+  between branches. **Open in Editor** on any prompt jumps to it with its context in view.
+- **Branch from anywhere.** Select any prompt and send: if it already has follow-ups, you get a new branch. Branches
+  can be named, merged into each other (with a note so Claude reads the join), made the main line, or cloned into a
+  new chat. The **branch map** (corner panel, or full size with **M**) draws the tree like a git graph.
+- **Editing makes a branch.** Editing a prompt sends your version as a new branch with its own reply; the original
+  keeps its branch and everything after it. **Regenerate** adds another reply as a new version, one ‹ › away.
+- **Undo everything** with Ctrl/⌘-Z. **Ctrl/⌘-K** opens a palette with every command for the selected prompt.
+- **Projects** group chats, and **Project files** are sent with every request in a project, like project knowledge in
+  Claude. Search finds prompts and replies across a project, with filters for starred, noted and left-out prompts.
 
-## Second opinions and saved prompts
+## Shape what Claude sees
 
-**✦ Review** on a reply starts a new chat that sees only that prompt and reply (or, if you choose, the conversation
-up to it) and asks for an honest review. A reviewer that didn't write the answer has no reason to defend it. The review
-prompt is shown before it's sent and editable in Settings › Prompts, and the reply and its review link to each other.
+- **See the exact context.** The inspector lists everything the selected prompt sends; `/context` breaks it down part
+  by part with sizes against the request limit; **Copy as a prompt** copies it as one block to paste anywhere.
+- **Leave out** a turn and it stops being sent from the prompts below (nothing is deleted). **Edit** one of Claude's
+  replies and later prompts see your version, marked as edited.
+- **Context changed.** Each reply remembers what it was sent, so after you change something above it, it shows a small
+  note such as **Context changed: #3 reply edited** or **src/api.ts changed**. Only you see it; Claude never does,
+  and you can turn it off in Settings.
+- **Replay** re-sends from there, one prompt at a time, as new versions (the old ones stay one ‹ › away). Before each
+  prompt a quick ✦ check asks whether it still makes sense after the new replies; if not, Replay stops with a
+  suggested rewrite, or, if you choose, sends the rewrite and keeps going (marked as rewritten). After you send an
+  edited prompt, **✦ Replay N below** carries over what followed the original.
+- **Select a stretch** with Shift-click to copy just those turns, leave them all out, replay only them, replay them
+  under another prompt, squash them into one, or splice them out. **Ctrl/⌘-click** picks prompts anywhere, to send
+  the same follow-up to each (**Reply to several**) or compare them.
 
-**Saved prompts** are your prompt library: insert one from **Saved prompts** under the input box, or type `/` and
-pick it from the list. Words in `{braces}` are placeholders; what you've typed fills the first. A few starters are included (plan
-first, ask me questions first, improve my prompt, critique your answer, and more). Edit them in Settings › Saved
-prompts.
+## Explore and decide
 
-## Commands
+- **✦ Fan out** turns the options in a reply into one follow-up each, on its own branch. **Variants** sends your next
+  prompt several ways (other wordings or models) at once.
+- **Compare** shows follow-ups side by side, even across branches. **✦ Judge** gives a reason for each against
+  criteria you type, plus a pick, and changes nothing. **✦ Combine** writes one reply from the best parts, with where
+  each part came from, as a draft you edit before adding it.
+- **✦ Review** starts a new chat that sees only a prompt and its reply (or the conversation up to it) and asks for an
+  honest review. A reviewer that didn't write the answer has no reason to defend it; the two link to each other.
+- **✦ Distill** writes a brief of the context so far: start a new chat from it, keep it as a note or project file, or
+  add it to `CLAUDE.md` or `AGENTS.md` in a linked folder.
 
-Type `/` in the input box for commands, as in Claude Code:
+Every prompt Treechats sends on your behalf (✦ marks tools that use Claude) is shown before it's used and editable in
+Settings › Prompts.
+
+## Commands and saved prompts
+
+Type `/` in the input box for commands, as in Claude Code (they're also in the Ctrl/⌘-K palette):
 - `/btw question` asks a side question from the chat's context. The answer shows above the input box and nothing is
   added to the chat, unless you keep it as a branch.
 - `/loop 3 Tighten it` sends a prompt again after each reply. Add `until: under 100 words` to stop when a quick check
   says the condition is met (its verdict is noted under each reply), or `every 10m` to wait between sends while
   Treechats is open.
+- `/run npm test` and `/diff` work with linked folders (see Coding tools), and `/folder` adds one.
 - `/context` and `/cost` show what the next prompt sends and what the chat has cost; `/rewind` goes back to an earlier
-  prompt; `/model`, `/compact`, `/review`, `/branch`, `/clear`, `/memory`, `/search`, `/export` and `/help` do what
-  they say.
+  prompt; `/model`, `/compact`, `/review`, `/branch`, `/clear`, `/memory`, `/search`, `/settings`, `/export` and
+  `/help` do what they say. Anything else that starts with `/` is sent as written.
+
+**Saved prompts** are your prompt library, listed after the commands when you type `/`, or under **Saved prompts**.
+Words in `{braces}` are placeholders; what you've typed fills the first. A few starters are included (plan first, ask
+me questions first, improve my prompt, critique your answer, and more). Edit them in Settings › Saved prompts.
 
 ## Folders and files
 
@@ -100,10 +133,15 @@ and build folders are skipped, and lock files and `.env` files start unticked.
 - **Link a folder on this computer** (type its path) keeps them tied to the folder: **Sync** re-reads files that
   changed on disk, and replies written before the change say which file changed.
 
-Click any file (in Project files, on a prompt, or waiting in the input box) to open it: syntax colors and line numbers,
-Markdown and image previews, Copy and Download. **Edit** makes a new version of the file (Undo brings the old one
-back, and earlier replies are marked "context changed"). A linked file can also be saved back to disk; if the disk copy
-changed since Treechats read it, it is left alone unless you choose to overwrite it.
+Click any file (in Project files, on a prompt, or waiting in the input box) to open it:
+- syntax colors for about 60 languages, picked by extension or file name (`Dockerfile`, `Makefile`, `Gemfile`…),
+  with line numbers, and Markdown and image previews (a Source / Preview switch for Markdown);
+- **Edit** colors code as you type, with Tab and Ctrl/⌘-S. Saving makes a new version of the file: Undo brings the
+  old one back, and earlier replies are marked "context changed". A linked file can also be saved back to disk; if
+  the disk copy changed since Treechats read it, it is left alone unless you choose to overwrite it;
+- **Copy**, and **Download** for files the browser holds the only copy of (a linked file is already on disk).
+
+Files can be up to 300 KB each, and a folder lists up to 5,000.
 
 ## Coding tools
 
@@ -111,27 +149,19 @@ changed since Treechats read it, it is left alone unless you choose to overwrite
   the sessions those tools have logged (or choose a `.jsonl` file). Each message you typed becomes a prompt; the
   reply shows what the agent wrote and each tool call with an excerpt of its result, with usage and cost. Rewinds are
   branches, and compactions are marked, since that is where the agent's context was rewritten. Read-only: nothing is
-  written back to those logs.
+  written back to those logs. See where the context went wrong, then fork, leave turns out or replay.
 - **Proposed changes.** When a reply has code for a project file (its path on the line before the block, in the
   block's first line, or a unified diff), it shows under the reply with +/− counts. **Review** opens a diff where each
-  part can be kept or dropped, or the result edited, before it is saved as a new version of the file (and to disk,
-  for a linked folder). Any other code block can be applied to a file you choose. The note asking Claude to write
-  changes this way is under Settings › Prompts, and shown in `/context`.
+  change can be kept or dropped, or the result edited, before it is saved as a new version of the file (and to disk,
+  for a linked folder). When Claude shows only part of a file, it is placed where it matches. Any other code block
+  can be applied to a file you choose. The note asking Claude to write changes this way is under Settings › Prompts,
+  and shown in `/context`.
 - **`/run npm test`** runs a command in a linked folder and shows the output above the input box, with **Attach to
   prompt**. Off until you turn it on in Settings › System; commands run on this computer with your permissions.
 - **`/diff`** attaches git's view of changes in a linked folder: not committed (the default), `staged`, `last`
   (the latest commit), or any commit. Linked folders also show their branch and how many files changed.
 - **Add to the repo:** **✦ Distill** can add the brief to `CLAUDE.md` or `AGENTS.md` in a linked folder, so the next
   coding session starts from what you worked out here.
-- **Other tools over MCP:** Settings › System has the setup for Claude Code, Cursor, VS Code and Codex. Context from
-  MCP includes files from linked folders, read from disk.
-
-## Compare, judge and combine
-
-Open **Compare** on a prompt with several follow-ups to read them side by side. **✦ Judge** sends one request with
-the context and each follow-up's reply, and gets back a reason for each against criteria you type, plus a pick; it
-changes nothing. **✦ Combine** writes one reply from the best parts, with the follow-up it answers and where each
-part came from, as a draft you edit before adding it as a new follow-up (marked as combined).
 
 ## Model settings (advanced)
 
@@ -139,34 +169,36 @@ Turn them on in **Settings › System**. Then the inspector in Editor shows the 
 prompt and lets you change them from there on: a system prompt, thinking, effort, temperature and reply length. Fork a
 chat and change one setting to compare the same conversation under a different setup. Treechats sends only what the
 model uses (newer models take effort, not temperature) and the reply says if something was skipped. Every reply also
-shows its token counts and cost, with a running total along the context path.
+shows its token counts and cost, with a running total along the context path (`/cost` sums a chat).
 
-## Use it from Claude Code (MCP)
+## Use it from coding tools (MCP)
 
-Treechats serves an MCP server at `/mcp`, so Claude Code can read your chats while you work. Add it once:
+Treechats serves an MCP server at `/mcp`. For Claude Code, add it once:
 
 ```
 claude mcp add --transport http --scope user treechats http://localhost:5178/mcp
 ```
 
-**Reading.** Ask for things like "get the context of the main branch of my rate limiter chat from
-treechats". It can list projects and chats, search them, and pull the context of a branch or prompt: the
-same text as **Copy as a prompt** in the app. Attached files appear by name only, since their contents are kept
-in the browser.
+Settings › System has the setup for Cursor, VS Code and Codex too (only Claude Code is tested so far).
 
-**Subagents.** Claude Code can also run subagents in Treechats, chats whose context you can see and steer, with the
+**Reading.** Ask for things like "get the context of the main branch of my rate limiter chat from treechats". It can
+list projects and chats, search them, show a chat's whole shape (`get_tree`), and pull the context of a branch or
+prompt: the same text as **Copy as a prompt** in the app. Files from linked folders are read from disk; other
+attached files appear by name only, since their contents are kept in the browser. `btw` asks a side question with
+the exact context of any of your chats and changes nothing; `list_saved_prompts` reads your prompt library.
+
+**Subagents.** Coding agents can also run subagents in Treechats, chats whose context you can see and steer, with the
 same tools you have:
 - **Talk:** `spawn` (start one with exactly the context it should have), `ask`, `fork`, `edit_prompt`, `regenerate`,
   `loop` (the same prompt after each reply until a condition is met)
 - **Shape context:** `leave_out`, `edit_reply`, `replay` (re-send after a change; stops at a prompt that no longer fits)
 - **Explore and decide:** `fan_out`, `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across
-  forks), `distill` (bring back only a brief)
+  forks or any prompts), `distill` (bring back only a brief)
 - **Everything else:** `operate` runs star, note, branch, rename, make mainline, merge, reroot, squash, splice, delete,
-  rebase, cherry-pick and model settings; `describe` lists their arguments.
+  rebase, cherry-pick, rename chat and model settings; `describe` lists their arguments.
 
 For example: "use treechats to spawn three subagents that each review this design from a different angle, judge them
-for correctness, then distill the best one". Reading tools also include `get_tree`, `list_saved_prompts` (your prompt
-library) and `btw`, which asks a side question with the exact context of any of your chats and changes nothing.
+for correctness, then distill the best one".
 
 - Each piece of work is a run with its own project, **Run: <name>**, where you can watch and step in. Agents can't
   change anything outside their run projects, and their changes stay out of your Undo.
@@ -179,11 +211,21 @@ library) and `btw`, which asks a side question with the exact context of any of 
 
 Treechats must be running for any of this.
 
+## Import and export
+
+- **Import chats** (in the Ctrl/⌘-K palette, a project's **⋯ › Import / export JSON…**, or the link under a new
+  chat's input box) reads chats pasted with speaker
+  labels (`You:` / `Claude:`), Treechats' own Markdown export, the `conversations.json` from a Claude or ChatGPT data
+  export (ChatGPT's edits and regenerations become versions), and Claude Code and Codex sessions.
+- Copy a prompt's line or a whole chat as Markdown (`/export`), or the context as messages JSON. A project can be
+  copied as JSON and imported elsewhere.
+
 ## Your data
 
 - Chats, projects and settings: `data/treechats.db` (SQLite). A snapshot is kept every 10 minutes
   (the last 50), so a bad change can be recovered.
-- Attached files: stored by your browser for now (IndexedDB).
+- Attached and project files: stored by your browser (IndexedDB). Files from a linked folder stay in that folder;
+  Treechats keeps a copy and reads the folder again when you Sync.
 - Nothing in `data/` or `.env` is ever committed; both are in `.gitignore`.
 
 To bring spaces over from the claude.ai version (where projects were called spaces): in each space there, open
@@ -193,8 +235,14 @@ and choose **Import pasted JSON as a new project**.
 ## Security
 
 The server only listens on this computer (127.0.0.1), and only answers pages it served itself, so other
-websites can't use it to spend your key or read your chats. The API key stays on the server and is
-never sent to the browser.
+websites can't use it to spend your key, read your chats or reach your folders. The API key stays on the server and
+is never sent to the browser.
+
+- Linked folders: reads and writes stay inside the folder you linked, and a write never replaces a disk copy that
+  changed since Treechats read it unless you say so.
+- `/run` is off until you turn it on in Settings › System, and only runs in linked folders; the server checks both
+  against the saved settings, not the request.
+- Coding session logs are only read, never written.
 
 ## Develop
 
