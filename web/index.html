@@ -617,6 +617,19 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 /* settings */
 .setwrap{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:color-mix(in srgb, var(--fg) 28%, transparent)}
 .setwrap[hidden]{display:none}
+.viewsw[data-pos="2"] .vthumb{transform:translateX(100%)}
+.fvtools{display:flex;align-items:center;gap:8px}
+.fvspacer{flex:1}
+.fvsw .vtrack button{padding:3px 12px;font-size:.82rem}
+.fvedwrap{flex:1;min-height:0;display:flex;background:var(--bg);overflow:hidden;font:.8rem/1.5 var(--mono)}
+.fvedwrap .fvgutter{overflow:hidden;position:static;min-height:0;height:100%;box-sizing:border-box}
+.fvedarea{position:relative;flex:1;min-width:0}
+.fvedhl,.fvedarea .fvedit{position:absolute;inset:0;margin:0;padding:12px 16px;font:inherit;white-space:pre;tab-size:4;overflow:auto;border:0;box-sizing:border-box}
+.fvedhl{pointer-events:none;overflow:hidden;color:var(--fg)}
+.fvedhl code{font:inherit;background:none;padding:0}
+.fvedarea .fvedit{background:transparent;color:transparent;caret-color:var(--fg);resize:none;outline:none;width:100%;height:100%}
+.fvedarea .fvedit::selection{background:color-mix(in srgb, var(--accent) 30%, transparent);color:transparent}
+
 .mcpsnip{border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .mcphead{display:flex;gap:8px;align-items:baseline;padding:6px 10px;background:var(--panel)}
 .mcphead .note{flex:1;font-size:.76rem}
@@ -698,7 +711,7 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .fvedit{flex:1;width:100%;border:0;resize:none;padding:12px 16px;font:.8rem/1.5 var(--mono);background:var(--bg);color:var(--fg);tab-size:4;outline:none}
 .fvbar{padding:8px 18px;border-top:1px solid var(--line)}
 .fvbody>.note{padding:0 18px 12px;margin:0}
-.fvmd{flex:1;overflow:auto;padding:16px 22px}
+.fvmd{flex:1;overflow:auto;padding:16px 22px;display:block;align-content:start}
 .fvimg{flex:1;overflow:auto;display:grid;place-items:center;padding:16px;background:var(--bg)}
 .fvimg img{max-width:100%;height:auto}
 
@@ -1811,7 +1824,7 @@ function mdRaw(src){
 /* ---- Files ----
    Attachment contents live in IndexedDB (browser storage made for larger data); prompts and spaces keep only a small
    reference. Text and code files go to Claude as text. Images go as images on the turn being answered. */
-const TEXT_EXT=/\.(txt|md|markdown|csv|tsv|json|jsonl|xml|yaml|yml|toml|ini|cfg|conf|env|log|sql|html?|css|scss|js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|ps1|r|lua|pl|scala|dart|vue|svelte|tex|rst|proto|graphql|gql|dockerfile|makefile|gradle)$/i;
+const TEXT_EXT=/\.(txt|md|mdx|markdown|csv|tsv|json|jsonc|json5|jsonl|geojson|xml|xhtml|plist|csproj|yaml|yml|toml|ini|cfg|conf|properties|editorconfig|env|log|sql|psql|html?|css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|mts|cts|py|pyi|pyw|rb|rake|gemspec|go|rs|java|kt|kts|swift|m|mm|c|h|cc|cpp|cxx|hpp|hh|hxx|cs|csx|fs|fsx|vb|php|sh|bash|zsh|fish|ksh|ps1|psm1|psd1|bat|cmd|r|lua|pl|pm|scala|sc|sbt|dart|ex|exs|erl|hrl|hs|lhs|ml|mli|clj|cljs|cljc|edn|elm|jl|nix|vue|svelte|astro|hbs|handlebars|twig|tex|sty|rst|proto|graphql|gql|wat|f90|cmake|mk|dockerfile|containerfile|makefile|gradle|groovy|tf|tfvars|hcl|zig|sol|vim|diff|patch)$/i;
 const MAX_TEXT_FILE=300*1024, MAX_IMAGE_FILE=20*1024*1024;
 const Files=(()=>{
   const cache=new Map(); let db=null;
@@ -2094,7 +2107,10 @@ function paintFileView(){
   const m=fileAt(fv.where), r=m && Files.get(m.id); if(!m || !r){ closeFileView(true); return; }
   const box=fviewEl.querySelector('.fview'), isImg=r.kind==='image', text=r.text||'', lines=isImg?0:text.replace(/\n$/,'').split('\n').length;
   const isMd=!isImg && /\.(md|markdown)$/i.test(m.name), editable=!isImg;
-  const tools = fv.mode==='edit' || fv.mode==='diff' ? '' : `${editable?'<button class="btn" data-fvedit>Edit</button>':''}${isMd?`<div class="segs"><button class="seg" data-fvmode="preview" aria-pressed="${fv.mode==='preview'}">Preview</button><button class="seg" data-fvmode="view" aria-pressed="${fv.mode==='view'}">Source</button></div>`:''}${isImg?'':'<button class="btn" data-fvcopy>Copy</button>'}<button class="btn" data-fvdownload>Download</button>`;
+  /* Download only where the browser holds the only copy: a linked file is already on disk, unless edited here and not saved */
+  const onDisk = !!(m.src && m.src.root && !m.dirty);
+  const sw = isMd ? `<div class="viewsw fvsw" role="radiogroup" aria-label="Show as" data-pos="${fv.mode==='preview'?2:1}"><span class="vtrack"><span class="vthumb" aria-hidden="true"></span><button role="radio" aria-checked="${fv.mode!=='preview'}" data-fvmode="view">Source</button><button role="radio" aria-checked="${fv.mode==='preview'}" data-fvmode="preview">Preview</button></span></div>` : '';
+  const tools = fv.mode==='edit' || fv.mode==='diff' ? '' : `${editable?'<button class="btn" data-fvedit>Edit</button>':''}${isImg?'':'<button class="btn" data-fvcopy>Copy</button>'}${onDisk?'':`<button class="btn" data-fvdownload title="Save a copy to your computer: Treechats holds the only copy of this file">Download</button>`}${sw?`<span class="fvspacer"></span>${sw}`:''}`;
   let body;
   if(isImg){ if(!fv.url) fv.url=URL.createObjectURL(r.blob); body=`<div class="fvimg"><img src="${fv.url}" alt="${esc(m.name)}"></div>`; }
   else if(fv.mode==='diff'){
@@ -2105,7 +2121,8 @@ function paintFileView(){
   }
   else if(fv.mode==='edit'){
     const canDisk=!!(m.src && m.src.root && hasServer());
-    body=`<textarea id="fvText" class="fvedit" spellcheck="false" aria-label="Edit ${esc(m.name)}">${esc(fv.draft ?? text)}</textarea>
+    const t0=fv.draft ?? text;
+    body=`<div class="fvedwrap"><pre class="fvgutter" aria-hidden="true">${gutterNums(t0)}</pre><div class="fvedarea"><pre class="fvedhl" aria-hidden="true"><code class="hljs">${hlFor(t0, m.name)}\n</code></pre><textarea id="fvText" class="fvedit" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Edit ${esc(m.name)}">${esc(t0)}</textarea></div></div>
       <div class="bar fvbar"><button class="btn primary" data-fvsave>Save <kbd class="inv">${IS_MAC?'⌘S':'Ctrl S'}</kbd></button><button class="btn" data-fvcancel>Cancel</button>${canDisk?`<label class="chk"><input type="checkbox" data-fvdisk ${fv.saveDisk?'checked':''}> Also save to disk</label>`:''}</div>
       <p class="note">Saving makes a new version of the file. Replies written before it are marked “context changed”, and Undo brings this version back.</p>`;
   }
@@ -2114,10 +2131,24 @@ function paintFileView(){
     const hl=window.TreechatsMarkdown && window.TreechatsMarkdown.highlightFile ? window.TreechatsMarkdown.highlightFile(text, m.name) : esc(text);
     body=`<div class="fvcode"><pre class="fvgutter" aria-hidden="true">${Array.from({length:lines}, (_,i)=>i+1).join('\n')}</pre><pre class="fvsrc"><code class="hljs">${hl}</code></pre></div>`;
   }
-  box.innerHTML=`<div class="fvhead"><div class="fvtitle"><h2 id="fvTitle" title="${esc(m.name)}">${fv.mode==='diff'?'Proposed change · ':''}${esc(m.name)}</h2><p class="note">${fmtSize(m.size)}${lines?` · ${lines.toLocaleString()} line${lines===1?'':'s'}`:''} · ${fileSource(m, fv.where)}</p></div><button class="btn" data-fvclose>Close</button></div>
+  box.innerHTML=`<div class="fvhead"><div class="fvtitle"><h2 id="fvTitle" title="${esc(m.name)}">${fv.mode==='diff'?'Proposed change · ':''}${esc(m.name)}</h2><p class="note">${fmtSize(m.size)}${lines?` · ${lines.toLocaleString()} line${lines===1?'':'s'}`:''}${(()=>{ const l=!isImg && window.TreechatsMarkdown && window.TreechatsMarkdown.langName ? window.TreechatsMarkdown.langName(m.name) : null; return l ? ' · '+esc(l) : ''; })()} · ${fileSource(m, fv.where)}</p></div><button class="btn" data-fvclose>Close</button></div>
     ${tools?`<div class="bar fvtools">${tools}</div>`:''}<div class="fvbody">${body}</div>`;
   if(fv.mode==='edit'){ const t=box.querySelector('#fvText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(0,0); } }
 }
+const hlFor = (text, name) => window.TreechatsMarkdown && window.TreechatsMarkdown.highlightFile ? window.TreechatsMarkdown.highlightFile(text, name) : esc(text);
+const gutterNums = text => Array.from({length:text.replace(/\n$/,'').split('\n').length}, (_,i)=>i+1).join('\n');
+/* the editor is a plain text box over a colored copy of its text, kept in step as you type and scroll */
+let fvHlFrame=0;
+function syncEditorColors(){
+  const t=fviewEl.querySelector('#fvText'), hl=fviewEl.querySelector('.fvedhl'), gu=fviewEl.querySelector('.fvedwrap .fvgutter'); if(!t || !hl || !fileView) return;
+  const m=fileAt(fileView.where);
+  hl.firstElementChild.innerHTML=hlFor(t.value, m ? m.name : '')+'\n';
+  if(gu) gu.textContent=gutterNums(t.value);
+  syncEditorScroll();
+}
+function syncEditorScroll(){ const t=fviewEl.querySelector('#fvText'), hl=fviewEl.querySelector('.fvedhl'), gu=fviewEl.querySelector('.fvedwrap .fvgutter'); if(!t || !hl) return; hl.scrollTop=t.scrollTop; hl.scrollLeft=t.scrollLeft; if(gu) gu.scrollTop=t.scrollTop; }
+fviewEl.addEventListener('input', e=>{ if(e.target.id==='fvText'){ cancelAnimationFrame(fvHlFrame); fvHlFrame=requestAnimationFrame(syncEditorColors); } });
+fviewEl.addEventListener('scroll', e=>{ if(e.target.id==='fvText') syncEditorScroll(); }, true);
 async function saveFileEdit(given){
   const fv=fileView; if(!fv) return;
   const t=fviewEl.querySelector('#fvText'), m=fileAt(fv.where), r=m && Files.get(m.id); if((!t && given==null) || !r) return;
@@ -2169,7 +2200,7 @@ fviewEl.addEventListener('keydown', e=>{
   if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); if(fileView && fileView.mode==='edit'){ const t=fviewEl.querySelector('#fvText'), r=Files.get(fileView.id); if(t && r && t.value!==r.text){ toast('You have unsaved edits. Save them, or Cancel to drop them.'); return; } fileView.mode='view'; paintFileView(); } else closeFileView(); return; }
   if(e.target.id==='fvText'){
     if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); saveFileEdit(); return; }
-    if(e.key==='Tab' && !e.shiftKey){ e.preventDefault(); const t=e.target, ind=/\n\t/.test(t.value) ? '\t' : '  '; t.setRangeText(ind, t.selectionStart, t.selectionEnd, 'end'); }
+    if(e.key==='Tab' && !e.shiftKey){ e.preventDefault(); const t=e.target, ind=/\n\t/.test(t.value) ? '\t' : '  '; t.setRangeText(ind, t.selectionStart, t.selectionEnd, 'end'); syncEditorColors(); }
   }
 });
 

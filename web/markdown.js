@@ -7,6 +7,33 @@ import { Marked } from 'marked';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js/lib/common';
+import dockerfileLang from 'highlight.js/lib/languages/dockerfile';
+import scalaLang from 'highlight.js/lib/languages/scala';
+import dartLang from 'highlight.js/lib/languages/dart';
+import elixirLang from 'highlight.js/lib/languages/elixir';
+import haskellLang from 'highlight.js/lib/languages/haskell';
+import powershellLang from 'highlight.js/lib/languages/powershell';
+import protobufLang from 'highlight.js/lib/languages/protobuf';
+import groovyLang from 'highlight.js/lib/languages/groovy';
+import gradleLang from 'highlight.js/lib/languages/gradle';
+import clojureLang from 'highlight.js/lib/languages/clojure';
+import erlangLang from 'highlight.js/lib/languages/erlang';
+import ocamlLang from 'highlight.js/lib/languages/ocaml';
+import fsharpLang from 'highlight.js/lib/languages/fsharp';
+import juliaLang from 'highlight.js/lib/languages/julia';
+import nixLang from 'highlight.js/lib/languages/nix';
+import latexLang from 'highlight.js/lib/languages/latex';
+import nginxLang from 'highlight.js/lib/languages/nginx';
+import cmakeLang from 'highlight.js/lib/languages/cmake';
+import elmLang from 'highlight.js/lib/languages/elm';
+import propertiesLang from 'highlight.js/lib/languages/properties';
+import vimLang from 'highlight.js/lib/languages/vim';
+import matlabLang from 'highlight.js/lib/languages/matlab';
+import fortranLang from 'highlight.js/lib/languages/fortran';
+import pgsqlLang from 'highlight.js/lib/languages/pgsql';
+import handlebarsLang from 'highlight.js/lib/languages/handlebars';
+import twigLang from 'highlight.js/lib/languages/twig';
+import apacheLang from 'highlight.js/lib/languages/apache';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -88,13 +115,44 @@ function render(src) {
 }
 
 /* a whole file's text with syntax colors, for the file viewer; the language comes from the file name */
-const EXT_LANG = { js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java', kt: 'kotlin', swift: 'swift', c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cs: 'csharp', php: 'php', sh: 'bash', bash: 'bash', zsh: 'bash', ps1: 'powershell', sql: 'sql', html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml', vue: 'xml', css: 'css', scss: 'scss', json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini', ini: 'ini', md: 'markdown', markdown: 'markdown', lua: 'lua', r: 'r', pl: 'perl', scala: 'scala', dart: 'dart', graphql: 'graphql', gql: 'graphql', dockerfile: 'dockerfile', makefile: 'makefile' };
-function highlightFile(text, name) {
-  const base = String(name || '').split('/').pop().toLowerCase(), ext = base.includes('.') ? base.split('.').pop() : base;
-  const lang = EXT_LANG[ext];
-  if (text.length > 200000) return esc(text);
-  try { return lang && hljs.getLanguage(lang) ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value : esc(text); } catch { return esc(text); }
-}
+/* beyond highlight.js's common set (about 35 languages), the others people often have in a repository */
+for (const [name, lang] of Object.entries({ dockerfile: dockerfileLang, scala: scalaLang, dart: dartLang, elixir: elixirLang, haskell: haskellLang, powershell: powershellLang, protobuf: protobufLang, groovy: groovyLang, gradle: gradleLang, clojure: clojureLang, erlang: erlangLang, ocaml: ocamlLang, fsharp: fsharpLang, julia: juliaLang, nix: nixLang, latex: latexLang, nginx: nginxLang, cmake: cmakeLang, elm: elmLang, properties: propertiesLang, vim: vimLang, matlab: matlabLang, fortran: fortranLang, pgsql: pgsqlLang, handlebars: handlebarsLang, twig: twigLang, apache: apacheLang })) if (!hljs.getLanguage(name)) hljs.registerLanguage(name, lang);
 
-window.TreechatsMarkdown = { render, highlightFile };
+/* a whole file's text with syntax colors, for the file viewer and editor; the language comes from the file name */
+const EXT_LANG = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
+  py: 'python', pyi: 'python', pyw: 'python', ipynb: 'json', rb: 'ruby', rake: 'ruby', gemspec: 'ruby', rs: 'rust', go: 'go', java: 'java', kt: 'kotlin', kts: 'kotlin',
+  swift: 'swift', m: 'objectivec', mm: 'objectivec', c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp', hxx: 'cpp', cs: 'csharp', csx: 'csharp',
+  fs: 'fsharp', fsx: 'fsharp', vb: 'vbnet', php: 'php', sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash', ksh: 'bash', env: 'bash', ps1: 'powershell', psm1: 'powershell', psd1: 'powershell',
+  bat: 'dos', cmd: 'dos', sql: 'sql', psql: 'pgsql', html: 'xml', htm: 'xml', xhtml: 'xml', xml: 'xml', svg: 'xml', plist: 'xml', csproj: 'xml', vue: 'xml', svelte: 'xml', astro: 'xml',
+  hbs: 'handlebars', handlebars: 'handlebars', twig: 'twig', css: 'css', scss: 'scss', sass: 'scss', less: 'less', json: 'json', jsonc: 'json', json5: 'json', geojson: 'json',
+  yaml: 'yaml', yml: 'yaml', toml: 'ini', ini: 'ini', cfg: 'ini', conf: 'ini', editorconfig: 'ini', properties: 'properties', md: 'markdown', mdx: 'markdown', markdown: 'markdown',
+  rst: 'plaintext', txt: 'plaintext', lua: 'lua', r: 'r', pl: 'perl', pm: 'perl', scala: 'scala', sc: 'scala', sbt: 'scala', dart: 'dart', ex: 'elixir', exs: 'elixir',
+  erl: 'erlang', hrl: 'erlang', hs: 'haskell', lhs: 'haskell', ml: 'ocaml', mli: 'ocaml', clj: 'clojure', cljs: 'clojure', cljc: 'clojure', edn: 'clojure', elm: 'elm',
+  jl: 'julia', nix: 'nix', tex: 'latex', sty: 'latex', proto: 'protobuf', groovy: 'groovy', gradle: 'gradle', graphql: 'graphql', gql: 'graphql', wasm: 'wasm', wat: 'wasm',
+  diff: 'diff', patch: 'diff', vim: 'vim', f90: 'fortran', f: 'fortran', mat: 'matlab', cmake: 'cmake', dockerfile: 'dockerfile', containerfile: 'dockerfile', makefile: 'makefile', mk: 'makefile',
+};
+/* files known by their whole name */
+const NAME_LANG = { dockerfile: 'dockerfile', containerfile: 'dockerfile', makefile: 'makefile', gnumakefile: 'makefile', 'cmakelists.txt': 'cmake', gemfile: 'ruby', rakefile: 'ruby', podfile: 'ruby', vagrantfile: 'ruby', jenkinsfile: 'groovy', 'nginx.conf': 'nginx', '.htaccess': 'apache', '.bashrc': 'bash', '.zshrc': 'bash', '.profile': 'bash', '.gitignore': 'bash', '.dockerignore': 'bash', '.vimrc': 'vim' };
+export function langOf(name) {
+  const base = String(name || '').split('/').pop().toLowerCase();
+  if (NAME_LANG[base]) return NAME_LANG[base];
+  if (/^dockerfile\./.test(base)) return 'dockerfile';
+  if (/^\.env(\.|$)/.test(base)) return 'bash';
+  const ext = base.includes('.') ? base.split('.').pop() : '';
+  return EXT_LANG[ext] || null;
+}
+function highlightFile(text, name) {
+  if (text.length > 200000) return esc(text);
+  const lang = langOf(name);
+  try {
+    if (lang && hljs.getLanguage(lang)) return hljs.highlight(text, { language: lang, ignoreIllegals: true }).value;
+    /* no known extension: guess, for short files only, where a guess is quick and usually right */
+    if (!lang && text.length < 20000) { const g = hljs.highlightAuto(text); if (g.relevance >= 6) return g.value; }
+    return esc(text);
+  } catch { return esc(text); }
+}
+const langName = (name) => { const l = langOf(name); return l && hljs.getLanguage(l) ? hljs.getLanguage(l).name : null; };
+
+window.TreechatsMarkdown = { render, highlightFile, langName };
 window.dispatchEvent(new Event('treechats-markdown'));
