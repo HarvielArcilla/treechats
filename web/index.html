@@ -608,7 +608,9 @@ details.opd > summary kbd{margin-left:auto}
 .pe-foot .note{flex:1}
 ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);border-radius:8px;padding:9px 14px;display:flex;gap:12px;align-items:center;font-size:.88rem;max-width:calc(100vw - 32px);z-index:5}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);border-radius:8px;padding:9px 14px;display:flex;gap:12px;align-items:center;font-size:.88rem;max-width:calc(100vw - 32px);z-index:45}
+/* in Chat view the toast sits above the input bar, not on it */
+html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .toast button{background:none;border:0;color:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
 @media (prefers-reduced-motion:no-preference){.row{transition:background .12s,border-color .12s}}
 
@@ -809,6 +811,16 @@ ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
 /* branch map */
 .ovmap{margin-top:auto;flex:none;position:sticky;bottom:-16px;background:var(--panel);padding:8px 2px 14px;border-top:1px solid var(--line);display:grid;gap:6px}
 .ovmap[hidden]{display:none}
+/* hidden: just the header stays, so the map is one click away */
+.ctxwrap{display:inline-flex;align-items:baseline;gap:6px;margin-left:auto;font-size:.76rem;color:var(--muted)}
+.ctxmark{font:inherit;color:var(--muted)}
+.ctxwrap .linkbtn{font-size:inherit}
+.ractrow .ctxwrap{opacity:1}
+.fan.replay .note{margin:4px 0 8px}
+.mapshow{border:0;background:none;cursor:pointer;color:var(--accent);font:inherit;padding:4px 6px;border-radius:6px}
+.mapshow:hover{background:var(--accent-soft)}
+.ovmap.collapsed{padding-bottom:6px}
+.ovmap.collapsed #ovSvg,.ovmap.collapsed [data-maphide],.ovmap:not(.collapsed) .mapshow{display:none}
 .ovhead{display:flex;justify-content:space-between;align-items:center;font:500 .7rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 #ovSvg{display:block;margin:0 auto;cursor:pointer;max-width:100%}
 #ovSvg .mrow:hover{fill:var(--accent-soft)}
@@ -867,7 +879,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="filters" id="convFilters" role="group" aria-label="Show only"><button class="seg" data-filter="star" aria-pressed="false">★ Starred</button><button class="seg" data-filter="note" aria-pressed="false">Notes</button><button class="seg" data-filter="skip" aria-pressed="false">Left out</button></div>
   <div class="cvtools" id="cvTools"></div>
   <ul class="convlist" id="convList"></ul>
-  <div class="ovmap" id="ovMap" hidden><div class="ovhead"><span>Branch map</span><span style="display:flex;gap:2px"><button class="pclose" data-mapopen aria-label="Open the full branch map" title="Open the full map (M)">⤢</button><button class="pclose" data-maphide aria-label="Hide the branch map" title="Hide the branch map">×</button></span></div><svg id="ovSvg" role="img" aria-label="Branches of this conversation. Click a dot to go to that prompt."></svg></div>
+  <div class="ovmap" id="ovMap" hidden><div class="ovhead"><span>Branch map</span><span style="display:flex;gap:2px"><button class="pclose" data-mapopen aria-label="Open the full branch map" title="Open the full map (M)">⤢</button><button class="pclose" data-maphide aria-label="Hide the branch map" title="Hide the branch map">×</button><button class="mapshow" data-mapshow aria-label="Show the branch map" title="Show the branch map">Show</button></span></div><svg id="ovSvg" role="img" aria-label="Branches of this conversation. Click a dot to go to that prompt."></svg></div>
 </nav>
 <div class="scrim" id="scrim" hidden></div>
 <div class="main">
@@ -1827,6 +1839,72 @@ function turnsFor(id, includeLastReply){
   for(const t of raw){ const last=out[out.length-1]; if(last && last.role===t.role) last.content+='\n\n'+t.content; else out.push({...t}); }
   return out;
 }
+/* ---- Context fingerprint ----
+   Each reply remembers exactly what was sent to get it: a short hash per turn (instructions, project files, merge
+   notes, each prompt and each reply) and a hash chained over all of them. It's recorded when the reply is written and
+   never sent to Claude. Comparing it with what the same prompt would send now gives the small "context changed"
+   marker: it says what changed above a reply, and Replay re-sends from there. It informs; it never blocks or
+   regenerates anything on its own. */
+function hash53(str, seed=0){
+  let h1=0xdeadbeef^seed, h2=0x41c6ce57^seed;
+  for(let i=0; i<str.length; i++){ const c=str.charCodeAt(i); h1=Math.imul(h1^c, 2654435761); h2=Math.imul(h2^c, 1597334677); }
+  h1=Math.imul(h1^(h1>>>16), 2246822507)^Math.imul(h2^(h2>>>13), 3266489909);
+  h2=Math.imul(h2^(h2>>>16), 2246822507)^Math.imul(h1^(h1>>>13), 3266489909);
+  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36).padStart(11,'0');
+}
+const h5 = str => hash53(str).slice(-5);
+/* hashes of one turn's parts, cached until its text, files or reply change */
+const partCache=new Map();
+function turnParts(n){
+  const files=(n.files||[]).map(f=>f.id+'/'+f.name).join('|');
+  let c=partCache.get(n);
+  if(!c || c.text!==n.text || c.reply!==n.reply || c.files!==files){
+    c={text:n.text, reply:n.reply, files, q:h5((n.text||'')+'\u0000'+files), r:n.reply ? h5(n.reply) : ''};
+    partCache.set(n, c);
+  }
+  return c;
+}
+/* what a request from this prompt sends, as in turnsFor(id): one entry per part, in order */
+function ctxSig(id){
+  const at=[], instr=promptText('instructions').trim();
+  if(instr) at.push('i:'+h5(instr));
+  if(S.files && S.files.length) at.push('f:'+h5(S.files.map(f=>f.id+'/'+f.name).join('|')));
+  for(const e of contextEntries(id)){
+    if(e.seam){ at.push('s'+e.merge+':'+h5(e.text)); continue; }
+    const n=S.nodes[e.id];
+    if(n.kind==='merge' || (n.skip && e.id!==id)) continue;
+    const p=turnParts(n);
+    at.push(e.id+':'+p.q+(e.id!==id && p.r ? '.'+p.r : ''));
+  }
+  let h=''; for(const x of at) h=hash53(h+'|'+x);
+  return {h:h.slice(-8), at:at.join(',')};
+}
+const sigMap = sig => new Map(sig.at ? sig.at.split(',').map(x=>{ const i=x.indexOf(':'); return [x.slice(0,i), x.slice(i+1)]; }) : []);
+/* what changed above a reply since it was written, oldest first; null when nothing did (or nothing was recorded) */
+function ctxChanges(id){
+  const n=S.nodes[id];
+  if(!n || !n.ctx || !n.reply || liveGen(id) || set('ctxMarks')===false) return null;
+  const now=ctxSig(id); if(now.h===n.ctx.h) return null;
+  const was=sigMap(n.ctx), is=sigMap(now), out=[];
+  const name = k => k==='i' ? 'standing instructions' : k==='f' ? 'project files' : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
+  for(const [k,v] of is){
+    if(!was.has(k)){ out.push({k, what: /^\d+$/.test(k) ? 'back in' : 'added'}); continue; }
+    const w=was.get(k); if(w===v) continue;
+    const [q0,r0]=w.split('.'), [q1,r1]=v.split('.');
+    out.push({k, what: /^\d+$/.test(k) ? (+k===id ? 'edited' : q0!==q1 && (r0||'')!==(r1||'') ? 'edited' : q0!==q1 ? 'prompt edited' : (r1 && r0 ? 'reply edited' : r1 ? 'reply added' : 'reply removed')) : 'changed'});
+  }
+  for(const k of was.keys()) if(!is.has(k)) out.push({k, what: /^\d+$/.test(k) && S.nodes[k] && S.nodes[k].skip ? 'left out' : 'removed'});
+  if(!out.length) return null;
+  const order=[...is.keys(), ...was.keys()];
+  out.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
+  return out.map(c=>({...c, label:`${name(c.k)} ${c.what}`}));
+}
+function ctxMarkHTML(id){
+  const ch=ctxChanges(id); if(!ch) return '';
+  const all=ch.map(c=>c.label).join('; ');
+  const rp = sampleState==='ready' ? `<button class="linkbtn" data-replayask="${id}" title="Re-send #${id} and the prompts below it with the context as it is now">Replay</button>` : '';
+  return `<span class="ctxmark" title="Changed above this reply since it was written: ${esc(all)}. Claude never sees this note.">Context changed: ${esc(ch[0].label)}${ch.length>1?` +${ch.length-1}`:''}</span>${rp}`;
+}
 const PERMANENT=['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'];
 function errCopy(code){
   return ({
@@ -1892,7 +1970,7 @@ function pumpReplies(){
 }
 async function startReply(sid, id){
   const tree=treeOf(sid), n=tree.nodes[id];
-  const g={id, sid, ctl:new AbortController(), text:'', tier:n.askTier||opts.model, stopped:false};
+  const g={id, sid, ctl:new AbortController(), text:'', tier:n.askTier||opts.model, stopped:false, sig:withTree(tree, ()=>ctxSig(id))};
   gens.set(gkey(sid,id), g); delete genNotes[gkey(sid,id)];
   if(sid===DB.current) showLive(id);
   try{
@@ -1913,7 +1991,7 @@ function finishGen(g, text, tier, note){
   gens.delete(gkey(g.sid,g.id));
   const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
   if(n){
-    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; withTree(tree, ()=>touch(g.id)); }
+    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; withTree(tree, ()=>touch(g.id)); }
     if(note) genNotes[gkey(g.sid,g.id)]=note;
     delete n.askTier;
     save();
@@ -2016,17 +2094,83 @@ function regenerate(id, newText){
   const n=S.nodes[id]; if(!n) return;
   resendFor=null;
   let nid;
-  commit(newText!=null ? `Sent your edit as a new version of #${id}. The original is kept.` : `Asking for another reply to #${id}. The old one is kept.`, ()=>{
+  const below = newText!=null ? replayCount(lineFrom(id).slice(1)) : 0;
+  commit(newText!=null ? `Sent your edit as a new version of #${id}. The original is kept${below?` with the ${below} prompt${below===1?'':'s'} below it`:''}.` : `Asking for another reply to #${id}. The old one is kept.`, ()=>{
     const gid = n.alt ?? n.id; n.alt = gid;
     nid=S.nextId++;
     S.nodes[nid]={id:nid, parents:[...n.parents], text: newText!=null ? newText : n.text, alt:gid}; if(n.kind) S.nodes[nid].kind=n.kind; if(n.files) S.nodes[nid].files=clone(n.files);
     S.active[gid]=nid;
     for(const rid of refsAt(id)) S.refs[rid].tip=nid;
     sel=nid;
-  });
+  }, below ? {action:{label:`${AI}Replay ${below} below`, fn:()=>askReplay(id, nid)}} : {});
   generate(nid);
 }
 
+
+/* ---- Replay ----
+   Re-sends a run of prompts against the context as it is now: after you fix an early turn, edit a reply, or leave
+   something out. Each prompt is copied as a new version (the first one beside the original, the rest below it) and
+   answered in order, so the old line and its replies stay one ‹ › away. Branches that ended at the old tip move to the
+   new one. Nothing is replayed without asking, and the ask says how many requests it takes. */
+let replayAsk=null;
+/* the prompts from id down to the tip of the line you're looking at */
+function lineFrom(id){
+  const h=headTip();
+  const tip = simpleTip!=null && S.nodes[simpleTip] && path(simpleTip).includes(id) ? simpleTip
+    : h!=null && path(h).includes(id) ? h
+    : sel!=null && S.nodes[sel] && path(sel).includes(id) ? leafOf(sel)
+    : (()=>{ const rid=refsThrough(id)[0]; return rid ? S.refs[rid].tip : leafOf(id); })();
+  const c=chain(tip), i=c.indexOf(id);
+  return i<0 ? [id] : c.slice(i);
+}
+const replayCount = line => line.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge').length;
+/* from: replay `from` and the prompts below it. onto (optional): attach the copies under this prompt instead, for
+   carrying the prompts below an edited prompt over to its new version. */
+function askReplay(from, onto=null){
+  if(sampleState!=='ready'){ toast('To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats.'); return; }
+  const line = onto!=null ? lineFrom(from).slice(1) : lineFrom(from);
+  if(!line.length) return;
+  replayAsk={at: onto ?? from, from, onto, line};
+  if(sel!==replayAsk.at) select(replayAsk.at); else animRender([replayAsk.at]);
+  const b=treeEl.querySelector('[data-replaygo]'); if(b) b.focus({preventScroll:true});
+}
+function replayHTML(){
+  const r=replayAsk, n=replayCount(r.line), first=r.line[0], last=r.line[r.line.length-1];
+  const what = r.onto!=null
+    ? `Carry the ${n} prompt${n===1?'':'s'} that followed the original #${r.from} over to this version, and get new replies to ${n===1?'it':'them'}.`
+    : `Re-send ${n===1?`#${first}`:n===2?`#${first} and #${last}`:`#${first} and the ${n-1} prompts below it (down to #${last})`} with the context as it is now.`;
+  return `<div class="fan replay" data-key="rp${r.at}"><div class="fanhead"><b>${AI}Replay</b><span class="note">${n} request${n===1?'':'s'}, one after another</span><button class="rmore" data-replaycancel>Cancel</button></div>
+    <p class="note">${what} ${r.onto!=null ? 'The original keeps its prompts and replies.' : 'Each becomes a new version; the current ones stay one ‹ › away.'}</p>
+    <div class="bar"><button class="btn primary" data-replaygo>${AI}Replay ${n} prompt${n===1?'':'s'}</button><button class="btn" data-replaycancel>Cancel</button></div></div>`;
+}
+/* copies a line of prompts as described above, in the tree in S; returns the new prompt numbers */
+function copyLine(line, onto, by){
+  const made=[]; let prev=onto;
+  for(const [i,id] of line.entries()){
+    const o=S.nodes[id]; if(!o) break;
+    const nid=S.nextId++, c={id:nid, text:o.text||''};
+    for(const k of ['kind','files','skip','note','from','into','seam']) if(o[k]!=null) c[k]=clone(o[k]);
+    if(o.model) c.askTier=o.model;
+    if(by) c.by=by;
+    if(i===0 && onto==null){ const gid=o.alt ?? o.id; o.alt=gid; c.alt=gid; c.parents=[...o.parents]; S.active[gid]=nid; }
+    else c.parents=[prev, ...o.parents.slice(1)];
+    S.nodes[nid]=c; made.push(nid); prev=nid;
+  }
+  for(const rid of refsAt(line[line.length-1])) if(made.length) S.refs[rid].tip=made[made.length-1];
+  if(made.length) setActivePath(made[made.length-1]);
+  return made;
+}
+function replay(from, onto=null, line=lineFrom(from)){
+  if(sampleState!=='ready' || !line.length) return [];
+  const n=replayCount(line); let made=[];
+  commit(onto!=null ? `Replaying ${n} prompt${n===1?'':'s'} on #${onto}. The original keeps its own.` : `Replaying from #${line[0]}. The current versions are kept.`, ()=>{
+    made=copyLine(line, onto);
+    replayAsk=null; simpleTip=null;
+    if(made.length) sel=made[0];
+  });
+  wantReplies(made.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge'));
+  return made;
+}
 
 /* ---- Mainline ----
    main is just the branch named main; the straight line in the drawing follows it. */
@@ -2278,6 +2422,16 @@ const Agent=(()=>{
     save(); if(sid===DB.current){ render(); } else renderSpaces();
     return out;
   }
+  function agentLine(t, from, branch){
+    return withTree(t, ()=>{
+      let tip;
+      if(branch){ const r=Object.values(S.refs).find(r=>r.name===branch && S.nodes[r.tip]); if(!r) throw new Error(`No branch named "${branch}" in this run.`); tip=r.tip; }
+      else { const rid=refsThrough(from)[0]; tip=rid ? S.refs[rid].tip : leafOf(from); }
+      const c=chain(tip), i=c.indexOf(from);
+      if(i<0) throw new Error(`#${from} isn’t on branch ${branch}.`);
+      return c.slice(i);
+    });
+  }
   const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
   function addTurn(t, parent, text, by, tier){
     const nid=t.nextId++; t.nodes[nid]={id:nid, parents: parent==null ? [] : [parent], text, by};
@@ -2352,6 +2506,25 @@ const Agent=(()=>{
         return nid;
       });
       return reply(sid, id, {...where(sid,id), replaced:a.prompt, message:`New version of #${a.prompt} (the old one is kept)`});
+    },
+    /* replay: the line from a prompt to the end of a branch (or to the end of the line), as new versions */
+    replay_plan(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
+      const line=agentLine(t, a.prompt, a.branch);
+      return {count: withTree(t, ()=>replayCount(line)), line};
+    },
+    async replay(a){
+      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
+      const line=agentLine(t, a.prompt, a.branch), by=a.agent||'agent';
+      const made=change(sid, ()=>copyLine(line, null, by));
+      const asks=made.filter(x=>t.nodes[x].kind!=='merge');
+      if(!asks.length) throw new Error('Nothing to replay.');
+      const last=asks[asks.length-1], waits=asks.map(x=>awaitReply(sid, x));
+      wantReplies(asks, sid);
+      const rs=await Promise.all(waits), bad=rs.findIndex(r=>r.error);
+      if(bad>=0) throw new Error(`#${asks[bad]} got no reply: ${rs[bad].error}`);
+      return {...where(sid,last), prompt:last, reply:rs[rs.length-1].reply, replayed:line.filter(x=>t.nodes[x].kind!=='merge'), made:asks,
+        message:`Replayed #${line[0]}${asks.length>1?`–#${line[line.length-1]}`:''} as new versions (#${asks[0]}${asks.length>1?`–#${last}`:''}); the old ones are kept`};
     },
     async distill(a){
       if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
@@ -2754,12 +2927,17 @@ function rowHTML(id, pathSet){
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
     if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${forkHTML(id)}</div>`;
-    else if(id===sel) h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${tog}${fold}</div>`;
+    else if(id===sel){
+      const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
+      const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
+      h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${tog}${fold}${rp}</div>`;
+    }
   }
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
   if(shown) h+=replyHTML(id);
   if(fan && fan.id===id) h+=fanHTML();
   if(distill && distill.id===id) h+=distillHTML();
+  if(replayAsk && replayAsk.at===id) h+=replayHTML();
   return h;
 }
 /* which replies are open; Chat view is one thread, so it shows every reply in it */
@@ -2786,8 +2964,9 @@ function replyFoot(id){
   const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
   const ds = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(distill && distill.id===id) ? `<button class="rmore" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">✦ Distill</button>` : '';
   const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button>` : '')+fo+ds;
-  const st = S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
-  return sw||rg||st ? `<div class="rfoot">${sw}${rg}${st}</div>` : '';
+  const cm = ctxMarkHTML(id);
+  const st = !cm && S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
+  return sw||rg||st||cm ? `<div class="rfoot">${sw}${rg}${st}${cm ? `<span class="ctxwrap">${cm}</span>` : ''}</div>` : '';
 }
 /* Editing a reply: fix what Claude said, so everything below builds on the corrected version. Undo brings the original back. */
 let replyEditFor=null, promptEditFor=null;
@@ -2860,7 +3039,7 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}"><div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${ed}</div></div>`;
+    return `<div class="reply" data-key="r${id}"><div class="rbody">${md(n.reply)}</div>${note}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Retry</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${ed}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
   return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}<span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div><div class="rbody">${md(n.reply)}</div>${note}${replyFoot(id)}</div>`;
@@ -3108,7 +3287,7 @@ function renderCtx(){
     }).join('');
   const nSkip=ents.filter(e=>!e.seam && e.id!==sel && S.nodes[e.id].skip).length;
   const vs=versions(sel), kidsN=kids(sel).length;
-  const facts=[n.by?`added by ${esc(n.by)}`:'', n.model?`replied by ${esc(n.model)}`:'', n.replyEdited?`reply edited${n.editedBy?' by '+esc(n.editedBy):''}`:'', vs.length>1?`version ${vs.indexOf(sel)+1} of ${vs.length}`:'', `${kidsN} follow-up${kidsN===1?'':'s'}`, S.head && refsAt(sel).includes(S.head)?`on branch ${esc(refName(S.head))}`:''].filter(Boolean).join(' · ');
+  const facts=[n.by?`added by ${esc(n.by)}`:'', n.model?`replied by ${esc(n.model)}`:'', n.replyEdited?`reply edited${n.editedBy?' by '+esc(n.editedBy):''}`:'', vs.length>1?`version ${vs.indexOf(sel)+1} of ${vs.length}`:'', n.ctx&&n.reply?`<span title="A hash of exactly what was sent for this reply. It changes when anything above it does.">context ${n.ctx.h}${ctxSig(sel).h!==n.ctx.h?' (now '+ctxSig(sel).h+')':''}</span>`:'', `${kidsN} follow-up${kidsN===1?'':'s'}`, S.head && refsAt(sel).includes(S.head)?`on branch ${esc(refName(S.head))}`:''].filter(Boolean).join(' · ');
   setCard(card,'ctx',`<h2>Context <small>from #${sel} · ${msgs.length} messages · ~${tokens(msgs).toLocaleString()} tok</small></h2>
     ${meterHTML(msgs)}
     <p class="note">Exactly what the next request from #${sel} sends, oldest first.${nSkip?` ${nSkip} left out and not sent.`:''} Leave a turn out from its row.</p>
@@ -3161,6 +3340,7 @@ function select(id){
   if(id!==promptEditFor) promptEditFor=null;
   if(distill && distill.id!==id){ if(distill.ctl) distill.ctl.abort(); distill=null; }
   if(fan && fan.id!==id) fan=null;
+  if(replayAsk && replayAsk.at!==id) replayAsk=null;
   if(variants && id!==sel) variants=null;
   if(S.nodes[id]) for(const x of path(id)) if(x!==id && S.fold[x]) delete S.fold[x];
   const changed=sel!==id, prevSel=sel;
@@ -3797,6 +3977,9 @@ treeEl.addEventListener('click', e=>{
   if(e.target.closest('[data-alsopick]')){ pick={op:'also', src:sel}; composeFor=null; keepDraft(()=>animRender([sel])); return; }
   const gr=e.target.closest('[data-genreply]'); if(gr){ generate(+gr.dataset.genreply); return; }
   const rg=e.target.closest('[data-regen]'); if(rg){ regenerate(+rg.dataset.regen); return; }
+  const rpa=e.target.closest('[data-replayask]'); if(rpa){ askReplay(+rpa.dataset.replayask); return; }
+  if(e.target.closest('[data-replaygo]') && replayAsk){ const r=replayAsk; replay(r.from, r.onto, r.line); return; }
+  if(e.target.closest('[data-replaycancel]') && replayAsk){ const at=replayAsk.at; replayAsk=null; animRender([at]); return; }
   const vb=e.target.closest('[data-ver]'); if(vb){ switchVersion(+vb.dataset.ver, +vb.dataset.dir); return; }
   const rt=e.target.closest('[data-rtog]');
   if(rt){ const id=+rt.dataset.rtog, open=rt.getAttribute('aria-expanded')==='true'; openReplies.delete(id); openReplies.delete(-id); openReplies.add(open?-id:id); Motion.run(treeEl, renderTree, [id]); return; }
@@ -4032,7 +4215,7 @@ const ACCENTS={
 };
 const TEXT_SIZES={small:['Small',15], default:['Default',16], large:['Large',17.5], xl:['Larger',19]};
 const FONTS={plex:['Treechats', null], system:['System', '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif']};
-const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
+const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
 const set = k => opts[k]!=null ? opts[k] : SET_DEFAULTS[k];
 const darkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : {matches:false};
 const resolvedMode = () => set('theme')==='system' ? (darkMQ.matches?'dark':'light') : set('theme');
@@ -4142,6 +4325,7 @@ function renderSettings(){
       ${setRow('Font','System uses your device’s own font.',segs('font',Object.entries(FONTS).map(([k,v])=>[k,v[0]]),'Font'))}
       ${setRow('Density','Compact fits more prompts on screen.',segs('density',[['comfortable','Comfortable'],['compact','Compact']],'Density'))}
       ${setRow('Motion','Reduced turns off animations.',segs('motion',[['system','System'],['reduced','Reduced']],'Motion'))}
+      ${setRow('Context-changed markers','A small note on a reply when something above it changed after it was written. Only you see it; Claude never does.',segs('ctxMarks',[['true','Show'],['false','Hide']],'Context-changed markers'))}
       ${setRow('Branch map in the panel','A small graph of the chat\u2019s branches under the chat list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
     h+=`<section class="setsec"><h3>Theme</h3>${setRow('Mode', set('theme')==='system'?`Following your device: ${resolvedMode()}`:'', segs('theme',[['system','System'],['light','Light'],['dark','Dark']],'Mode'))}</section>`;
     const mine=Object.keys(customThemes()), activeMine=!!themeFor(set('palette'));
@@ -4214,7 +4398,7 @@ function afterSetting(key){
   if(['theme','palette','accent','textSize','font','density','motion'].includes(key)){ applyAppearance(); placeAside(); }
   if(key==='replies'){ openReplies.clear(); renderTree(); }
   if(key==='replyLen'){ fullReplies.clear(); renderTree(); }
-  if(key==='sendKey' || key==='model'){ renderTree(); }
+  if(key==='sendKey' || key==='model' || key==='ctxMarks'){ renderTree(); }
   if(key==='opKeys' || key==='sendKey') renderOpsCard();
   if(key==='map') drawMap();
   if(['theme','palette','accent','textSize','font','density'].includes(key)) scheduleMap();
@@ -4249,7 +4433,7 @@ setEl.addEventListener('click', e=>{
   if(e.target===setEl || e.target.closest('[data-setclose]')){ closeSettings(); return; }
   const t=e.target.closest('[data-settab]'); if(t){ opts.setTab=t.dataset.settab; save(); renderSettings(); setBodyEl.scrollTop=0; refocus(`[data-settab="${t.dataset.settab}"]`); return; }
   const b=e.target.closest('[data-set]');
-  if(b){ const key=b.dataset.set; let v=b.dataset.val; if(['opKeys','map','nameBranches','nameConvs','nameSpaces'].includes(key)) v = v==='true';
+  if(b){ const key=b.dataset.set; let v=b.dataset.val; if(['opKeys','map','ctxMarks','nameBranches','nameConvs','nameSpaces'].includes(key)) v = v==='true';
     if(key==='palette' && editingTheme && v!==editingTheme){ editingTheme=null; previewMode=null; }
     opts[key]=v;
     if(key==='theme'){ previewMode=null; if(editingTheme){ editMode=resolvedMode(); previewMode=editMode; } } afterSetting(key); renderSettings(); refocus(`[data-set="${key}"][data-val="${b.dataset.val}"]`); return; }
@@ -4590,8 +4774,8 @@ function drawMap(){
   const el=ovEl(); if(!el) return;
   const root=composeFor==='root' ? null : mapRoot();
   const L=root ? mapLayout(root.id) : null;
-  const show = opts.map!==false && !!L && L.rows.length>1;
-  el.hidden=!show; ovRows=null; if(!show) return;
+  const has=!!L && L.rows.length>1, show=has && opts.map!==false;
+  el.hidden=!has; el.classList.toggle('collapsed', has && !show); ovRows=null; if(!show) return;
   const w=Math.max(140, el.clientWidth || 220), pad=7;
   const colW=Math.min(13, (w-pad*2)/Math.max(1, L.cols)), rowH=Math.max(1.5, Math.min(11, 260/L.rows.length));
   const r=Math.max(1.4, Math.min(3.4, rowH*.32, colW*.3)), h=L.rows.length*rowH+pad*2;
@@ -4608,7 +4792,8 @@ ovSvg().addEventListener('click', e=>{
   if(row) goFromMap(row.id);
 });
 document.getElementById('ovMap').addEventListener('click', e=>{
-  if(e.target.closest('[data-maphide]')){ opts.map=false; save(); drawMap(); toast('Branch map hidden from the panel. Open the full map with M or Map, or bring it back from Settings.'); }
+  if(e.target.closest('[data-maphide]')){ opts.map=false; save(); drawMap(); }
+  if(e.target.closest('[data-mapshow]')){ opts.map=true; save(); drawMap(); }
   if(e.target.closest('[data-mapopen]')) openMapView();
 });
 window.addEventListener('resize', scheduleMap);

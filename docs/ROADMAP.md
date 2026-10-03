@@ -11,6 +11,19 @@ foundation once the agent interface has been tried on a real task, then everythi
 - Context tools: edit Claude's replies, copy context as a prompt, ✦ Distill into a brief
 - Every prompt Treechats sends is editable (Settings › Prompts); ✦ marks tools where Claude does the work
 - MCP server, read-only: list, search, get the context of a branch or prompt, get a prompt
+- Context fingerprint: each reply records a hash of exactly what was sent, and shows a small, neutral "Context
+  changed: #3 reply edited" note when something above it changes (never sent to the model; can be turned off)
+- Replay: re-send a prompt and the ones below it against the context as it is now, as new versions, after
+  saying how many requests it takes; also carries the prompts below an edited prompt over to its new version
+
+## Next
+- **Branch settings:** a system prompt, temperature, thinking and max tokens per branch, so a fork can try the same
+  chat with a different setup; real token counts and cost from the API's usage numbers
+- **Pinned context:** reusable pieces of context (a spec, a style guide, a file) added to a chat or a branch and
+  listed as their own entries in the inspector, each switchable on and off; replaces the single standing
+  instructions setting
+- **Compare, finished:** ✦ Judge (Claude picks the best reply against criteria you give) and ✦ Combine (merges the
+  best parts into a new reply)
 
 ## Phase 1: subagents prototype
 Test whether an orchestrating agent benefits from subagents whose context Treechats owns.
@@ -30,28 +43,21 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - The tree stored as rows (projects, turns, branches) instead of one document; attachments in the database
 - Turns made of content blocks (text, tool calls and results, thinking, images), provider-neutral
 - Attribution and history for every change; permissions per project (read, suggest, write)
-- Context fingerprint on every reply: a hash chain over exactly what was sent (each turn's hash covers the turn
-  and the previous hash), recorded when the reply is written and never sent to the model. Powers a small, neutral
-  "context changed at #4" marker that can be turned off (informs, never blocks), opt-in checks for agents ("only if
-  the context is still ab12…"), cache awareness (where two requests' prefixes diverge) and reproducibility.
-  Identity stays numeric (#12) and branch names; no git-style content addressing
+- Context fingerprint, the rest of it (the marker itself is done): opt-in checks for agents ("only if the context is
+  still ab12…"), cache awareness (where two requests' prefixes diverge) and reproducibility. Identity stays numeric
+  (#12) and branch names; no git-style content addressing
 - MCP writes without the page open; a small CLI over the same operations
 
 ## Phase 3: reuse and agents in full
-- Context blocks switched on per chat, with instructions per chat as one kind of block
-- Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; pin,
-  `compare`/`judge`; history per run with undo; a Runs view of agent runs
-- Replay: re-run the prompts below a point against edited context, as new versions, with a preview of how many
-  requests it takes (for agents steering subagents, and for people)
+- Full parity for agents: an `operate` tool for every other operation, with `describe` for arguments; pinned
+  context, `judge`; history per run with undo; a Runs view of agent runs
 - Import Claude Code sessions as trees (read-only import; writing sessions back is not a public interface)
 
 ## Later
 - Cost: start one fan-out request first so the others read the shared start from the prompt cache (confirm cache
   timing first); warn when a chat is too short for the model to cache
 - Per-turn send modes (full, prompt only, summary, left out); reversible summaries
-- Request settings per branch: system prompt, temperature, thinking, max tokens; real token counts and cost
 - Recipes (saved pipelines of tools), sweeps across models or contexts, re-running saved contexts as evals
-- In Compare: "Ask which is best" and "Combine into one"
 - Export a branch as a standalone page; select several prompts at once
 - Other model providers; hosted and multi-user (open questions in the vision)
 - Harder: keep only part of a reply; the same prompt with and without some context (A/B)

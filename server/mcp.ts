@@ -16,7 +16,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
-import { contextPrompt, loadState, TreeView, turnsFor, type Tree } from './context.ts';
+import { contextPrompt, ctxChanges, loadState, TreeView, turnsFor, type Tree } from './context.ts';
 import { pageOpen, refund, relay, RelayError, spend } from './relay.ts';
 
 type State = NonNullable<ReturnType<typeof loadState>>;
@@ -89,7 +89,7 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
@@ -166,6 +166,7 @@ export function buildMcpServer(read: () => State | null) {
         `Follows: ${n.parents.map((p) => '#' + p).join(', ') || 'nothing (starts the chat)'} · Followed by: ${kids.join(', ') || 'nothing'} · Branches: ${bs.join(', ') || 'none'}`,
         n.kind === 'merge' ? `Merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}` : `\nPrompt:\n${n.text}`,
         n.reply ? `\nClaude's reply:\n${n.reply}` : '',
+        (() => { const ch = ctxChanges(s, t, n.id); return ch ? `\nContext changed since this reply was written: ${ch.join('; ')}. (For you only; the model never sees this. replay re-sends from here.)` : ''; })(),
         n.note ? `\nNote (never sent to Claude):\n${n.note}` : '',
       ].filter(Boolean).join('\n'));
     }));
@@ -213,6 +214,23 @@ export function buildMcpServer(read: () => State | null) {
   server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
   server.registerTool('edit_reply', { title: 'Correct a reply', description: 'Replace what the subagent said at a prompt. Prompts after it see your version. Marked as edited.', inputSchema: { run, agent, prompt: promptNo, reply: z.string() } }, act('edit_reply', false));
   server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));
+  server.registerTool('replay', {
+    title: 'Replay',
+    description: 'After you change a subagent\'s context (leave_out, edit_reply, or an edit above), re-send a prompt and every prompt after it on its branch, so their replies are written against the context as it is now. Each becomes a new version (the old ones are kept) and costs one request. Returns the last reply.',
+    inputSchema: { run, agent, prompt: promptNo.describe('The first prompt to re-send.'), branch: z.string().optional().describe('Follow this branch to its end. Defaults to the branch through the prompt.') },
+  }, async (a) => {
+    let left: number | undefined, n = 0;
+    try {
+      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
+      n = ((await relay('replay_plan', a)) as { count: number }).count;
+      left = spend(String(a.run), n);
+      const d = await relay('replay', a);
+      return text(report(d as Done, left));
+    } catch (e) {
+      if (left != null) refund(String(a.run), n);
+      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+    }
+  });
   server.registerTool('distill', { title: 'Distill a subagent', description: 'Have Claude write a short brief (goal, decisions, facts, open questions) of a subagent chat up to a prompt, so only the brief needs to enter your own context.', inputSchema: { run, agent, prompt: promptNo.optional(), branch: z.string().optional(), save_as_note: z.boolean().optional().describe('Also keep the brief as a note on that prompt.') } }, act('distill', true));
 
   return server;

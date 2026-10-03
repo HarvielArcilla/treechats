@@ -6,7 +6,7 @@
    by name only. */
 import { getValue } from './store.ts';
 
-type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean };
+type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string } };
 export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number }>; files?: { id: string; name: string }[] };
 type State = { db: { spaces: Record<string, { id: string; name: string; tree: Tree; sel?: number | null }>; order: string[]; current: string }; opts?: { prompts?: Record<string, string> } };
 
@@ -62,8 +62,8 @@ export class TreeView {
         for (const x of this.path(q)) seen.add(x);
       }
     }
-    const out: ({ seam: true; text: string } | { seam?: false; id: number })[] = [];
-    p.forEach((x, i) => { if (seams.has(i)) { const m = seams.get(i)!; out.push({ seam: true, text: this.t.nodes[m].seam || seamDefault }); } out.push({ id: x }); });
+    const out: ({ seam: true; text: string; merge: number } | { seam?: false; id: number })[] = [];
+    p.forEach((x, i) => { if (seams.has(i)) { const m = seams.get(i)!; out.push({ seam: true, merge: m, text: this.t.nodes[m].seam || seamDefault }); } out.push({ id: x }); });
     return out;
   }
 }
@@ -94,4 +94,49 @@ export function turnsFor(state: State, tree: Tree, id: number) {
 export function contextPrompt(state: State, tree: Tree, id: number) {
   const body = turnsFor(state, tree, id).map((t) => `<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
   return `Here is an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`;
+}
+
+/* The context fingerprint, as the page computes it (see "Context fingerprint" in web/index.html): each reply records
+   a hash per part of what was sent, so operators can see what changed above a reply since. Never sent to a model. */
+export function hash53(str: string, seed = 0) {
+  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36).padStart(11, '0');
+}
+const h5 = (str: string) => hash53(str).slice(-5);
+export function ctxSig(state: State, tree: Tree, id: number) {
+  const v = new TreeView(tree), prompts = state.opts?.prompts || {}, at: string[] = [];
+  const instr = (prompts.instructions ?? '').trim();
+  if (instr) at.push('i:' + h5(instr));
+  if (tree.files && tree.files.length) at.push('f:' + h5(tree.files.map((f) => f.id + '/' + f.name).join('|')));
+  for (const e of v.entries(id, prompts.seam ?? SEAM)) {
+    if (e.seam) { at.push('s' + e.merge + ':' + h5(e.text)); continue; }
+    const n = tree.nodes[e.id];
+    if (n.kind === 'merge' || (n.skip && e.id !== id)) continue;
+    const files = (n.files || []).map((f) => f.id + '/' + f.name).join('|');
+    const q = h5((n.text || '') + '\u0000' + files), r = n.reply ? h5(n.reply) : '';
+    at.push(e.id + ':' + q + (e.id !== id && r ? '.' + r : ''));
+  }
+  let h = ''; for (const x of at) h = hash53(h + '|' + x);
+  return { h: h.slice(-8), at: at.join(',') };
+}
+/* what changed above a reply since it was written, in words; null if nothing did or nothing was recorded */
+export function ctxChanges(state: State, tree: Tree, id: number): string[] | null {
+  const n = tree.nodes[id];
+  if (!n || !n.ctx || !n.reply) return null;
+  const now = ctxSig(state, tree, id); if (now.h === n.ctx.h) return null;
+  const map = (at: string) => new Map(at ? at.split(',').map((x) => { const i = x.indexOf(':'); return [x.slice(0, i), x.slice(i + 1)] as [string, string]; }) : []);
+  const was = map(n.ctx.at), is = map(now.at), out: string[] = [];
+  const name = (k: string) => k === 'i' ? 'standing instructions' : k === 'f' ? 'project files' : k[0] === 's' ? `merge note at #${k.slice(1)}` : +k === id ? 'this prompt' : '#' + k;
+  const num = (k: string) => /^\d+$/.test(k);
+  for (const [k, val] of is) {
+    if (!was.has(k)) { out.push(`${name(k)} ${num(k) ? 'back in' : 'added'}`); continue; }
+    const w = was.get(k)!; if (w === val) continue;
+    const [q0, r0 = ''] = w.split('.'), [q1, r1 = ''] = val.split('.');
+    out.push(`${name(k)} ${!num(k) ? 'changed' : +k === id || (q0 !== q1 && r0 !== r1) ? 'edited' : q0 !== q1 ? 'prompt edited' : r0 && r1 ? 'reply edited' : r1 ? 'reply added' : 'reply removed'}`);
+  }
+  for (const k of was.keys()) if (!is.has(k)) out.push(`${name(k)} ${num(k) && tree.nodes[k as unknown as number]?.skip ? 'left out' : 'removed'}`);
+  return out.length ? out : null;
 }
