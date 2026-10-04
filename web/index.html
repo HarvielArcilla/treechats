@@ -723,7 +723,7 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 /* The file panel sits beside the page, not over it: on wide screens it is a fourth column that opens by growing
    from zero width (its content keeps its final width, so it slides in rather than squeezing), and the chat stays
    usable next to it. On narrow screens it slides over from the right. */
-.fpane{background:var(--surface);border-left:1px solid var(--line);min-width:0;overflow:hidden;position:relative}
+.fpane{display:block;background:var(--surface);border-left:1px solid var(--line);min-width:0;overflow:hidden;position:relative}
 .fpane .fview{width:var(--fwopen,560px);height:100%;display:flex;flex-direction:column;transition:opacity .2s ease, transform .26s cubic-bezier(.2,.75,.2,1)}
 .shell:not(.with-file) .fpane .fview{opacity:0;transform:translateX(24px)}
 .fpane[inert] .fview{visibility:hidden}
@@ -741,6 +741,7 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 }
 @media (prefers-reduced-motion:reduce){.fpane,.fpane .fview{transition:none}}
 .motion-off .fpane,.motion-off .fpane .fview,.motion-off .shell{transition:none !important}
+.fpane .fvcode,.fpane .fvdiff,.fpane .fvmd,.fpane .fvimg,.fpane .fvedit{overscroll-behavior:contain}
 .fvresize{position:absolute;left:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:2;touch-action:none}
 .fvresize::after{content:'';position:absolute;left:2px;top:50%;width:3px;height:36px;margin-top:-18px;border-radius:2px;background:var(--line);opacity:0;transition:opacity .15s}
 .fvresize:hover::after,.fvresize:focus-visible::after,.shell.resizing .fvresize::after{opacity:1}
