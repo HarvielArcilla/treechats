@@ -99,6 +99,10 @@ process.stdin.on('end', async () => {
   const text = JSON.parse(input.trim()).message.content.find((b) => b.type === 'text').text;
   const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
   out({ type: 'system', subtype: 'init' });
+  if (text.includes('SEARCH')) {
+    out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'WebSearch', input: { query: 'treechats' } }] } });
+    out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'Links: [{"title":"A page","url":"https://example.com/a"}]' }] } });
+  }
   const reply = 'CLI says hi to: ' + text.slice(-30);
   for (const p of reply.match(/.{1,8}/gs)) out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: p } } });
   if (text.includes('SLOW')) await new Promise((r) => setTimeout(r, 60000));
@@ -135,6 +139,16 @@ test('Claude Code mode: runs the CLI with tools off, streams its reply, and Stop
   assert.ok(args.includes('--no-session-persistence'));
   const sent = JSON.parse(readFileSync(join(dir, 'stdin.json'), 'utf8'));
   assert.match(sent.message.content.at(-1).text, /<assistant>\nHello!\n<\/assistant>/);
+
+  /* web search through Claude Code: only its WebSearch tool is turned on, and the step comes back as one */
+  const sev = await events(await post(base, { input: 'SEARCH for it', settings: { tools: ['search', 'code'] } }));
+  const sargs: string[] = JSON.parse(readFileSync(join(dir, 'args.json'), 'utf8'));
+  assert.equal(sargs[sargs.indexOf('--tools') + 1], 'WebSearch', 'running code is never turned on for Claude Code');
+  assert.equal(sargs[sargs.indexOf('--allowedTools') + 1], 'WebSearch');
+  assert.deepEqual(sev.find((e) => e.t === 'step')?.d, { id: 't1', tool: 'web_search', input: { query: 'treechats' } });
+  assert.deepEqual(sev.find((e) => e.t === 'stepresult')?.d, { id: 't1', results: [{ title: 'A page', url: 'https://example.com/a' }] });
+  assert.equal(sev.at(-1).steps.length, 1);
+  assert.ok(sev.at(-1).notes.some((n: string) => /running code/.test(n)));
 
   /* Stop: the reply is cut off and the CLI process is ended, not left running */
   const pidFile = join(dir, 'pid');

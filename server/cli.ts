@@ -29,9 +29,14 @@ writeFileSync(SYSTEM_FILE, [
 
 let safeModeOk = true; /* older CLIs don't know --safe-mode; dropped after the first refusal */
 
-function args(model: string, system?: string) {
+/* Claude Code's own tools stay off, except web search and reading pages when the reply asks for them: those run at
+   Anthropic and touch nothing on this computer. Running code is left to the API, where it runs in Anthropic's sandbox;
+   here it would run on your machine. */
+export const CLI_TOOLS: Record<string, string> = { search: 'WebSearch', fetch: 'WebFetch' };
+function args(model: string, system?: string, tools: string[] = []) {
+  const allow = tools.map((t) => CLI_TOOLS[t]).filter(Boolean);
   const a = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-    '--model', model, '--tools', '', '--disallowedTools', 'mcp__*', '--strict-mcp-config', '--disable-slash-commands',
+    '--model', model, '--tools', allow.join(','), ...(allow.length ? ['--allowedTools', allow.join(',')] : []), '--disallowedTools', 'mcp__*', '--strict-mcp-config', '--disable-slash-commands',
     '--no-session-persistence', '--system-prompt-file', SYSTEM_FILE];
   if (system) a.push('--append-system-prompt', system);
   if (safeModeOk) a.push('--safe-mode');
@@ -57,7 +62,9 @@ function transcript(req: SampleRequest): { blocks: object[] } {
   return { blocks: [...images, { type: 'text', text }] };
 }
 
-export type CliEvent = { t: 'text'; d: string } | { t: 'done'; text: string; truncated: boolean; usage?: Usage } | { t: 'error'; code: string; message: string };
+export type CliEvent = { t: 'text'; d: string } | { t: 'done'; text: string; truncated: boolean; usage?: Usage } | { t: 'error'; code: string; message: string }
+  | { t: 'step'; d: { id: string; tool: string; input: Record<string, unknown> } } | { t: 'stepresult'; d: { id: string; [k: string]: unknown } };
+const CLI_NAMES: Record<string, string> = { WebSearch: 'web_search', WebFetch: 'web_fetch' };
 
 export function runCli(req: SampleRequest, model: string, signal: AbortSignal, onEvent: (e: CliEvent) => void): Promise<void> {
   return new Promise((resolve) => {
@@ -65,7 +72,7 @@ export function runCli(req: SampleRequest, model: string, signal: AbortSignal, o
     if (!cmd) { onEvent({ t: 'error', code: 'cli_missing', message: `Couldn't find "${config.cliPath}".` }); resolve(); return; }
     let child: ChildProcess;
     const system = typeof req.settings?.system === 'string' ? req.settings.system.trim() : '';
-    try { child = start(cmd, args(model, system || undefined), { cwd: workDir }); } catch (e) { onEvent({ t: 'error', code: 'cli_missing', message: String(e) }); resolve(); return; }
+    try { child = start(cmd, args(model, system || undefined, req.settings?.tools || []), { cwd: workDir }); } catch (e) { onEvent({ t: 'error', code: 'cli_missing', message: String(e) }); resolve(); return; }
     let text = '', buf = '', err = '', finished = false;
     const finish = (e: CliEvent) => { if (finished) return; finished = true; onEvent(e); resolve(); };
     const stop = () => { stopTree(child); finish({ t: 'error', code: 'cancelled', message: '' }); };
@@ -82,6 +89,15 @@ export function runCli(req: SampleRequest, model: string, signal: AbortSignal, o
         let ev: any; try { ev = JSON.parse(line); } catch { continue; }
         if (ev.type === 'stream_event' && ev.event?.type === 'content_block_delta' && ev.event.delta?.type === 'text_delta') {
           text += ev.event.delta.text; onEvent({ t: 'text', d: ev.event.delta.text });
+        } else if (ev.type === 'assistant' && Array.isArray(ev.message?.content)) {
+          /* a tool Claude Code used, and below, what came back */
+          for (const b of ev.message.content) if (b.type === 'tool_use') onEvent({ t: 'step', d: { id: b.id, tool: CLI_NAMES[b.name] || b.name, input: b.input || {} } });
+        } else if (ev.type === 'user' && Array.isArray(ev.message?.content)) {
+          for (const b of ev.message.content) if (b.type === 'tool_result') {
+            const raw = Array.isArray(b.content) ? b.content.map((x: any) => x.text || '').join('\n') : String(b.content ?? '');
+            const links = [...raw.matchAll(/"title":"([^"]*)","url":"([^"]+)"/g)].slice(0, 10).map((m) => ({ title: m[1], url: m[2] }));
+            onEvent({ t: 'stepresult', d: { id: b.tool_use_id, ...(b.is_error ? { error: raw.slice(0, 200) } : links.length ? { results: links } : { text: raw.slice(0, 1500) }) } });
+          }
         } else if (ev.type === 'result') {
           if (ev.is_error || (ev.subtype && ev.subtype !== 'success')) {
             const msg = String(ev.result || ev.subtype || 'Claude Code reported an error.');

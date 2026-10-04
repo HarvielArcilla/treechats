@@ -135,6 +135,7 @@ function cliNotes(req: SampleRequest) {
   if (st.thinking) n.push('thinking');
   if (st.effort) n.push('effort');
   if (st.maxTokens) n.push('max tokens');
+  if (st.tools?.includes('code')) n.push('running code');
   return n.map((x) => x + ' (not used with Claude Code)');
 }
 export const provider = (): 'api' | 'claude-code' => config.provider === 'auto' ? (config.apiKey ? 'api' : 'claude-code') : config.provider;
@@ -166,9 +167,12 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
           return;
         }
         if (provider() === 'claude-code') {
+          const csteps: Step[] = [];
           await runCli(req, model, signal, (e) => {
             if (e.t === 'text') { text += e.d; send(e); }
-            else if (e.t === 'done') send({ t: 'done', text, truncated: e.truncated, tier, model, usage: e.usage || null, notes: cliNotes(req) });
+            else if (e.t === 'step') { csteps.push({ ...e.d }); send(e); }
+            else if (e.t === 'stepresult') { const { id, ...r } = e.d; const st = csteps.find((x) => x.id === id); if (st) st.result = r; send(e); }
+            else if (e.t === 'done') send({ t: 'done', text, truncated: e.truncated, tier, model, usage: e.usage || null, notes: cliNotes(req), ...(csteps.length ? { steps: csteps } : {}) });
             else { if (e.code !== 'cancelled') console.warn(`  Claude Code reply failed (${e.code})${e.message ? ': ' + e.message : ''}`); send({ t: 'error', code: e.code, message: e.message, text }); }
           });
           return;

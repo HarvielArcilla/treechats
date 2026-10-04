@@ -110,6 +110,13 @@ Files can be up to 300 KB each, and a folder lists up to 5,000.
 - **`/diff`** attaches git's view of changes in a linked folder: not committed (the default), `staged`, `last` (the latest commit), or any commit. Linked folders also show their branch and how many files changed.
 - **Add to the repo:** **✦ Distill** can add the brief to `CLAUDE.md` or `AGENTS.md` in a linked folder, so the next coding session starts from what you worked out here.
 
+## Tools Claude can use
+
+**Tools** by the input box lets Claude search the web, read web pages and run code in its replies. They run at Anthropic, not on your computer. Each step shows above the reply as it happens (what Claude searched, read or ran, and what came back), and the pages its answer cites are listed under it. A branch can have its own tools in its model settings; otherwise the Tools menu applies.
+
+- With an API key, all three are available. Searches cost $10 per 1,000 on top of tokens, and are included in the cost shown on the reply. Code runs in Anthropic's sandbox, which keeps its files for the rest of the reply.
+- With Claude Code, search and reading pages use Claude Code's own WebSearch and WebFetch tools. Running code needs an API key, since under Claude Code it would run on your machine.
+
 ## Model settings (advanced)
 
 Turn them on in **Settings › System**. Then the inspector in Editor shows the settings in effect for the selected prompt and lets you change them from there on: a system prompt, thinking, effort, temperature and reply length. Fork a chat and change one setting to compare the same conversation under a different setup. Treechats sends only what the model uses (newer models take effort, not temperature) and the reply says if something was skipped. Every reply also shows its token counts and cost, with a running total along the context path (`/cost` sums a chat).
