@@ -4904,14 +4904,25 @@ function fmtElapsed(ms){
   if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
   return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m';
 }
-const promptTime = n => n && n.ts ? `<span class="ts" title="Sent ${esc(tsFull(n.ts))}">${esc(tsShort(n.ts))}</span>` : '';
+/* how long ago: "just now", "43 minutes ago", "3 hours ago", "2 days ago", then the date once it's over a week */
+function tsAgo(t){
+  const m=Math.floor((Date.now()-t)/60000);
+  if(m<1) return 'just now';
+  if(m<60) return m===1 ? '1 minute ago' : `${m} minutes ago`;
+  const h=Math.floor(m/60); if(h<24) return h===1 ? '1 hour ago' : `${h} hours ago`;
+  const d=Math.floor(h/24); if(d<7) return d===1 ? 'yesterday' : `${d} days ago`;
+  return new Date(t).toLocaleDateString(undefined, new Date(t).getFullYear()===new Date().getFullYear() ? {month:'short', day:'numeric'} : {month:'short', day:'numeric', year:'numeric'});
+}
+const promptTime = n => n && n.ts ? `<span class="ts" data-ago="${n.ts}" title="Sent ${esc(tsFull(n.ts))}">${esc(tsAgo(n.ts))}</span>` : '';
+/* a reply says when it came; how long it took is on hover */
 function replyTime(n){
   if(!n || !n.rt || !n.reply) return '';
   const [a,b]=n.rt, secs=Math.round((b-a)/1000);
-  return `<span class="ts" title="Took ${secs} second${secs===1?'':'s'} · finished ${esc(tsFull(b))}">${fmtElapsed(b-a)}</span>`;
+  return `<span class="ts" data-ago="${b}" title="Replied ${esc(tsFull(b))} · took ${secs<60?`${secs} second${secs===1?'':'s'}`:fmtElapsed(b-a)}">${esc(tsAgo(b))}</span>`;
 }
-/* the live counters, once a second while any reply is being written */
+/* the counter on a reply being written, every second; the "ago" labels, every half minute */
 setInterval(()=>{ for(const el of document.querySelectorAll('[data-since]')) el.textContent=fmtElapsed(Date.now()-(+el.dataset.since)); }, 1000);
+setInterval(()=>{ for(const el of document.querySelectorAll('[data-ago]')) el.textContent=tsAgo(+el.dataset.ago); }, 30000);
 function replyFoot(id){
   const vs=versions(id), i=vs.indexOf(id);
   const sw = vs.length>1 ? `<span class="ver" aria-label="Reply version"><button data-ver="${id}" data-dir="-1" ${i===0?'disabled':''} aria-label="Previous version">‹</button><span>${i+1} / ${vs.length}</span><button data-ver="${id}" data-dir="1" ${i===vs.length-1?'disabled':''} aria-label="Next version">›</button></span>` : '';
