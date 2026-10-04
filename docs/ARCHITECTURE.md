@@ -19,6 +19,7 @@ server/vault.ts         Encryption at rest and the password lock: data key kept 
                         scrypt(password), AES-256-GCM, recovery key, auto-lock
 server/secrets.ts       The system keychain (macOS Keychain, Windows DPAPI, libsecret): the API key, the data key
 server/redact.ts        Hides secrets in command output and diffs
+server/schedule.ts      Scheduled tasks: when each runs, running them, and the inbox of results for the page
 server/config.ts        .env settings
 ```
 
@@ -40,6 +41,7 @@ tools answer "Treechats is locked".
 | `GET /api/vault/fileskey` | While unlocked, the key the page encrypts attachments with |
 | `POST /api/key/save`, `/move`, `/remove` | The API key in the system keychain |
 | `POST /api/auth/reset` | A new token; other browsers and coding tools are signed out |
+| `GET /api/schedule/status`, `/inbox`; `POST /api/schedule/run`, `/ack` | Scheduled tasks (server/schedule.ts): when each last ran and runs next, results waiting for the page, run one now, and clear results the page has added. The tasks themselves are in the saved state (`opts.schedules`); the event stream sends `inbox` when a result is ready |
 
 Requests that change something (`POST`/`PUT` under `/api/`) must be sent as `application/json`, which a page on
 another site can't do without a CORS preflight that Treechats doesn't answer.

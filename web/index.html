@@ -100,6 +100,37 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
   .tb-brand{transition:max-width .26s cubic-bezier(.2,.75,.2,1), opacity .22s, transform .26s cubic-bezier(.2,.75,.2,1), margin .26s}
 }
 .cvtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cvbar{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
+.cvbar .cvview{flex:none}
+.cvbar .cvviewlabel{font:600 .72rem var(--body);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-left:4px}
+.cvbar .cvsort{color:var(--muted);border-color:transparent;background:none;white-space:nowrap}
+.cvbar .cvsort:hover{color:var(--fg);border-color:var(--line)}
+.cvbar .pill{font:.68rem var(--mono);color:var(--muted);margin-left:3px}
+.cvsec.cvdate{font:600 .72rem var(--body);text-transform:none;letter-spacing:0;padding-top:12px}
+.udot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:1px;flex:none}
+.cv.unread .cvname{font-weight:700;color:var(--fg)}
+.cv.dropabove{box-shadow:inset 0 2px 0 var(--accent)}
+.cv.dropbelow{box-shadow:inset 0 -2px 0 var(--accent)}
+.setbox.ssheet{width:min(640px,100%)}
+.slist{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.srow{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);flex-wrap:wrap}
+.srow.paused{opacity:.7}
+.smain{display:grid;gap:2px;min-width:0;flex:1 1 260px}
+.smain b{font-size:.9rem;overflow-wrap:anywhere}
+.smain .note{font-size:.78rem;overflow-wrap:anywhere}
+.serr{color:var(--danger)}
+.sacts{display:flex;gap:4px;flex-wrap:wrap}
+.sempty{margin-top:12px}
+.sform{display:grid;gap:12px;padding-top:12px}
+.sform textarea,.sform input,.sform select{font:inherit;font-weight:400!important;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.sfset{border:1px solid var(--line);border-radius:10px;padding:8px 12px 12px;display:grid;gap:8px;margin:0}
+.sfset legend{font-size:.84rem;font-weight:600;padding:0 4px}
+.sradio{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:baseline;font-size:.88rem;cursor:pointer}
+.sradio .note{grid-column:2;font-size:.78rem}
+.srowin{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.srowin .inl{display:flex;gap:6px;align-items:center;font-size:.86rem}
+.srowin input[type=number]{width:72px}
+.archnote{margin:4px 0 0;font-size:.8rem;color:var(--muted);display:flex;gap:8px;align-items:center}
 .cvtools:empty{display:none}
 .cvtools .btn.xs{display:inline-flex;align-items:center;gap:5px}
 .cvtools .btn.xs svg{width:13px;height:13px}
@@ -523,7 +554,13 @@ ol.ctx li.files .cid{color:var(--l1)}
 /* message actions: a quiet row of words under the message */
 .act{border:0;background:none;color:var(--muted);font:.78rem var(--sans,inherit);cursor:pointer;padding:3px 7px;border-radius:6px;white-space:nowrap}
 .act:hover,.act:focus-visible{color:var(--fg);background:var(--surface);outline:none}
-.pacts{display:flex;flex-wrap:wrap;gap:2px;margin:-2px 0 6px 30px}
+.pacts{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:-2px 0 6px 30px}
+.ts{font-size:.74rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px;cursor:default}
+.rwho .ts{padding:0}
+.ractrow .ts{opacity:0;transition:opacity .12s;padding-left:7px}
+ul.thread .reply:hover .ractrow .ts,ul.thread .reply:focus-within .ractrow .ts,ul.thread > li.g:last-child .ractrow .ts{opacity:1}
+@media (hover:none){.ractrow .ts{opacity:1}}
+.pacts .ts{margin-left:auto}
 .uacts,.ractrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:4px}
 .uacts{justify-content:flex-end}
 .ractrow{margin-left:-7px}
@@ -1091,6 +1128,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <button class="btn" id="newConvSide">+ New chat</button>
   <input type="search" id="convFilter" placeholder="Search prompts and replies  /" aria-label="Search chats, prompts and replies" autocomplete="off">
   <div class="filters" id="convFilters" role="group" aria-label="Show only"><button class="seg" data-filter="star" aria-pressed="false">★ Starred</button><button class="seg" data-filter="note" aria-pressed="false">Notes</button><button class="seg" data-filter="skip" aria-pressed="false">Left out</button></div>
+  <div class="cvbar" id="cvBar"></div>
   <div class="cvtools" id="cvTools"></div>
   <ul class="convlist" id="convList"></ul>
   <div class="ovmap" id="ovMap" hidden><div class="ovhead"><span>Branch map</span><span style="display:flex;gap:2px"><button class="pclose" data-mapopen aria-label="Open the full branch map" title="Open the full map (M)">⤢</button><button class="pclose" data-maphide aria-label="Hide the branch map" title="Hide the branch map">×</button><button class="mapshow" data-mapshow aria-label="Show the branch map" title="Show the branch map">Show</button></span></div><svg id="ovSvg" role="img" aria-label="Branches of this conversation. Click a dot to go to that prompt."></svg></div>
@@ -1318,6 +1356,7 @@ const COMMANDS=[
   {name:'memory', desc:'Edit the standing instructions sent at the start of every request, and see the project’s files.', root:true},
   {name:'search', args:'words', need:true, desc:'Find prompts and replies in this project.', root:true},
   {name:'settings', desc:'Open Settings.', root:true},
+  {name:'schedule', args:'[prompt]', desc:'Send a prompt at a set time, once or on a schedule, here or as a new chat each time. Without a prompt, lists your scheduled tasks.'},
   {name:'export', desc:'Copy this line as Markdown.'},
   {name:'help', desc:'Every command and what it does.', root:true},
 ];
@@ -1341,6 +1380,7 @@ let cmdPanel=null;
 function runCommand(name, arg, at){
   const ready = () => { if(sampleState==='ready') return true; toast('This needs Claude. Add an API key to .env or sign in to Claude Code, then restart Treechats.'); return false; };
   if(name==='help'){ cmdPanel={kind:'help'}; return paintCmds(at); }
+  if(name==='schedule'){ if(arg && arg.trim()) openSchedules(schedFormFor(at, arg.trim())); else openSchedules(); return; }
   if(name==='context'){ cmdPanel={kind:'context', at}; return paintCmds(at); }
   if(name==='cost'){ cmdPanel={kind:'cost', at}; return paintCmds(at); }
   if(name==='model'){
@@ -1674,8 +1714,21 @@ function load(){
   opts.collapsed=Object.assign({spaces:false, convs:false}, opts.collapsed);
   enterSpace(DB.current);
 }
+/* Every new prompt, reply box or merge gets the time it was made, whichever operation made it: anything numbered since
+   the last save that has no time yet. Ids only grow, so this looks at the new ones only. */
+function stampNew(){
+  const now=Date.now();
+  for(const sp of Object.values(DB.spaces)){
+    const t=sp.tree; if(!t || !t.nodes) continue;
+    if(t.tsFrom==null) t.tsFrom=t.nextId;
+    for(let id=Math.max(t.tsFrom, t.tsDone||0); id<t.nextId; id++) if(t.nodes[id] && !t.nodes[id].ts) t.nodes[id].ts=now;
+    t.tsDone=t.nextId;
+  }
+}
 function save(){
   if(sel!=null && S && S.nodes && S.nodes[sel]) lastConv=convKeyOf(sel);
+  if(DB) stampNew();
+  if(DB && S) readCurrent();
   if(DB && DB.spaces[DB.current]){
     DB.spaces[DB.current].tree=S; DB.spaces[DB.current].sel=sel;
     const k=convKeyOf(sel); if(k!=null) S.convs[k]=Object.assign(S.convs[k]||{}, {sel});
@@ -1758,9 +1811,43 @@ const convKeyOf = id => id!=null && S.nodes[id] ? convKey(S.nodes[chain(id)[0]])
 const rootOfSel = () => sel!=null && S.nodes[sel] ? vRoots().find(r=>convKey(r)===convKeyOf(sel)) || null : null;
 const convMeta = k => (S.convs && S.convs[k]) || {};
 /* one order everywhere: newest conversation first, so a new one appears at the top and stays there */
-function orderedRoots(){ return vRoots().sort((a,b)=>convKey(b)-convKey(a)); }
+/* ---- Chat order, archive, unread ----
+   The chat list sorts by last activity (as Claude does), date started, name, or your own order (drag a chat in the
+   list). The page in Editor follows the same order, except that it keeps chats in the order they were started while
+   sorting by activity, so it doesn't rearrange itself under you every time a reply comes in. Archived chats leave the
+   list and the page; they're under Archived. */
+const CONV_SORTS={updated:'Last activity', created:'Date started', name:'Name', custom:'Your order'};
+const convSort = () => CONV_SORTS[opts.convSort] ? opts.convSort : 'updated';
+const convGrouped = () => opts.convGroup!==false && (convSort()==='updated' || convSort()==='created');
+const isArchived = r => !!convMeta(convKey(r)).archived;
+const convUpdated = r => convMeta(convKey(r)).t || r.ts || 0;
+const convStarted = r => r.ts || 0;
+function sortRoots(list, how){
+  const byKey=(a,b)=>convKey(b)-convKey(a);
+  if(how==='name') return list.sort((a,b)=>convTitle(a).localeCompare(convTitle(b), undefined, {sensitivity:'base', numeric:true}) || byKey(a,b));
+  if(how==='updated') return list.sort((a,b)=>convUpdated(b)-convUpdated(a) || byKey(a,b));
+  if(how==='custom'){
+    /* chats you haven't placed yet (new ones) come first, newest first */
+    const idx=new Map((S.convOrder||[]).map((k,i)=>[k,i])), at=r=>idx.has(convKey(r)) ? idx.get(convKey(r)) : -1;
+    return list.sort((a,b)=>(at(a)-at(b)) || byKey(a,b));
+  }
+  return list.sort(byKey);
+}
+/* the chats you work with, in page order (archived ones aside) */
+function orderedRoots(){ return sortRoots(vRoots().filter(r=>!isArchived(r)), convSort()==='updated' ? 'created' : convSort()); }
+const archivedRoots = () => sortRoots(vRoots().filter(isArchived), convSort());
 const recentRoots = orderedRoots;
-const isHidden = r => !!convMeta(convKey(r)).hidden;
+/* archived chats are off the page too, like hidden ones (Chat view can still open one) */
+const isHidden = r => !!convMeta(convKey(r)).hidden || isArchived(r);
+function dateGroup(t){
+  if(!t) return 'Earlier';
+  const now=new Date(), mid=new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), day=86400000;
+  if(t>=mid) return 'Today';
+  if(t>=mid-day) return 'Yesterday';
+  if(t>=mid-7*day) return 'Previous 7 days';
+  if(t>=mid-30*day) return 'Previous 30 days';
+  return new Date(t).toLocaleDateString(undefined, now.getFullYear()===new Date(t).getFullYear() ? {month:'long'} : {month:'long', year:'numeric'});
+}
 const shownRoots = () => orderedRoots().filter(r=>!isHidden(r));
 function convTip(r){
   const k=convKey(r), here=Object.keys(S.refs).filter(rid=>S.nodes[S.refs[rid].tip] && convKeyOf(S.refs[rid].tip)===k);
@@ -1791,6 +1878,8 @@ function syncHead(){
 function leafOf(id){ let cur=id; for(;;){ const k=vKids(cur); if(!k.length) return cur; cur=k[0].id; } }
 /* older saves used a flat name→tip map */
 function migrate(){
+  /* prompts made from now on get a time (see stampNew); earlier ones have none, rather than a made-up one */
+  if(S.tsFrom==null) S.tsFrom=S.nextId;
   if(!S.refs){
     S.refs={}; S.nextRef=1;
     if(S.branches && typeof S.branches==='object') for(const [name,tip] of Object.entries(S.branches)){ const rid=newRef(name,tip); if(S.head===name) S.head=rid; }
@@ -3297,7 +3386,7 @@ function pumpReplies(){
 }
 async function startReply(sid, id){
   const tree=treeOf(sid), n=tree.nodes[id];
-  const g={id, sid, ctl:new AbortController(), text:'', tier:n.askTier||opts.model, stopped:false, sig:withTree(tree, ()=>ctxSig(id))};
+  const g={id, sid, ctl:new AbortController(), text:'', tier:n.askTier||opts.model, stopped:false, sig:withTree(tree, ()=>ctxSig(id)), started:Date.now()};
   gens.set(gkey(sid,id), g); delete genNotes[gkey(sid,id)];
   if(sid===DB.current) showLive(id);
   try{
@@ -3321,7 +3410,7 @@ function finishGen(g, text, tier, note){
   gens.delete(gkey(g.sid,g.id));
   const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
   if(n){
-    if(text){ n.reply=text; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; if(g.thinking) n.thinking=g.thinking; else delete n.thinking; withTree(tree, ()=>touch(g.id)); }
+    if(text){ markUnreadFor(g.sid, g.id); n.reply=text; n.rt=[g.started, Date.now()]; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; if(g.thinking) n.thinking=g.thinking; else delete n.thinking; withTree(tree, ()=>touch(g.id)); }
     if(note) genNotes[gkey(g.sid,g.id)]=note;
     delete n.askTier;
     save();
@@ -4370,6 +4459,8 @@ const Agent=(()=>{
     es.addEventListener('lock', ()=>location.reload());
     /* the lock was turned on or off, or the token reset, in another tab: reload to match */
     es.addEventListener('vault', e=>{ if(e.data!==window.TREECHATS_TAB) location.reload(); });
+    /* a scheduled task ran */
+    es.addEventListener('inbox', ()=>drainInbox());
     es.onmessage=e=>{
       let cmd; try{ cmd=JSON.parse(e.data); }catch(err){ return; }
       handle(cmd).then(result=>({id:cmd.id, ok:true, result}), err=>({id:cmd.id, ok:false, error:String(err && err.message || err)}))
@@ -4480,6 +4571,8 @@ function paletteCommands(q){
   add('Space', 'Import / export JSON', ()=>openIo());
   add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
+  add('App', 'Scheduled tasks', ()=>openSchedules());
+  add('App', 'Schedule a prompt…', ()=>openSchedules(schedFormFor(opts.simple?composeParent():sel, '')));
   add('Settings', 'Open settings', ()=>openSettings());
   if(lockInfo().password) add('App', 'Lock Treechats now', ()=>lockNow());
   if(hasServer()) add('Settings', 'Privacy & security', ()=>openSettings('privacy'));
@@ -4732,7 +4825,7 @@ function rowHTML(id, pathSet){
   if((!pick || pick.op==='also') && alsoTargets.has(id)) cls.push('also');
   const refs = refsAt(id).map(rid=>`<button class="ref ${S.head===rid?'head':''}" data-key="c${rid}" data-co="${rid}" title="${S.head===rid?'Checked out':'Check out '+esc(refName(rid))}" aria-pressed="${S.head===rid}">${S.head===rid?'HEAD → ':''}${esc(refName(rid))}</button>`).join('');
   const vs = versions(id);
-  const lead = (n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(n.imported?`<span class="tag agenttag" title="${esc(`From a ${n.imported.from} session${n.imported.model?`, ${n.imported.model}`:''}. Tool calls are summarized in the reply, with an excerpt of each result.${n.imported.notes?` ${n.imported.notes} note${n.imported.notes===1?'':'s'} ${n.imported.from} added to this message (the time, reminders) ${n.imported.notes===1?'is':'are'} left out.`:''}`)}">${esc(n.imported.from)}</span>${n.imported.tag?`<span class="tag summary" title="Here the agent’s context was compacted: everything before was replaced by this summary">${esc(n.imported.tag)}</span>`:''}`:'')+(n.loop?`<span class="tag rwtag" title="${esc(`Sent by /loop, ${n.loop.i} of ${n.loop.of}${n.loop.until?`, until: ${n.loop.until}`:''}`)}">loop ${n.loop.i}/${n.loop.of}</span>`:'')+(n.btw?'<span class="tag rwtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
+ const lead = (n.sched?`<span class="tag" title="Sent by the scheduled task “${esc(n.sched.name||'')}”">scheduled</span>`:'')+(n.by?`<span class="tag agenttag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'')+(alsoTargets.has(id)&&(!pick||pick.op==='also')?'<span class="tag alsotag">replying</span>':'')+(n.kind==='summary'?'<span class="tag summary">summary</span>':'')+(n.kind==='squash'?'<span class="tag squash">squashed</span>':'')+(vs.length>1?`<span class="tag ver">${vs.indexOf(id)+1}/${vs.length}</span>`:'')+(n.skip?'<span class="tag skiptag" title="Not sent to Claude from the prompts below">left out</span>':'')+(n.rewritten?`<span class="tag rwtag" title="${esc(rwTitle(n))}">rewritten</span>`:'')+(n.reviewOf?`<button class="tag rwtag" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply${n.reviewOf.whole?', with the conversation up to it':''}. Click to go to it.">review of #${n.reviewOf.id}</button>`:'')+(n.combined?`<span class="tag rwtag" title="${esc(combinedTitle(n))}">combined</span>`:'')+(n.imported?`<span class="tag agenttag" title="${esc(`From a ${n.imported.from} session${n.imported.model?`, ${n.imported.model}`:''}. Tool calls are summarized in the reply, with an excerpt of each result.${n.imported.notes?` ${n.imported.notes} note${n.imported.notes===1?'':'s'} ${n.imported.from} added to this message (the time, reminders) ${n.imported.notes===1?'is':'are'} left out.`:''}`)}">${esc(n.imported.from)}</span>${n.imported.tag?`<span class="tag summary" title="Here the agent’s context was compacted: everything before was replaced by this summary">${esc(n.imported.tag)}</span>`:''}`:'')+(n.loop?`<span class="tag rwtag" title="${esc(`Sent by /loop, ${n.loop.i} of ${n.loop.of}${n.loop.until?`, until: ${n.loop.until}`:''}`)}">loop ${n.loop.i}/${n.loop.of}</span>`:'')+(n.btw?'<span class="tag rwtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':'')+(hasSettings(n.set)?`<span class="tag settag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'');
   const shown=replyShown(id, pathSet);
   const folded = !pick && !!S.fold[id];
   const foldable = !pick && (vKids(id).length || vSec(id).length) && !folded;
@@ -4752,17 +4845,17 @@ function rowHTML(id, pathSet){
     <div class="bar">${opts.simple ? `<button class="btn primary" data-pedit="resend">Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>` : `<button class="btn primary" data-pedit="resend" title="Starts a new branch with your edit and gets a reply. The original stays on its branch with everything after it.">Send on a new branch <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button>`}<button class="btn" data-pedit="cancel">Cancel</button>${opts.simple?'':'<button class="linkbtn pinplace" data-pedit="save" title="Change the text where it is, without a new reply. The reply and everything after it stay as they were, and they\u2019re marked as written for the old wording.">Save in place instead</button>'}</div></div>` : null;
   const txtF = txtE ? txtE : n.files && n.files.length ? txt.replace(/^<(span|div) class="txt[^"]*">/, m=>m+fileChips(n.files, false, 'n'+id)) : txt;
   /* Chat view shows the marks that change what a prompt means or sends; versions and branches have the ‹ › switch */
-  const ptags=[n.star?'<span class="edtag star" title="Starred">★</span>':'', n.skip?'<span class="edtag warn" title="Left out: not sent to Claude from the prompts below">left out</span>':'', n.by?`<span class="edtag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'', n.imported?`<span class="edtag" title="From a ${esc(n.imported.from)} session">${esc(n.imported.from)}</span>`:'', n.imported&&n.imported.tag?`<span class="edtag" title="Here the agent’s context was compacted: everything before was replaced by this summary">${esc(n.imported.tag)}</span>`:'', n.kind==='summary'?'<span class="edtag">summary</span>':'', n.kind==='squash'?'<span class="edtag">squashed</span>':'', n.reviewOf?`<button class="edtag linkish" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply. Click to go to it.">review of #${n.reviewOf.id}</button>`:'', n.combined?`<span class="edtag" title="${esc(combinedTitle(n))}">combined</span>`:'', hasSettings(n.set)?`<span class="edtag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'', n.rewritten?`<span class="edtag" title="${esc(rwTitle(n))}">rewritten</span>`:'', n.loop?`<span class="edtag" title="Sent by /loop">loop ${n.loop.i} of ${n.loop.of}</span>`:'', n.btw?'<span class="edtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':''].filter(Boolean).join(' ');
+  const ptags=[n.star?'<span class="edtag star" title="Starred">★</span>':'', n.sched?`<span class="edtag" title="Sent by the scheduled task “${esc(n.sched.name||'')}”">scheduled</span>`:'', n.skip?'<span class="edtag warn" title="Left out: not sent to Claude from the prompts below">left out</span>':'', n.by?`<span class="edtag" title="Added by the agent ${esc(n.by)} through MCP">⚙ ${esc(n.by)}</span>`:'', n.imported?`<span class="edtag" title="From a ${esc(n.imported.from)} session">${esc(n.imported.from)}</span>`:'', n.imported&&n.imported.tag?`<span class="edtag" title="Here the agent’s context was compacted: everything before was replaced by this summary">${esc(n.imported.tag)}</span>`:'', n.kind==='summary'?'<span class="edtag">summary</span>':'', n.kind==='squash'?'<span class="edtag">squashed</span>':'', n.reviewOf?`<button class="edtag linkish" data-goto="${n.reviewOf.id}" title="A second opinion on #${n.reviewOf.id}'s reply. Click to go to it.">review of #${n.reviewOf.id}</button>`:'', n.combined?`<span class="edtag" title="${esc(combinedTitle(n))}">combined</span>`:'', hasSettings(n.set)?`<span class="edtag" title="${esc('Model settings from here on: '+setSummary(n.set))}">settings</span>`:'', n.rewritten?`<span class="edtag" title="${esc(rwTitle(n))}">rewritten</span>`:'', n.loop?`<span class="edtag" title="Sent by /loop">loop ${n.loop.i} of ${n.loop.of}</span>`:'', n.btw?'<span class="edtag" title="A side question asked with /btw, kept as its own branch">by the way</span>':''].filter(Boolean).join(' ');
   let h=opts.simple && !pick && ptags ? `<div class="ptop">${ptags}</div>` : '';
   h+=`<div class="${cls.join(' ')}" data-id="${id}" ${!pick&&!isM&&!opts.simple&&!editingHere?'draggable="true"':''} tabindex="0" role="button" aria-pressed="${id===sel}" ${id===sel&&!pick?'title="Click again to deselect"':''}><span class="dot"></span><span class="nid">#${id}</span>${txtF}<span class="tags">${opts.simple && !pick ? '' : lead+star+refs}</span></div>`;
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}"><button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button><button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${promptTime(n)}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button><button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
     else if(id===sel){
       const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
       const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
-      h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${tog}${fold}${rp}</div>`;
+      h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${tog}${fold}${rp}${promptTime(n)}</div>`;
     }
   }
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
@@ -4792,6 +4885,33 @@ function replyShown(id, pathSet){
   const m=repliesMode();
   return id===sel || m==='all' || (m==='path' && pathSet.has(id));
 }
+/* ---- Times ----
+   As in Claude: a short time by each message (shown with its actions), the full date on hover, and how long a reply
+   took. A reply being written counts up. */
+const tsFull = t => new Date(t).toLocaleString(undefined, {weekday:'short', month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+function tsShort(t){
+  const d=new Date(t), now=new Date(), day=86400000;
+  const midnight=new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const time=d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  if(t>=midnight) return time;
+  if(t>=midnight-day) return 'Yesterday';
+  if(t>=midnight-6*day) return d.toLocaleDateString(undefined, {weekday:'short'});
+  return d.toLocaleDateString(undefined, d.getFullYear()===now.getFullYear() ? {month:'short', day:'numeric'} : {month:'short', day:'numeric', year:'numeric'});
+}
+function fmtElapsed(ms){
+  const s=Math.max(0, Math.round(ms/1000));
+  if(s<60) return s+'s';
+  if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
+  return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m';
+}
+const promptTime = n => n && n.ts ? `<span class="ts" title="Sent ${esc(tsFull(n.ts))}">${esc(tsShort(n.ts))}</span>` : '';
+function replyTime(n){
+  if(!n || !n.rt || !n.reply) return '';
+  const [a,b]=n.rt, secs=Math.round((b-a)/1000);
+  return `<span class="ts" title="Took ${secs} second${secs===1?'':'s'} · finished ${esc(tsFull(b))}">${fmtElapsed(b-a)}</span>`;
+}
+/* the live counters, once a second while any reply is being written */
+setInterval(()=>{ for(const el of document.querySelectorAll('[data-since]')) el.textContent=fmtElapsed(Date.now()-(+el.dataset.since)); }, 1000);
 function replyFoot(id){
   const vs=versions(id), i=vs.indexOf(id);
   const sw = vs.length>1 ? `<span class="ver" aria-label="Reply version"><button data-ver="${id}" data-dir="-1" ${i===0?'disabled':''} aria-label="Previous version">‹</button><span>${i+1} / ${vs.length}</span><button data-ver="${id}" data-dir="1" ${i===vs.length-1?'disabled':''} aria-label="Next version">›</button></span>` : '';
@@ -4854,7 +4974,7 @@ function replyHTML(id){
   const n=S.nodes[id];
   const gn=genNotes[gkey(DB.current,id)], note = gn ? `<p class="gnote">${esc(gn)}</p>` : '';
   const g=liveGen(id);
-  if(g) return `<div class="reply live" data-gen="${id}" data-key="r${id}"><div class="rhead"><span class="who">Claude · ${esc(g.tier||opts.model)}</span><button class="rmore" data-stop="${id}" title="Stop this reply${id===sel?' (Esc)':''}">Stop</button></div><div class="rbody">${g.text?md(g.text):'<p class="thinking">Thinking…</p>'}</div>${replyFoot(id)}</div>`;
+  if(g) return `<div class="reply live" data-gen="${id}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude · ${esc(g.tier||opts.model)}</span><span class="ts" data-since="${g.started||Date.now()}" title="Time so far">${fmtElapsed(Date.now()-(g.started||Date.now()))}</span></span><button class="rmore" data-stop="${id}" title="Stop this reply${id===sel?' (Esc)':''}">Stop</button></div><div class="rbody">${g.text?md(g.text):'<p class="thinking">Thinking…</p>'}</div>${replyFoot(id)}</div>`;
   if(!n.reply && queuedGen(id)){
     const w=waitingOn(genQueue.find(q=>q.sid===DB.current && q.id===id));
     return `<div class="reply empty" data-key="r${id}"><div class="rhead"><span class="who">Claude</span><button class="rmore" data-stop="${id}">Cancel</button></div><p class="thinking">${w!=null&&w!=='gone'?`Waiting for the reply to #${w} first…`:'Waiting its turn…'}</p></div>`;
@@ -4875,10 +4995,10 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}${!(reviewAsk && reviewAsk.id===id)?`<button class="act" data-review="${id}" title="A second opinion from a new chat that sees only this reply">${AI}Review</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}<div class="ractrow">${replyTime(n)}<button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${replyTime(n)}${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -4954,7 +5074,7 @@ function simpleHTML(){
   const c=chain(tip), pathSet=new Set(path(tip)), r=S.nodes[c[0]];
   /* the thread follows this conversation's own line; what a merge brings in folds into one line at the merge */
   const items=c.map(id=>`<li class="g" data-key="n${S.nodes[id].alt ?? id}">${S.nodes[id].kind==='merge' ? mergeBoxHTML(id, pathSet) : rowHTML(id, pathSet)}</li>`).join('');
-  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="chathead" data-key="chathead"><button class="chatproj" data-projmenu aria-haspopup="menu" title="Project options">${esc(DB.spaces[DB.current].name)}</button><div class="chattitle"><h1>${esc(convTitle(r))}</h1><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div></div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
+  return `<section class="conv thread" data-conv="${r.id}" data-key="cv${convKey(r)}"><div class="chathead" data-key="chathead"><button class="chatproj" data-projmenu aria-haspopup="menu" title="Project options">${esc(DB.spaces[DB.current].name)}</button><div class="chattitle"><h1>${esc(convTitle(r))}</h1><button class="btn xs" data-convmenu="${r.id}" aria-haspopup="menu" aria-label="Chat options">⋯</button></div>${isArchived(r)?`<p class="archnote">Archived <button class="linkbtn" data-unarchive="${convKey(r)}">Unarchive</button></p>`:''}</div><ul class="tree thread">${items}</ul><div class="ops simpleops" data-key="osimple">${composerHTML(tip)}</div></section>`;
 }
 /* A merge in the thread: one line saying which branch came in, opening to the note Claude reads at the join
    and the prompts and replies the branch brings, which Claude sees as part of this conversation. */
@@ -5040,7 +5160,7 @@ function renderSpaces(){
   ul.innerHTML=spaceIds().map(id=>{
     const sp=DB.spaces[id], cur=id===DB.current, st=spaceStats(sp.tree);
     if(renamingSpace===id) return `<li class="sp ${cur?'cur':''}" data-space="${id}"><input class="spinput" id="spname-${id}" data-spname="${id}" value="${esc(sp.name)}" maxlength="60" aria-label="Project name"></li>`;
-    return `<li class="sp ${cur?'cur':''}" data-space="${id}"><button class="spmain" data-open="${id}" ${cur?'aria-current="page"':''}><span class="spname">${esc(sp.name)}</span><span class="spmeta">${st.convs} chat${st.convs===1?'':'s'} · ${st.prompts} prompt${st.prompts===1?'':'s'}</span></button><button class="spmore" data-spmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for ${esc(sp.name)}">⋯</button></li>`;
+    return `<li class="sp ${cur?'cur':''}" data-space="${id}"><button class="spmain" data-open="${id}" ${cur?'aria-current="page"':''}><span class="spname">${spaceUnread(id)&&!cur?'<span class="udot" aria-label="New replies"></span>':''}${esc(sp.name)}</span><span class="spmeta">${st.convs} chat${st.convs===1?'':'s'} · ${st.prompts} prompt${st.prompts===1?'':'s'}</span></button><button class="spmore" data-spmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for ${esc(sp.name)}">⋯</button></li>`;
   }).join('');
   if(renamingSpace){ const inp=document.getElementById('spname-'+renamingSpace); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
 }
@@ -5054,24 +5174,31 @@ const convListEl=document.getElementById('convList'), convFilterEl=document.getE
 let selecting=false, choosing=null, pickingRows=false; const checked=new Set();
 const EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.3 17.3 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+let convView='active';
 function renderConvs(){
   const q=convFilterEl.value.trim().toLowerCase(), cur=composeFor==='root' ? null : convKeyOf(sel);
-  const roots=orderedRoots(), list=roots.filter(r=>!q || convTitle(r).toLowerCase().includes(q)), onN=roots.filter(r=>!isHidden(r)).length, mode=visMode();
+  const nArch=vRoots().filter(isArchived).length; if(convView==='archived' && !nArch) convView='active';
+  const arch=convView==='archived';
+  const roots=orderedRoots(), listed=arch ? archivedRoots() : sortRoots(roots.slice(), convSort());
+  const list=listed.filter(r=>!q || convTitle(r).toLowerCase().includes(q)), onN=roots.filter(r=>!isHidden(r)).length, mode=visMode();
+  document.getElementById('cvBar').innerHTML=`<div class="segs cvview" role="group" aria-label="Which chats">${nArch||arch?`<button class="seg" data-cvview="active" aria-pressed="${!arch}">Chats</button><button class="seg" data-cvview="archived" aria-pressed="${arch}">Archived <span class="pill">${nArch}</span></button>`:'<span class="cvviewlabel">Chats</span>'}</div><button class="btn xs cvsort" data-cvsort aria-haspopup="menu" aria-expanded="false" title="Sort and group the chat list">${esc(CONV_SORTS[convSort()])} ▾</button>`;
   for(const k of [...checked]) if(!roots.some(r=>convKey(r)===k)) checked.delete(k);
   const item=r=>{
-    /* Chat view goes to any chat, so it shows none as hidden */
-    const k=convKey(r), on=opts.simple || !isHidden(r), n=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1;
+    /* Chat view goes to any chat, so it shows none as hidden; nor does the Archived list */
+    const k=convKey(r), on=opts.simple || arch || !isHidden(r), unread=!!convMeta(k).unread, n=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1;
     const b=Object.values(S.refs).filter(x=>S.nodes[x.tip] && convKeyOf(x.tip)===k).length;
     if(renamingConv===k) return `<li class="cv cur" data-key="cl${k}"><input class="spinput" id="cvname-${k}" data-cvname="${k}" value="${esc(convTitle(r))}" maxlength="120" aria-label="Conversation name"></li>`;
     const meta=`${n} prompt${n===1?'':'s'} · ${b} branch${b===1?'':'es'}`;
     if(selecting) return `<li class="cv ${on?'':'off'} ${checked.has(k)?'checked':''}" data-key="cl${k}"><input type="checkbox" class="cvcheck" id="ck-${k}" data-check="${k}" ${checked.has(k)?'checked':''} aria-label="Select ${esc(convTitle(r))}"><label class="cvmain" for="ck-${k}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></label></li>`;
-    const tip = opts.simple ? (cur===k ? 'The chat you’re in' : 'Open it') : pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
+    const tip = arch ? (opts.simple ? 'Open it (it stays archived)' : 'Archived. Click to bring it back and open it.') : opts.simple ? (cur===k ? 'The chat you’re in' : 'Open it') : pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
       : !on ? 'Hidden. Click to show it and jump to it.'
       : cur===k ? (onN>1 ? 'Click again to hide the other chats' : 'Click again to show all chats') : 'Jump to it';
-    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows&&!opts.simple?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
+    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'} ${unread?'unread':''}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows&&!opts.simple&&!arch?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}${unread?' · New replies':''}"><span class="cvname">${unread?'<span class="udot" aria-label="Unread"></span>':''}${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
   };
   convListEl.classList.toggle('choosing', pickingRows && !opts.simple);
-  if(!q && !filters.size) convListEl.innerHTML = list.length ? list.map(item).join('') : '<li><p class="cvempty">No chats yet.</p></li>';
+  /* grouped by date when sorted by date, like Claude's list */
+  const grouped = list => { if(!convGrouped()) return list.map(item).join(''); let last=null, h=''; for(const r of list){ const g=dateGroup(convSort()==='updated' ? convUpdated(r) : convStarted(r)); if(g!==last){ h+=`<li class="cvsec cvdate">${esc(g)}</li>`; last=g; } h+=item(r); } return h; };
+  if(!q && !filters.size) convListEl.innerHTML = list.length ? grouped(list) : `<li><p class="cvempty">${arch?'No archived chats.':'No chats yet.'}</p></li>`;
   else if(!q){
     const hits=searchHits('');
     const what=[...filters].map(f=>({star:'starred',note:'with notes',skip:'left out'})[f]).join(', ');
@@ -5086,6 +5213,7 @@ function renderConvs(){
   }
   const tools=document.getElementById('cvTools'), none=checked.size?'':'disabled';
   tools.classList.toggle('selecting', selecting);
+  tools.hidden = arch && !selecting;
   tools.classList.remove('choosing');
   if(selecting){
     tools.innerHTML=`<div class="seltop"><span class="count">${checked.size} of ${roots.length} selected</span><button class="btn xs" data-bulk="${checked.size===roots.length?'none':'all'}">${checked.size===roots.length?'Select none':'Select all'}</button></div>
@@ -5307,6 +5435,8 @@ function showSelection(prevSel){ animRender([sel, prevSel], true); }
 function openConv(key){
   closeDrawers();
   const r=vRoots().find(x=>convKey(x)===+key); if(!r) return;
+  /* in Editor, an archived chat comes back to the list and the page; Chat view just opens it */
+  if(!opts.simple && isArchived(r)){ delete S.convs[+key].archived; delete S.convs[+key].hidden; if(!vRoots().some(isArchived)) convView='active'; toast(`“${clip(convTitle(r),40)}” is back in your chats`); }
   if(opts.simple){
     const m=convMeta(+key).sel;
     composeFor=null; pick=null; renaming=false; simpleTip=null;
@@ -5400,6 +5530,7 @@ function gotoNode(id){
   closeDrawers();
   const k=convKeyOf(id), root=vRoots().find(r=>convKey(r)===k) || S.nodes[chain(id)[0]];
   /* in Editor the chat is shown (or focused) first; Chat view goes there without changing which chats are hidden */
+  if(!opts.simple && isArchived(root)){ delete S.convs[k].archived; }
   if(!opts.simple && visMode()!=='focus' && isHidden(root)) setHidden([k], false);
   composeFor=null; pick=null; renaming=false;
   sel=id; setActivePath(id); syncHead(); lastConv=k;
@@ -5628,6 +5759,205 @@ function spaceMenu(anchor, sid){
     {label:'Delete project', danger:true, disabled:!others.length, run:()=>deleteSpace(sid)}
   ]);
 }
+/* ---- Scheduled tasks ----
+   A prompt sent at a set time, once or on a schedule: in a chat (continuing its branch each time) or as a new chat
+   each time. The tasks are saved with everything else (opts.schedules); the server runs them, even while this page is
+   closed, and the page adds each result to its chat when it next can, marked unread if you're elsewhere. */
+const schedules = () => Array.isArray(opts.schedules) ? opts.schedules : (opts.schedules=[]);
+const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const clockText = hm => { const [h,m]=String(hm||'09:00').split(':').map(Number); return new Date(2000,0,1,h||0,m||0).toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'}); };
+function whenText(w){
+  if(!w) return '';
+  if('once' in w) return `Once, ${tsFull(w.once)}`;
+  if(w.every==='hour') return `Every hour at :${String(w.minute|0).padStart(2,'0')}`;
+  if(w.every==='day') return `Every day at ${clockText(w.time)}`;
+  if(w.every==='weekday') return `Weekdays at ${clockText(w.time)}`;
+  if(w.every==='week') return `Every ${DAYS[w.day|0]} at ${clockText(w.time)}`;
+  return '';
+}
+function whereText(t){
+  const sp=DB.spaces[t.sid]; if(!sp) return 'Its project is gone';
+  return withTree(sp.tree, ()=>{
+    const rf=t.ref && S.refs[t.ref], at=rf && S.nodes[rf.tip] ? rf.tip : (t.after!=null && S.nodes[t.after] ? t.after : null);
+    if(at==null) return `${sp.name} · a new chat each time`;
+    return `${sp.name} · ${convTitle(S.nodes[chain(at)[0]])}${rf?` · ${refName(t.ref)}`:` · after #${at}`}`;
+  });
+}
+const schedEl=(()=>{ const w=document.createElement('div'); w.className='setwrap'; w.id='schedSheet'; w.hidden=true; w.innerHTML='<div class="setbox fsheet ssheet" role="dialog" aria-modal="true" aria-labelledby="schedTitle"></div>'; document.body.append(w); return w; })();
+let schedUI=null, schedStatus={};
+/* opens the list, or the form for a new task (from the prompt you're at, with text typed so far) */
+function openSchedules(newFrom){
+  schedUI={mode:'list'};
+  if(newFrom) schedUI={mode:'form', form:newFrom};
+  schedEl.hidden=false; document.body.style.overflow='hidden';
+  paintSchedules(); refreshSchedStatus();
+  setTimeout(()=>{ const f=schedEl.querySelector('textarea, [data-snew], button'); if(f) f.focus({preventScroll:true}); }, 30);
+}
+function closeSchedules(){ schedUI=null; schedEl.hidden=true; document.body.style.overflow=''; }
+async function refreshSchedStatus(){
+  if(!hasServer()) return;
+  try{ const r=await fetch('/api/schedule/status'); if(r.ok){ schedStatus=await r.json(); if(schedUI && schedUI.mode==='list') paintSchedules(); } }catch(e){}
+}
+/* a new task's starting point: where you are, or a new chat */
+function schedFormFor(at, text){
+  const t={text:text||'', name:'', repeat:'day', time:'09:00', minute:0, day:new Date().getDay(), at:'', tier:opts.model||'default', sid:DB.current, ref:null, after:null, where:'new'};
+  const d=new Date(Date.now()+3600e3); d.setMinutes(0,0,0);
+  t.at=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  if(at!=null && S.nodes[at]){ const tip=refsAt(at)[0]; t.ref=tip||null; t.after=at; t.where='here'; }
+  return t;
+}
+function formFromTask(task){
+  const w=task.when, f={id:task.id, text:task.text, name:task.name||'', tier:task.tier||'default', sid:task.sid, ref:task.ref||null, after:task.after??null, where:(task.ref||task.after!=null)?'here':'new', repeat:'once' in w ? 'once' : w.every, time:w.time||'09:00', minute:w.minute|0, day:w.day??1, at:''};
+  const d=new Date('once' in w ? w.once : Date.now()+3600e3); f.at=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  return f;
+}
+function paintSchedules(){
+  if(!schedUI) return;
+  const box=schedEl.firstChild;
+  if(!hasServer()){ box.innerHTML=`<div class="sethead"><h2 id="schedTitle">Scheduled tasks</h2><button class="btn" data-sclose>Done</button></div><div class="fbody"><p class="note">Scheduled tasks need the Treechats server, which runs them. Start Treechats with npm start.</p></div>`; return; }
+  if(schedUI.mode==='list'){
+    const list=schedules();
+    const row=t=>{
+      const st=schedStatus[t.id]||{};
+      const status=[t.paused?'Paused':st.running?'Running now…':st.next?`Next: ${new Date(st.next).toLocaleString(undefined,{weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}`:('once' in t.when && st.last?'Done':''), st.last?`last ran ${tsShort(st.last)}${tsShort(st.last).includes(':')?'':' '+new Date(st.last).toLocaleTimeString(undefined,{hour:'numeric', minute:'2-digit'})}`:'', st.error?`failed: ${st.error}`:''].filter(Boolean).join(' · ');
+      return `<li class="srow ${t.paused?'paused':''}"><div class="smain"><b>${esc(t.name||clip(t.text.replace(/\s+/g,' '),60))}</b><span class="note">${esc(whenText(t.when))} · ${esc(whereText(t))}</span><span class="note ${st.error?'serr':''}">${esc(status)}</span></div>
+        <div class="sacts"><button class="btn xs" data-srun="${t.id}" ${st.running||sampleState!=='ready'?'disabled':''}>Run now</button><button class="btn xs" data-spause="${t.id}">${t.paused?'Resume':'Pause'}</button><button class="btn xs" data-sedit="${t.id}">Edit</button><button class="btn xs danger" data-sdel="${t.id}">Delete</button></div></li>`;
+    };
+    box.innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="schedTitle">Scheduled tasks</h2><p class="note">Prompts sent at a set time. Treechats runs them while it’s running, even with this page closed; one that was due while it was off runs when it starts.</p></div><div class="bar"><button class="btn primary" data-snew>+ New task</button><button class="btn" data-sclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+      <div class="fbody">${list.length?`<ul class="slist">${list.map(row).join('')}</ul>`:'<p class="note sempty">No scheduled tasks yet. Make one here, with <code>/schedule</code> in the input box, or from a chat’s ⋯ menu.</p>'}</div>`;
+    return;
+  }
+  const f=schedUI.form, here=f.where==='here' && (f.ref||f.after!=null);
+  const hereLabel = (f.ref||f.after!=null) ? whereText({sid:f.sid, ref:f.ref, after:f.after}).replace(/^[^·]*· /,'') : '';
+  const tiers=TIERS.map(([v,l])=>`<option value="${v}" ${f.tier===v?'selected':''}>${esc(l)}</option>`).join('');
+  box.innerHTML=`<div class="sethead"><h2 id="schedTitle">${f.id?'Edit scheduled task':'Schedule a prompt'}</h2><div class="bar"><button class="btn" data-sback>${schedules().length?'Back':'Cancel'}</button></div></div>
+    <form class="fbody sform" data-sform>
+      <label class="pfield">Prompt<textarea data-sf="text" rows="4" required placeholder="What should Claude do, for example: Summarize what changed in this project since yesterday.">${esc(f.text)}</textarea></label>
+      <label class="pfield"><span>Name <span class="note" style="font-weight:400">(optional)</span></span><input data-sf="name" value="${esc(f.name)}" maxlength="60" placeholder="Shown in the list and as the chat title"></label>
+      <fieldset class="sfset"><legend>Where</legend>
+        ${(f.ref||f.after!=null)?`<label class="sradio"><input type="radio" name="swhere" value="here" ${here?'checked':''}> Continue ${esc(hereLabel)}<span class="note">Each run is added at the end${f.ref?' of the branch':''}, with the chat so far as context.</span></label>`:''}
+        <label class="sradio"><input type="radio" name="swhere" value="new" ${here?'':'checked'}> A new chat each time<span class="note">In ${esc(DB.spaces[f.sid]?.name||'this project')}, with the project’s instructions and files.</span></label>
+      </fieldset>
+      <fieldset class="sfset"><legend>When</legend>
+        <div class="srowin"><select data-sf="repeat" aria-label="How often">${[['once','Once'],['hour','Every hour'],['day','Every day'],['weekday','Weekdays'],['week','Every week']].map(([v,l])=>`<option value="${v}" ${f.repeat===v?'selected':''}>${l}</option>`).join('')}</select>
+        ${f.repeat==='once'?`<input type="datetime-local" data-sf="at" value="${f.at}" aria-label="Date and time">`:''}
+        ${f.repeat==='week'?`<select data-sf="day" aria-label="Day">${DAYS.map((d,i)=>`<option value="${i}" ${+f.day===i?'selected':''}>${d}</option>`).join('')}</select>`:''}
+        ${f.repeat==='hour'?`<label class="inl">at minute <input type="number" min="0" max="59" data-sf="minute" value="${f.minute|0}" aria-label="Minute past the hour"></label>`:''}
+        ${['day','weekday','week'].includes(f.repeat)?`<input type="time" data-sf="time" value="${f.time}" aria-label="Time">`:''}</div>
+      </fieldset>
+      <label class="pfield">Model<select data-sf="tier">${tiers}</select></label>
+      <p class="perr" data-serr role="alert"></p>
+      <div class="tbar"><button class="btn primary">${f.id?'Save':'Schedule it'}</button>${f.id?`<button type="button" class="btn danger" data-sdel="${f.id}">Delete</button>`:''}</div>
+    </form>`;
+}
+function readSchedForm(){
+  const f=schedUI.form, v=k=>{ const e=schedEl.querySelector(`[data-sf="${k}"]`); return e ? e.value : null; };
+  for(const k of ['text','name','repeat','at','day','minute','time','tier']){ const x=v(k); if(x!=null) f[k]=x; }
+  const w=schedEl.querySelector('input[name="swhere"]:checked'); if(w) f.where=w.value;
+}
+function saveSchedForm(){
+  readSchedForm();
+  const f=schedUI.form, err=m=>{ const e=schedEl.querySelector('[data-serr]'); if(e) e.textContent=m; };
+  if(!f.text.trim()) return err('Write the prompt to send.');
+  let when;
+  if(f.repeat==='once'){ const t=new Date(f.at).getTime(); if(!t) return err('Choose a date and time.'); if(t<Date.now()-60000) return err('That time has passed. Choose one in the future.'); when={once:t}; }
+  else if(f.repeat==='hour') when={every:'hour', minute:Math.min(59, Math.max(0, +f.minute|0))};
+  else if(f.repeat==='week') when={every:'week', day:+f.day|0, time:f.time||'09:00'};
+  else when={every:f.repeat, time:f.time||'09:00'};
+  const task={id:f.id||('t'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)), name:f.name.trim()||undefined, text:f.text.trim(), sid:f.sid, ref:f.where==='here'?f.ref:null, after:f.where==='here'?f.after:null, when, tier:f.tier, created:Date.now()};
+  const list=schedules(), i=list.findIndex(x=>x.id===task.id);
+  if(i>=0){ task.paused=list[i].paused; task.created=list[i].created; if(JSON.stringify(list[i].when)!==JSON.stringify(when)) task.created=Date.now(); list[i]=task; } else list.push(task);
+  save(); flushState().then(refreshSchedStatus);
+  schedUI={mode:'list'}; paintSchedules();
+  toast(`${i>=0?'Saved':'Scheduled'}: ${whenText(when)}`);
+}
+schedEl.addEventListener('click', e=>{
+  const c=q=>e.target.closest(q);
+  if(e.target===schedEl || c('[data-sclose]')){ closeSchedules(); return; }
+  if(c('[data-snew]')){ schedUI={mode:'form', form:schedFormFor(opts.simple?composeParent():sel, '')}; paintSchedules(); schedEl.querySelector('textarea')?.focus(); return; }
+  if(c('[data-sback]')){ if(schedules().length){ schedUI={mode:'list'}; paintSchedules(); } else closeSchedules(); return; }
+  const ed=c('[data-sedit]'); if(ed){ const t=schedules().find(x=>x.id===ed.dataset.sedit); if(t){ schedUI={mode:'form', form:formFromTask(t)}; paintSchedules(); } return; }
+  const pa=c('[data-spause]'); if(pa){ const t=schedules().find(x=>x.id===pa.dataset.spause); if(t){ if(t.paused) delete t.paused; else t.paused=true; save(); flushState().then(refreshSchedStatus); paintSchedules(); } return; }
+  const de=c('[data-sdel]'); if(de){ const i=schedules().findIndex(x=>x.id===de.dataset.sdel); if(i>=0){ const [was]=schedules().splice(i,1); save(); schedUI={mode:'list'}; paintSchedules(); toast('Deleted the task', false, {label:'Undo', fn:()=>{ schedules().splice(i,0,was); save(); paintSchedules(); }}); } return; }
+  const ru=c('[data-srun]'); if(ru){ const id=ru.dataset.srun; flushState().then(()=>folderApi('/api/schedule/run', {id})).then(()=>{ toast('Running it now. The reply is added when it’s ready.'); setTimeout(refreshSchedStatus, 300); }).catch(err=>toast(err.message)); return; }
+});
+schedEl.addEventListener('change', e=>{ if(e.target.matches('[data-sf="repeat"], input[name="swhere"]')){ readSchedForm(); paintSchedules(); } });
+schedEl.addEventListener('submit', e=>{ e.preventDefault(); saveSchedForm(); });
+schedEl.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); closeSchedules(); } });
+/* results from the server: each becomes a prompt with its reply, at the end of its branch, or a new chat */
+let draining=false;
+async function drainInbox(){
+  if(!hasServer() || draining) return; draining=true;
+  try{
+    const r=await fetch('/api/schedule/inbox'); if(!r.ok) return;
+    const list=await r.json(); if(!list.length) return;
+    const keys=[], here=[];
+    for(const x of list){
+      keys.push(x.key);
+      const t=treeOf(x.sid); if(!t) continue;
+      if(x.error){ toast(`Scheduled task “${clip(x.name,40)}” didn’t run: ${x.error}`, false, {label:'See tasks', fn:()=>openSchedules()}); continue; }
+      const nid=withTree(t, ()=>{
+        const parent = x.parent!=null && S.nodes[x.parent] ? x.parent : null, nid=S.nextId++;
+        S.nodes[nid]={id:nid, parents:parent!=null?[parent]:[], text:x.text, reply:x.reply, ts:x.started, rt:[x.started, x.finished], model:x.tier, sched:{id:x.task, name:x.name}};
+        if(x.usage) S.nodes[nid].usage=x.usage;
+        if(parent!=null){ for(const ref of Object.values(S.refs)) if(ref.tip===parent) ref.tip=nid; }
+        else { newRef('main', nid); S.convs=S.convs||{}; S.convs[nid]=Object.assign(S.convs[nid]||{}, {title:clip(x.name,120)}); }
+        touch(nid);
+        return nid;
+      });
+      markUnreadFor(x.sid, nid);
+      if(x.sid===DB.current) here.push(nid);
+    }
+    save(); await flushState();
+    await fetch('/api/schedule/ack', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({keys})});
+    if(here.length){ Motion.run(treeEl, ()=>render(true), here); const last=here[here.length-1]; toast(`A scheduled task ran: “${clip(list.find(x=>!x.error)?.name||'',40)}”`, false, {label:'Open', fn:()=>gotoNode(last)}); }
+    renderSpaces();
+    if(schedUI) refreshSchedStatus();
+  }catch(e){} finally{ draining=false; }
+}
+function sortMenu(anchor){
+  const cur=convSort(), mark=(on, l)=>(on?'✓ ':'  ')+l;
+  openMenu(anchor, [
+    {heading:'Sort chats by'},
+    ...Object.entries(CONV_SORTS).map(([k,l])=>({label:mark(cur===k, l), run:()=>setConvSort(k)})),
+    {sep:true},
+    {label:mark(convGrouped(), 'Group by date'), disabled:cur==='name'||cur==='custom', run:()=>{ opts.convGroup = opts.convGroup===false; save(); Motion.run(convListEl, renderConvs); }},
+    ...(cur==='custom' ? [{label:'  Forget your order', run:()=>{ commit('Forgot your chat order', ()=>{ delete S.convOrder; }, {touch:false}); }}] : []),
+  ]);
+}
+function setConvSort(k){
+  if(convSort()===k) return;
+  /* switching to your own order starts from the order the list is in now */
+  if(k==='custom' && !(S.convOrder||[]).length) S.convOrder=sortRoots(vRoots(), convSort()).map(convKey);
+  opts.convSort=k; save();
+  Motion.run(treeEl, ()=>render(true), []);
+  toast(`Sorted by ${CONV_SORTS[k].toLowerCase()}${k==='custom'?'. Drag chats in the list to reorder them.':''}`);
+}
+/* archive: off the list and the page, kept under Archived; nothing is deleted */
+function setArchived(k, on){
+  const r=vRoots().find(x=>convKey(x)===k); if(!r) return;
+  const wasCur = convKeyOf(sel)===k;
+  commit(`${on?'Archived':'Unarchived'} “${clip(convTitle(r),40)}”`, ()=>{
+    S.convs[k]=Object.assign(S.convs[k]||{});
+    if(on){ S.convs[k].archived=true; delete S.convs[k].unread; } else delete S.convs[k].archived;
+    if(on && wasCur && !opts.simple) sel=null;
+  }, {touch:false, hidden:true});
+}
+function setUnread(k, on){ S.convs[k]=Object.assign(S.convs[k]||{}); if(on) S.convs[k].unread=true; else delete S.convs[k].unread; save(); Motion.run(convListEl, renderConvs); renderSpaces(); }
+/* a reply that lands while you're somewhere else marks its chat unread; opening the chat reads it */
+function markUnreadFor(sid, id){
+  const t=treeOf(sid); if(!t || !t.nodes[id]) return;
+  const k=withTree(t, ()=>convKeyOf(id)); if(k==null) return;
+  const here = sid===DB.current && convKeyOf(sel)===k && document.visibilityState==='visible';
+  if(here) return;
+  t.convs=t.convs||{}; t.convs[k]=Object.assign(t.convs[k]||{}, {unread:true});
+}
+function readCurrent(){
+  if(document.visibilityState!=='visible' || !S || !S.convs) return;
+  const k=convKeyOf(sel); if(k!=null && S.convs[k] && S.convs[k].unread){ delete S.convs[k].unread; if(typeof renderConvs==='function') renderConvs(); renderSpaces(); }
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ readCurrent(); save(); } });
+const spaceUnread = sid => { const t=treeOf(sid); return !!t && Object.values(t.convs||{}).some(m=>m && m.unread && !m.archived); };
 function convMenu(anchor, rootId, full){
   const others=spaceIds().filter(x=>x!==DB.current);
   const linked=[...component(rootId)].filter(x=>!S.nodes[x].parents.length).length-1;
@@ -5636,6 +5966,9 @@ function convMenu(anchor, rootId, full){
     {label:'Rename', run:()=>{ renamingConv=k; if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } Motion.run(convListEl, renderConvs); }},
     ...(visMode()==='select' && !opts.simple ? [isHidden(S.nodes[rootId]) ? {label:'Show', run:()=>pickToggle(k)} : {label:'Hide', run:()=>pickToggle(k)}] : []),
     ...(opts.simple ? [] : [{label:'Focus on this one', run:()=>{ if(visMode()==='focus' && convKeyOf(sel)===k) return; const r=S.nodes[rootId]; sel=convMeta(k).sel!=null && S.nodes[convMeta(k).sel] ? convMeta(k).sel : convTip(r); lastConv=k; setVisMode('focus'); }}]),
+    {label:'Schedule a prompt here…', run:()=>{ const tip=convKeyOf(sel)===k ? (opts.simple?composeParent():sel) : convTip(S.nodes[rootId]); openSchedules(schedFormFor(tip, '')); }},
+    convMeta(k).unread ? {label:'Mark as read', run:()=>setUnread(k, false)} : {label:'Mark as unread', run:()=>setUnread(k, true)},
+    isArchived(S.nodes[rootId]) ? {label:'Unarchive', run:()=>setArchived(k, false)} : {label:'Archive', run:()=>setArchived(k, true)},
     {label:'Clone', run:()=>duplicateConversation(rootId, DB.current)},
     {label:'Copy as Markdown', run:()=>copyText(treeMarkdown(rootId))},
     {label:'Copy context as a prompt', run:()=>copyContextPrompt(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
@@ -5717,7 +6050,11 @@ function setView(chat){
      it. (Chat view goes to any chat without changing which are hidden, so this is where it catches up.) */
   else if(composeFor!=='root'){
     const k=convKeyOf(sel);
-    if(k!=null){ lastConv=k; if(visMode()==='focus') applyVis(); else setOff(k, false); }
+    if(k!=null){
+      lastConv=k;
+      if(isArchived(S.nodes[chain(sel)[0]])){ delete S.convs[k].archived; toast(`“${clip(convTitle(S.nodes[chain(sel)[0]]),40)}” is back in your chats`); }
+      if(visMode()==='focus') applyVis(); else setOff(k, false);
+    }
   }
   save();
   const kept=swapView(()=>{ applySimple(); render(true); });
@@ -5740,6 +6077,32 @@ convListEl.addEventListener('click', e=>{
   const t=e.target.closest('[data-toggleconv]'); if(t){ const k=+t.dataset.toggleconv, r=vRoots().find(x=>convKey(x)===k); chooseApply(()=>setOff(k, !isHidden(r))); return; }
   const hb=e.target.closest('[data-hit]'); if(hb){ gotoNode(+hb.dataset.hit); return; }
   const o=e.target.closest('[data-openconv]'); if(o){ if(pickingRows) pickToggle(+o.dataset.openconv); else openConv(+o.dataset.openconv); }
+});
+document.getElementById('cvBar').addEventListener('click', e=>{
+  const v=e.target.closest('[data-cvview]'); if(v){ if(convView!==v.dataset.cvview){ convView=v.dataset.cvview; Motion.run(convListEl, renderConvs); } return; }
+  const so=e.target.closest('[data-cvsort]'); if(so){ sortMenu(so); return; }
+});
+treeEl.addEventListener('click', e=>{ const u=e.target.closest('[data-unarchive]'); if(u) setArchived(+u.dataset.unarchive, false); });
+/* drag a chat in the list to put it in your own order */
+let dropAt=null;
+convListEl.addEventListener('dragover', e=>{
+  if(dragConv==null || convView!=='active' || convFilterEl.value.trim() || filters.size) return;
+  const li=e.target.closest('.cv[data-key]'); for(const x of convListEl.querySelectorAll('.dropabove,.dropbelow')) x.classList.remove('dropabove','dropbelow');
+  if(!li) return;
+  const k=+li.dataset.key.slice(2); if(k===convKey(S.nodes[dragConv])) return;
+  const r=li.getBoundingClientRect(), after=e.clientY>r.top+r.height/2;
+  e.preventDefault(); e.dataTransfer.dropEffect='move'; li.classList.add(after?'dropbelow':'dropabove'); dropAt={k, after};
+});
+convListEl.addEventListener('dragleave', e=>{ if(!convListEl.contains(e.relatedTarget)){ for(const x of convListEl.querySelectorAll('.dropabove,.dropbelow')) x.classList.remove('dropabove','dropbelow'); dropAt=null; } });
+convListEl.addEventListener('drop', e=>{
+  if(dragConv==null || !dropAt) return;
+  e.preventDefault();
+  const moving=convKey(S.nodes[dragConv]), at=dropAt; dropAt=null; dragConv=null;
+  const order=sortRoots(orderedRoots().slice(), convSort()).map(convKey).filter(k=>k!==moving);
+  order.splice(order.indexOf(at.k)+(at.after?1:0), 0, moving);
+  const archived=vRoots().filter(isArchived).map(convKey), was=convSort();
+  commit('Moved a chat in your order', ()=>{ S.convOrder=[...order, ...archived]; }, {touch:false});
+  if(was!=='custom'){ opts.convSort='custom'; save(); Motion.run(treeEl, ()=>render(true), []); toast('Sorted by your order now. Change it with the sort button above the list.'); }
 });
 convListEl.addEventListener('change', e=>{ const c=e.target.closest('[data-check]'); if(!c) return; const k=+c.dataset.check; c.checked ? checked.add(k) : checked.delete(k); renderConvs(); });
 convListEl.addEventListener('dblclick', e=>{ const o=e.target.closest('[data-openconv]'); if(o){ renamingConv=+o.dataset.openconv; renderConvs(); } });
@@ -7177,6 +7540,7 @@ window.addEventListener('scroll', onScroll, {passive:true});
 Files.init().then(()=>{
   render(true);
   /* a note from the unlock screen (the key couldn't be kept in the keychain, say) */
+  drainInbox();
   try{ const w=sessionStorage.getItem('treechats-warning'); if(w){ sessionStorage.removeItem('treechats-warning'); toast(w, false, {label:'Open settings', fn:()=>openSettings('privacy')}); } }catch(e){}
 });
 load(); applyAppearance(); applyLayout(); applySimple(); renderOpsCard();

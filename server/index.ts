@@ -20,6 +20,7 @@ import { loadState } from './context.ts';
 import { FolderError, listFolder, readFolderFiles, writeFolderFile } from './folders.ts';
 import { listSessions, parseSession, readSession, SessionError } from './sessions.ts';
 import { gitDiff, gitStatus, runCommand } from './run.ts';
+import { ack, inbox, onScheduleResult, runTask, scheduleStatus, startScheduler } from './schedule.ts';
 
 const app = new Hono();
 loadKeyFromKeychain();
@@ -268,6 +269,19 @@ app.post('/api/key/move', (c) => {
   catch (e) { return c.json({ code: e instanceof SecretError ? e.code : 'failed', message: (e as Error).message }, 400); }
 });
 app.post('/api/key/remove', (c) => { removeKey(); return c.json(keyStatus()); });
+
+/* ---- scheduled tasks (see server/schedule.ts) ---- */
+app.get('/api/schedule/status', (c) => c.json(scheduleStatus()));
+app.get('/api/schedule/inbox', (c) => c.json(inbox()));
+app.post('/api/schedule/ack', async (c) => { const b = await body(c); ack(Array.isArray(b.keys) ? b.keys.map(String) : []); return c.json({ ok: true }); });
+app.post('/api/schedule/run', async (c) => {
+  const b = await body(c);
+  /* answers at once; the result arrives through the inbox like any other run */
+  runTask(String(b.id || '')).catch(() => {});
+  return c.json({ ok: true });
+});
+onScheduleResult(() => { for (const s of lockListeners) s.writeSSE({ event: 'inbox', data: '' }).catch(() => {}); });
+startScheduler();
 
 /* Claude Code's sign-in is checked when Treechats starts, and again whenever the page loads while it isn't ready */
 let cli: Promise<{ found: boolean; authMethod?: string; error?: string }> | null = null;

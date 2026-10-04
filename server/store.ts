@@ -93,6 +93,11 @@ export function putValue(key: string, value: string): void {
   }
 }
 
+/* a value with no snapshots, for the server's own bookkeeping (scheduled runs); encrypted like the rest */
+export function putPlainValue(key: string, value: string): void {
+  putStmt.run(key, vaultRecord() ? vault.seal(value) : value, Date.now());
+}
+
 export function snapshots(key: string) {
   if (vaultRecord() && !vault.isUnlocked()) throw new vault.VaultError('locked', vault.LOCKED_MSG);
   return listSnaps.all(key) as { id: number; saved: number; bytes: number }[];

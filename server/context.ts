@@ -126,6 +126,23 @@ export function turnsFor(state: State, tree: Tree, id: number) {
   return out;
 }
 
+/* the turns a new prompt sends: the context up to parent (or, for a new chat, the standing instructions and project
+   files), then the prompt itself */
+export function turnsForNew(state: State, tree: Tree, parent: number | null, text: string) {
+  if (parent != null) {
+    const t = turnsFor(state, tree, parent);
+    if (t.length && t[t.length - 1].role === 'user') t[t.length - 1].content += '\n\n' + text; else t.push({ role: 'user', content: text });
+    return t;
+  }
+  const prompts = state.opts?.prompts || {}, out: { role: 'user' | 'assistant'; content: string }[] = [];
+  const parts: string[] = [];
+  const instr = (prompts.instructions ?? '').trim(); if (instr) parts.push(instr);
+  if (tree.files && tree.files.length) { const fe = (prompts.fileEdits ?? FILE_EDITS).trim(); parts.push('Files shared in this project:\n\n' + tree.files.map(fileStub).join('\n\n') + (fe ? '\n\n' + fe : '')); }
+  parts.push(text);
+  out.push({ role: 'user', content: parts.join('\n\n') });
+  return out;
+}
+
 /* the same block as the page's "Copy as a prompt" */
 export function contextPrompt(state: State, tree: Tree, id: number) {
   const sys = systemOf(tree, id);

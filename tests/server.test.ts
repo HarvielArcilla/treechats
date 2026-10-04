@@ -231,3 +231,18 @@ test('API key in the keyring: saved through stdin, read back at start, removed (
     config.apiKey = was.key; config.apiKeySource = was.src;
   } finally { process.env.PATH = path; }
 });
+
+test('scheduled tasks: when each kind runs next', async () => {
+  const { nextRun } = await import('../server/schedule.ts');
+  const at = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
+  const sat = at(2026, 10, 3, 22, 30); /* a Saturday evening */
+  assert.equal(nextRun({ once: at(2026, 10, 4, 9) }, sat), at(2026, 10, 4, 9));
+  assert.equal(nextRun({ once: at(2026, 10, 4, 9) }, at(2026, 10, 4, 9)), null, 'a one-time task runs once');
+  assert.equal(nextRun({ every: 'hour', minute: 15 }, sat), at(2026, 10, 3, 23, 15));
+  assert.equal(nextRun({ every: 'hour', minute: 45 }, sat), at(2026, 10, 3, 22, 45));
+  assert.equal(nextRun({ every: 'day', time: '09:00' }, sat), at(2026, 10, 4, 9));
+  assert.equal(nextRun({ every: 'day', time: '23:00' }, sat), at(2026, 10, 3, 23));
+  assert.equal(nextRun({ every: 'weekday', time: '09:00' }, sat), at(2026, 10, 5, 9), 'skips the weekend');
+  assert.equal(nextRun({ every: 'week', day: 3, time: '08:30' }, sat), at(2026, 10, 7, 8, 30), 'the next Wednesday');
+  assert.equal(nextRun({ every: 'week', day: 6, time: '22:00' }, sat), at(2026, 10, 10, 22), 'today’s time has passed, so next week');
+});
