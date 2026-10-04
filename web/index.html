@@ -5059,17 +5059,18 @@ function renderConvs(){
   const roots=orderedRoots(), list=roots.filter(r=>!q || convTitle(r).toLowerCase().includes(q)), onN=roots.filter(r=>!isHidden(r)).length, mode=visMode();
   for(const k of [...checked]) if(!roots.some(r=>convKey(r)===k)) checked.delete(k);
   const item=r=>{
-    const k=convKey(r), on=!isHidden(r), n=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1;
+    /* Chat view goes to any chat, so it shows none as hidden */
+    const k=convKey(r), on=opts.simple || !isHidden(r), n=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1;
     const b=Object.values(S.refs).filter(x=>S.nodes[x.tip] && convKeyOf(x.tip)===k).length;
     if(renamingConv===k) return `<li class="cv cur" data-key="cl${k}"><input class="spinput" id="cvname-${k}" data-cvname="${k}" value="${esc(convTitle(r))}" maxlength="120" aria-label="Conversation name"></li>`;
     const meta=`${n} prompt${n===1?'':'s'} · ${b} branch${b===1?'':'es'}`;
     if(selecting) return `<li class="cv ${on?'':'off'} ${checked.has(k)?'checked':''}" data-key="cl${k}"><input type="checkbox" class="cvcheck" id="ck-${k}" data-check="${k}" ${checked.has(k)?'checked':''} aria-label="Select ${esc(convTitle(r))}"><label class="cvmain" for="ck-${k}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></label></li>`;
-    const tip = pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
+    const tip = opts.simple ? (cur===k ? 'The chat you’re in' : 'Open it') : pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
       : !on ? 'Hidden. Click to show it and jump to it.'
       : cur===k ? (onN>1 ? 'Click again to hide the other chats' : 'Click again to show all chats') : 'Jump to it';
-    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
+    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows&&!opts.simple?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
   };
-  convListEl.classList.toggle('choosing', pickingRows);
+  convListEl.classList.toggle('choosing', pickingRows && !opts.simple);
   if(!q && !filters.size) convListEl.innerHTML = list.length ? list.map(item).join('') : '<li><p class="cvempty">No chats yet.</p></li>';
   else if(!q){
     const hits=searchHits('');
@@ -5390,7 +5391,7 @@ function snippet(text, q){
   return (a?'…':'')+esc(t.slice(a,i))+'<mark>'+esc(t.slice(i,i+q.length))+'</mark>'+esc(t.slice(i+q.length,b))+(b<t.length?'…':'');
 }
 function hitHTML(h, q){
-  const n=S.nodes[h.id], root=S.nodes[chain(h.id)[0]], hid=isHidden(root), vs=versions(h.id);
+  const n=S.nodes[h.id], root=S.nodes[chain(h.id)[0]], hid=!opts.simple && isHidden(root), vs=versions(h.id);
   return `<li class="hit ${hid?'off':''}" data-key="h${h.id}${h.field}"><button class="cvmain" data-hit="${h.id}" title="Go to #${h.id}"><span class="hitsn">${snippet(n[h.field], q)}</span><span class="cvmeta">${h.field==='reply'?'Claude':'You'} · #${h.id}${vs.length>1?` · version ${vs.indexOf(h.id)+1}`:''} · ${esc(clip(convTitle(root),26))}${hid?' · hidden':''}</span></button></li>`;
 }
 /* go straight to a prompt: show its conversation if needed, switch to its reply version, and bring it into view */
@@ -5398,10 +5399,11 @@ function gotoNode(id){
   if(!S.nodes[id]) return;
   closeDrawers();
   const k=convKeyOf(id), root=vRoots().find(r=>convKey(r)===k) || S.nodes[chain(id)[0]];
-  if(visMode()!=='focus' && isHidden(root)) setHidden([k], false);
+  /* in Editor the chat is shown (or focused) first; Chat view goes there without changing which chats are hidden */
+  if(!opts.simple && visMode()!=='focus' && isHidden(root)) setHidden([k], false);
   composeFor=null; pick=null; renaming=false;
   sel=id; setActivePath(id); syncHead(); lastConv=k;
-  if(visMode()==='focus') applyVis();
+  if(!opts.simple && visMode()==='focus') applyVis();
   save(); render(true);
   const row=treeEl.querySelector(`.row[data-id="${id}"]`);
   if(row){
@@ -5632,8 +5634,8 @@ function convMenu(anchor, rootId, full){
   const k=convKey(S.nodes[rootId]);
   openMenu(anchor, [
     {label:'Rename', run:()=>{ renamingConv=k; if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } Motion.run(convListEl, renderConvs); }},
-    ...(visMode()==='select' ? [isHidden(S.nodes[rootId]) ? {label:'Show', run:()=>pickToggle(k)} : {label:'Hide', run:()=>pickToggle(k)}] : []),
-    {label:'Focus on this one', run:()=>{ if(visMode()==='focus' && convKeyOf(sel)===k) return; const r=S.nodes[rootId]; sel=convMeta(k).sel!=null && S.nodes[convMeta(k).sel] ? convMeta(k).sel : convTip(r); lastConv=k; setVisMode('focus'); }},
+    ...(visMode()==='select' && !opts.simple ? [isHidden(S.nodes[rootId]) ? {label:'Show', run:()=>pickToggle(k)} : {label:'Hide', run:()=>pickToggle(k)}] : []),
+    ...(opts.simple ? [] : [{label:'Focus on this one', run:()=>{ if(visMode()==='focus' && convKeyOf(sel)===k) return; const r=S.nodes[rootId]; sel=convMeta(k).sel!=null && S.nodes[convMeta(k).sel] ? convMeta(k).sel : convTip(r); lastConv=k; setVisMode('focus'); }}]),
     {label:'Clone', run:()=>duplicateConversation(rootId, DB.current)},
     {label:'Copy as Markdown', run:()=>copyText(treeMarkdown(rootId))},
     {label:'Copy context as a prompt', run:()=>copyContextPrompt(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
@@ -5709,7 +5711,15 @@ function openInEditor(id){
 }
 function setView(chat){
   if(!!opts.simple===chat) return;
-  opts.simple=chat; simpleTip=null; pick=null; save();
+  opts.simple=chat; simpleTip=null; pick=null;
+  if(chat) pickingRows=false;
+  /* Back to Editor: the chat you were in is always on the page. In Selection it's shown; in Focus, the focus moves to
+     it. (Chat view goes to any chat without changing which are hidden, so this is where it catches up.) */
+  else if(composeFor!=='root'){
+    const k=convKeyOf(sel);
+    if(k!=null){ lastConv=k; if(visMode()==='focus') applyVis(); else setOff(k, false); }
+  }
+  save();
   const kept=swapView(()=>{ applySimple(); render(true); });
   if(opts.simple && !kept) scrollThreadEnd();
 }
