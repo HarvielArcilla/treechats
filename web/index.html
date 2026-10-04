@@ -107,6 +107,11 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
 .cvbar .cvsort:hover{color:var(--fg);border-color:var(--line)}
 .cvbar .pill{font:.68rem var(--mono);color:var(--muted);margin-left:3px}
 .cvsec.cvdate{font:600 .72rem var(--body);text-transform:none;letter-spacing:0;padding-top:12px}
+.pin{width:12px;height:12px;color:var(--muted);margin-right:5px;vertical-align:-1px;flex:none}
+.cvtag{font:500 .62rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:1px}
+.cv.archived .cvmain{opacity:.75}
+.cvbar .cvviewbtn{padding-left:4px}
+.menu .mh{margin-top:4px}
 .udot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:1px;flex:none}
 .cv.unread .cvname{font-weight:700;color:var(--fg)}
 .cv.dropabove{box-shadow:inset 0 2px 0 var(--accent)}
@@ -557,7 +562,7 @@ ol.ctx li.files .cid{color:var(--l1)}
 .pacts{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:-2px 0 6px 30px}
 .ts{font-size:.74rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px;cursor:default}
 .rwho .ts{padding:0}
-.ractrow .ts{opacity:0;transition:opacity .12s;padding-left:7px}
+.ractrow .ts{opacity:0;transition:opacity .12s;padding-left:10px}
 ul.thread .reply:hover .ractrow .ts,ul.thread .reply:focus-within .ractrow .ts,ul.thread > li.g:last-child .ractrow .ts{opacity:1}
 @media (hover:none){.ractrow .ts{opacity:1}}
 .pacts .ts{margin-left:auto}
@@ -1248,7 +1253,25 @@ function exampleTree(){
   t.nodes[16].reply=EX16_BEFORE;
   withTree(t, ()=>{ for(const n of Object.values(t.nodes)) if(n.reply && n.kind!=='merge') n.ctx=ctxSig(n.id); });
   t.nodes[16].reply=fixed;
+  exampleTimes(t);
   return t;
+}
+/* Times for the example chats, as if they had been written over the last few days: each chat on its own day, its
+   prompts a few minutes apart, each reply taking a little longer the longer it is. Also fills them in on an example
+   project made before prompts had times, for the prompts still as they came. */
+function exampleTimes(t, now=Date.now()){
+  withTree(t, ()=>{
+    const roots=vRoots().filter(r=>EXAMPLE.nodes[r.id]).sort((a,b)=>a.id-b.id), day=864e5;
+    roots.forEach((r, i)=>{
+      const daysAgo=roots.length-1-i, start=now-daysAgo*day-(daysAgo ? 3*3600e3 : 2*3600e3);
+      for(const id of [r.id, ...desc(r.id)]){
+        const n=S.nodes[id], e=EXAMPLE.nodes[id];
+        if(!n || !e || n.ts || n.text!==e.text) continue;
+        n.ts=start+(id-r.id)*4*60e3;
+        if(n.reply && n.kind!=='merge'){ const took=Math.min(45, 4+Math.round(n.reply.length/60))*1000; n.rt=[n.ts+15e3, n.ts+15e3+took]; }
+      }
+    });
+  });
 }
 
 const IS_MAC=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent);
@@ -1704,6 +1727,8 @@ function load(){
     DB.current = addSpace(old ? 'My project' : 'Example: rate limiter', old || exampleTree());
   }
   for(const id of Object.keys(DB.spaces)){ const sp=DB.spaces[id]; if(!valid(sp.tree)) sp.tree=emptyTree(); withTree(sp.tree, migrate); }
+  /* an example project from before prompts had times gets them once */
+  for(const sp of Object.values(DB.spaces)){ const t=sp.tree, n1=t.nodes[1]; if(n1 && !n1.ts && n1.text===EXAMPLE.nodes[1].text) exampleTimes(t); }
   DB.order=DB.order.filter(id=>DB.spaces[id]);
   for(const id of Object.keys(DB.spaces)) if(!DB.order.includes(id)) DB.order.push(id);
   if(!DB.order.length) DB.current=addSpace('My project', null);
@@ -1833,8 +1858,11 @@ function sortRoots(list, how){
   }
   return list.sort(byKey);
 }
+const isPinned = r => !!convMeta(convKey(r)).pinned;
+/* pinned chats first, keeping the order among each */
+const pinnedFirst = list => [...list.filter(isPinned), ...list.filter(r=>!isPinned(r))];
 /* the chats you work with, in page order (archived ones aside) */
-function orderedRoots(){ return sortRoots(vRoots().filter(r=>!isArchived(r)), convSort()==='updated' ? 'created' : convSort()); }
+function orderedRoots(){ return pinnedFirst(sortRoots(vRoots().filter(r=>!isArchived(r)), convSort()==='updated' ? 'created' : convSort())); }
 const archivedRoots = () => sortRoots(vRoots().filter(isArchived), convSort());
 const recentRoots = orderedRoots;
 /* archived chats are off the page too, like hidden ones (Chat view can still open one) */
@@ -5006,7 +5034,7 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}${!(reviewAsk && reviewAsk.id===id)?`<button class="act" data-review="${id}" title="A second opinion from a new chat that sees only this reply">${AI}Review</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}<div class="ractrow">${replyTime(n)}<button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${replyTime(n)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
   return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${replyTime(n)}${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}${replyFoot(id)}</div>`;
@@ -5168,11 +5196,14 @@ let editorFor = undefined, editBefore = null, savedTimer;
 function renderEditor(){ editorFor=sel; }
 function renderSpaces(){
   const ul=document.getElementById('spaceList');
-  ul.innerHTML=spaceIds().map(id=>{
+  /* pinned projects on top */
+  const ids=spaceIds(), pinned=ids.filter(id=>DB.spaces[id].pinned), rest=ids.filter(id=>!DB.spaces[id].pinned);
+  const row=id=>{
     const sp=DB.spaces[id], cur=id===DB.current, st=spaceStats(sp.tree);
     if(renamingSpace===id) return `<li class="sp ${cur?'cur':''}" data-space="${id}"><input class="spinput" id="spname-${id}" data-spname="${id}" value="${esc(sp.name)}" maxlength="60" aria-label="Project name"></li>`;
-    return `<li class="sp ${cur?'cur':''}" data-space="${id}"><button class="spmain" data-open="${id}" ${cur?'aria-current="page"':''}><span class="spname">${spaceUnread(id)&&!cur?'<span class="udot" aria-label="New replies"></span>':''}${esc(sp.name)}</span><span class="spmeta">${st.convs} chat${st.convs===1?'':'s'} · ${st.prompts} prompt${st.prompts===1?'':'s'}</span></button><button class="spmore" data-spmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for ${esc(sp.name)}">⋯</button></li>`;
-  }).join('');
+    return `<li class="sp ${cur?'cur':''}" data-space="${id}"><button class="spmain" data-open="${id}" ${cur?'aria-current="page"':''}><span class="spname">${spaceUnread(id)&&!cur?'<span class="udot" aria-label="New replies"></span>':''}${sp.pinned?PIN:''}${esc(sp.name)}</span><span class="spmeta">${st.convs} chat${st.convs===1?'':'s'} · ${st.prompts} prompt${st.prompts===1?'':'s'}</span></button><button class="spmore" data-spmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for ${esc(sp.name)}">⋯</button></li>`;
+  };
+  ul.innerHTML = pinned.length ? `<li class="cvsec cvdate">Pinned</li>${pinned.map(row).join('')}${rest.length?`<li class="cvsec cvdate">Others</li>${rest.map(row).join('')}`:''}` : ids.map(row).join('');
   if(renamingSpace){ const inp=document.getElementById('spname-'+renamingSpace); if(inp){ inp.focus({preventScroll:true}); inp.select(); } }
 }
 function renderHeader(){
@@ -5185,31 +5216,62 @@ const convListEl=document.getElementById('convList'), convFilterEl=document.getE
 let selecting=false, choosing=null, pickingRows=false; const checked=new Set();
 const EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.3 17.3 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
-let convView='active';
+/* which chats the list shows: active, archived or all; read, unread or either; and unread ones first or not */
+const listView = () => { const v=Object.assign({show:'active', read:'any', unreadFirst:false}, opts.convView); if(!['active','archived','all'].includes(v.show)) v.show='active'; if(!['any','unread','read'].includes(v.read)) v.read='any'; return v; };
+function setListView(patch){ opts.convView=Object.assign(listView(), patch); save(); Motion.run(convListEl, renderConvs); }
+function viewMenu2(anchor){
+  const v=listView(), nArch=vRoots().filter(isArchived).length, nUnread=vRoots().filter(r=>convMeta(convKey(r)).unread).length, mark=(on, l)=>(on?'✓ ':'\u2003 ')+l;
+  openMenu(anchor, [
+    {heading:'Show'},
+    {label:mark(v.show==='active', 'Active chats'), run:()=>setListView({show:'active'})},
+    {label:mark(v.show==='archived', `Archived${nArch?` (${nArch})`:''}`), run:()=>setListView({show:'archived'})},
+    {label:mark(v.show==='all', 'All chats'), run:()=>setListView({show:'all'})},
+    {heading:'Read'},
+    {label:mark(v.read==='any', 'Read and unread'), run:()=>setListView({read:'any'})},
+    {label:mark(v.read==='unread', `Unread only${nUnread?` (${nUnread})`:''}`), run:()=>setListView({read:'unread'})},
+    {label:mark(v.read==='read', 'Read only'), run:()=>setListView({read:'read'})},
+    {sep:true},
+    {label:mark(v.unreadFirst, 'Group unread first'), run:()=>setListView({unreadFirst:!v.unreadFirst})},
+    {label:'\u2003 Mark all as read', disabled:!nUnread, run:()=>{ for(const r of vRoots()){ const m=S.convs[convKey(r)]; if(m) delete m.unread; } save(); Motion.run(convListEl, renderConvs); renderSpaces(); toast('Marked every chat as read'); }},
+  ]);
+}
 function renderConvs(){
   const q=convFilterEl.value.trim().toLowerCase(), cur=composeFor==='root' ? null : convKeyOf(sel);
-  const nArch=vRoots().filter(isArchived).length; if(convView==='archived' && !nArch) convView='active';
-  const arch=convView==='archived';
-  const roots=orderedRoots(), listed=arch ? archivedRoots() : sortRoots(roots.slice(), convSort());
+  const lv=listView(), arch=lv.show==='archived';
+  const roots=orderedRoots();
+  const base = lv.show==='archived' ? archivedRoots() : lv.show==='all' ? sortRoots(vRoots(), convSort()) : sortRoots(roots.slice(), convSort());
+  const listed = base.filter(r=>lv.read==='any' || (lv.read==='unread') === !!convMeta(convKey(r)).unread);
   const list=listed.filter(r=>!q || convTitle(r).toLowerCase().includes(q)), onN=roots.filter(r=>!isHidden(r)).length, mode=visMode();
-  document.getElementById('cvBar').innerHTML=`<div class="segs cvview" role="group" aria-label="Which chats">${nArch||arch?`<button class="seg" data-cvview="active" aria-pressed="${!arch}">Chats</button><button class="seg" data-cvview="archived" aria-pressed="${arch}">Archived <span class="pill">${nArch}</span></button>`:'<span class="cvviewlabel">Chats</span>'}</div><button class="btn xs cvsort" data-cvsort aria-haspopup="menu" aria-expanded="false" title="Sort and group the chat list">${esc(CONV_SORTS[convSort()])} ▾</button>`;
+  const viewLabel=[{active:'Active chats', archived:'Archived', all:'All chats'}[lv.show], lv.read==='unread'?'unread':lv.read==='read'?'read':''].filter(Boolean).join(' · ');
+  document.getElementById('cvBar').innerHTML=`<button class="btn xs cvsort cvviewbtn" data-cvviewmenu aria-haspopup="menu" aria-expanded="false" title="Active, archived or all chats; read or unread">${esc(viewLabel)} ▾</button><button class="btn xs cvsort" data-cvsort aria-haspopup="menu" aria-expanded="false" title="Sort and group the chat list">${esc(CONV_SORTS[convSort()])} ▾</button>`;
   for(const k of [...checked]) if(!roots.some(r=>convKey(r)===k)) checked.delete(k);
   const item=r=>{
     /* Chat view goes to any chat, so it shows none as hidden; nor does the Archived list */
-    const k=convKey(r), on=opts.simple || arch || !isHidden(r), unread=!!convMeta(k).unread, n=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1;
+    const k=convKey(r), archived=isArchived(r), on=opts.simple || archived || !isHidden(r), unread=!!convMeta(k).unread, pinned=isPinned(r), n=[...desc(r.id)].filter(x=>S.nodes[x].kind!=='merge').length+1;
     const b=Object.values(S.refs).filter(x=>S.nodes[x.tip] && convKeyOf(x.tip)===k).length;
     if(renamingConv===k) return `<li class="cv cur" data-key="cl${k}"><input class="spinput" id="cvname-${k}" data-cvname="${k}" value="${esc(convTitle(r))}" maxlength="120" aria-label="Conversation name"></li>`;
     const meta=`${n} prompt${n===1?'':'s'} · ${b} branch${b===1?'':'es'}`;
     if(selecting) return `<li class="cv ${on?'':'off'} ${checked.has(k)?'checked':''}" data-key="cl${k}"><input type="checkbox" class="cvcheck" id="ck-${k}" data-check="${k}" ${checked.has(k)?'checked':''} aria-label="Select ${esc(convTitle(r))}"><label class="cvmain" for="ck-${k}"><span class="cvname">${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></label></li>`;
-    const tip = arch ? (opts.simple ? 'Open it (it stays archived)' : 'Archived. Click to bring it back and open it.') : opts.simple ? (cur===k ? 'The chat you’re in' : 'Open it') : pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
+    const tip = archived ? (opts.simple ? 'Open it (it stays archived)' : 'Archived. Click to bring it back and open it.') : opts.simple ? (cur===k ? 'The chat you’re in' : 'Open it') : pickingRows ? (on ? 'Shown. Click to hide it.' : 'Hidden. Click to show it.') : mode==='focus' ? (cur===k ? 'Click again to leave focus and show all chats' : 'Move the focus here')
       : !on ? 'Hidden. Click to show it and jump to it.'
       : cur===k ? (onN>1 ? 'Click again to hide the other chats' : 'Click again to show all chats') : 'Jump to it';
-    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'} ${unread?'unread':''}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows&&!opts.simple&&!arch?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}${unread?' · New replies':''}"><span class="cvname">${unread?'<span class="udot" aria-label="Unread"></span>':''}${esc(convTitle(r))}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
+    return `<li class="cv ${cur===k&&!pickingRows?'cur':''} ${on?'':'off'} ${unread?'unread':''} ${archived&&!arch?'archived':''}" data-key="cl${k}" draggable="true" data-convdrag="${r.id}"><button class="cvmain" data-openconv="${k}" ${pickingRows&&!opts.simple&&!archived?`aria-pressed="${on}"`:(cur===k?'aria-current="true"':'')} title="${tip}${unread?' · New replies':''}"><span class="cvname">${unread?'<span class="udot" aria-label="Unread"></span>':''}${pinned&&!arch?PIN:''}${esc(convTitle(r))}${archived&&!arch?'<span class="cvtag">archived</span>':''}</span><span class="cvmeta">${meta}</span></button><button class="spmore" data-cvmenu="${r.id}" aria-haspopup="menu" aria-expanded="false" aria-label="Options for this chat">⋯</button></li>`;
   };
   convListEl.classList.toggle('choosing', pickingRows && !opts.simple);
-  /* grouped by date when sorted by date, like Claude's list */
-  const grouped = list => { if(!convGrouped()) return list.map(item).join(''); let last=null, h=''; for(const r of list){ const g=dateGroup(convSort()==='updated' ? convUpdated(r) : convStarted(r)); if(g!==last){ h+=`<li class="cvsec cvdate">${esc(g)}</li>`; last=g; } h+=item(r); } return h; };
-  if(!q && !filters.size) convListEl.innerHTML = list.length ? grouped(list) : `<li><p class="cvempty">${arch?'No archived chats.':'No chats yet.'}</p></li>`;
+  /* pinned chats on top, then unread ones if asked, then the rest, grouped by date when sorted by date (as Claude's list is) */
+  const sec = t => `<li class="cvsec cvdate">${esc(t)}</li>`;
+  const byDate = list => { if(!convGrouped()) return list.map(item).join(''); let last=null, h=''; for(const r of list){ const g=dateGroup(convSort()==='updated' ? convUpdated(r) : convStarted(r)); if(g!==last){ h+=sec(g); last=g; } h+=item(r); } return h; };
+  const grouped = list => {
+    const pin = arch ? [] : list.filter(isPinned), rest = list.filter(r=>!pin.includes(r));
+    const unr = lv.unreadFirst && lv.read==='any' ? rest.filter(r=>convMeta(convKey(r)).unread) : [], others = rest.filter(r=>!unr.includes(r));
+    let h='';
+    if(pin.length) h+=sec('Pinned')+pin.map(item).join('');
+    if(unr.length) h+=sec('Unread')+unr.map(item).join('');
+    if(others.length) h += (pin.length||unr.length) && !convGrouped() ? sec(unr.length ? 'Read' : 'Chats')+others.map(item).join('') : byDate(others);
+    return h;
+  };
+  const emptyText = lv.read==='unread' ? 'Nothing unread.' : lv.read==='read' ? 'No read chats here.' : arch ? 'No archived chats.' : 'No chats yet.';
+  if(!q && !filters.size) convListEl.innerHTML = list.length ? grouped(list) : `<li><p class="cvempty">${emptyText}</p></li>`;
   else if(!q){
     const hits=searchHits('');
     const what=[...filters].map(f=>({star:'starred',note:'with notes',skip:'left out'})[f]).join(', ');
@@ -5224,7 +5286,7 @@ function renderConvs(){
   }
   const tools=document.getElementById('cvTools'), none=checked.size?'':'disabled';
   tools.classList.toggle('selecting', selecting);
-  tools.hidden = arch && !selecting;
+  tools.hidden = lv.show!=='active' && !selecting;
   tools.classList.remove('choosing');
   if(selecting){
     tools.innerHTML=`<div class="seltop"><span class="count">${checked.size} of ${roots.length} selected</span><button class="btn xs" data-bulk="${checked.size===roots.length?'none':'all'}">${checked.size===roots.length?'Select none':'Select all'}</button></div>
@@ -5447,7 +5509,7 @@ function openConv(key){
   closeDrawers();
   const r=vRoots().find(x=>convKey(x)===+key); if(!r) return;
   /* in Editor, an archived chat comes back to the list and the page; Chat view just opens it */
-  if(!opts.simple && isArchived(r)){ delete S.convs[+key].archived; delete S.convs[+key].hidden; if(!vRoots().some(isArchived)) convView='active'; toast(`“${clip(convTitle(r),40)}” is back in your chats`); }
+  if(!opts.simple && isArchived(r)){ delete S.convs[+key].archived; delete S.convs[+key].hidden; toast(`“${clip(convTitle(r),40)}” is back in your chats`); }
   if(opts.simple){
     const m=convMeta(+key).sel;
     composeFor=null; pick=null; renaming=false; simpleTip=null;
@@ -5736,6 +5798,7 @@ function openMenu(anchor, items){
     const b=document.createElement('button'); b.setAttribute('role','menuitem'); b.textContent=it.label;
     if(it.danger) b.className='danger';
     if(it.disabled) b.disabled=true;
+    if(it.sub){ b.textContent=it.label+'  ›'; b.setAttribute('aria-haspopup','menu'); b.onclick=()=>openMenu(anchor, [{label:'‹ Back', run:()=>openMenu(anchor, items)}, {heading:it.label}, ...it.sub()]); menuEl.append(b); continue; }
     b.onclick=()=>{ closeMenu(); it.run(); };
     menuEl.append(b);
   }
@@ -5761,6 +5824,7 @@ window.addEventListener('resize', ()=>closeMenu());
 function spaceMenu(anchor, sid){
   const others=spaceIds().filter(x=>x!==sid);
   openMenu(anchor, [
+    DB.spaces[sid].pinned ? {label:'Unpin', run:()=>setSpacePinned(sid, false)} : {label:'Pin to the top', run:()=>setSpacePinned(sid, true)},
     {label:'Rename', run:()=>{ renamingSpace=sid; if(narrow()) openDrawer('spaces'); else if(opts.collapsed.spaces){ opts.collapsed.spaces=false; applyLayout(); save(); } renderSpaces(); }},
     {label:'Project files…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openSpaceFiles(); }},
     {label:'Import / export JSON…', run:()=>{ if(sid!==DB.current) switchSpace(sid); openIo(); }},
@@ -5954,7 +6018,10 @@ function setArchived(k, on){
     if(on && wasCur && !opts.simple) sel=null;
   }, {touch:false, hidden:true});
 }
-function setUnread(k, on){ S.convs[k]=Object.assign(S.convs[k]||{}); if(on) S.convs[k].unread=true; else delete S.convs[k].unread; save(); Motion.run(convListEl, renderConvs); renderSpaces(); }
+const PIN='<svg class="pin" viewBox="0 0 24 24" aria-label="Pinned"><path d="M15 3l6 6-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" fill="currentColor"/></svg>';
+function setPinned(k, on){ S.convs[k]=Object.assign(S.convs[k]||{}); if(on) S.convs[k].pinned=true; else delete S.convs[k].pinned; save(); Motion.run(treeEl, ()=>render(true), []); toast(on?'Pinned to the top of the list':'Unpinned'); }
+function setSpacePinned(sid, on){ const sp=DB.spaces[sid]; if(!sp) return; if(on) sp.pinned=true; else delete sp.pinned; save(); renderSpaces(); toast(on?'Pinned to the top of your projects':'Unpinned'); }
+function setUnread(k, on){ S.convs[k]=Object.assign(S.convs[k]||{}); if(on) S.convs[k].unread=true; else delete S.convs[k].unread; if(on && convKeyOf(sel)===k) readKey=DB.current+':'+k; save(); Motion.run(convListEl, renderConvs); renderSpaces(); }
 /* a reply that lands while you're somewhere else marks its chat unread; opening the chat reads it */
 function markUnreadFor(sid, id){
   const t=treeOf(sid); if(!t || !t.nodes[id]) return;
@@ -5963,36 +6030,45 @@ function markUnreadFor(sid, id){
   if(here) return;
   t.convs=t.convs||{}; t.convs[k]=Object.assign(t.convs[k]||{}, {unread:true});
 }
-function readCurrent(){
+/* a chat is read when you arrive in it (or come back to the tab), not on every change while you're there, so Mark as
+   unread on the chat you're in stays until you leave it and come back */
+let readKey=null;
+function readCurrent(force){
   if(document.visibilityState!=='visible' || !S || !S.convs) return;
-  const k=convKeyOf(sel); if(k!=null && S.convs[k] && S.convs[k].unread){ delete S.convs[k].unread; if(typeof renderConvs==='function') renderConvs(); renderSpaces(); }
+  const k=convKeyOf(sel), id=DB.current+':'+k;
+  if(!force && id===readKey) return;
+  readKey=id;
+  if(k!=null && S.convs[k] && S.convs[k].unread){ delete S.convs[k].unread; if(typeof renderConvs==='function') renderConvs(); renderSpaces(); }
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ readCurrent(); save(); } });
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ readCurrent(true); save(); } });
 const spaceUnread = sid => { const t=treeOf(sid); return !!t && Object.values(t.convs||{}).some(m=>m && m.unread && !m.archived); };
 function convMenu(anchor, rootId, full){
   const others=spaceIds().filter(x=>x!==DB.current);
   const linked=[...component(rootId)].filter(x=>!S.nodes[x].parents.length).length-1;
-  const k=convKey(S.nodes[rootId]);
+  const r=S.nodes[rootId], k=convKey(r), here=()=>convKeyOf(sel)===k ? (opts.simple?composeParent():sel) : convTip(r);
+  const onPage = !opts.simple && !isArchived(r);
   openMenu(anchor, [
+    isPinned(r) ? {label:'Unpin', run:()=>setPinned(k, false)} : {label:'Pin to the top', run:()=>setPinned(k, true)},
     {label:'Rename', run:()=>{ renamingConv=k; if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } Motion.run(convListEl, renderConvs); }},
-    ...(visMode()==='select' && !opts.simple ? [isHidden(S.nodes[rootId]) ? {label:'Show', run:()=>pickToggle(k)} : {label:'Hide', run:()=>pickToggle(k)}] : []),
-    ...(opts.simple ? [] : [{label:'Focus on this one', run:()=>{ if(visMode()==='focus' && convKeyOf(sel)===k) return; const r=S.nodes[rootId]; sel=convMeta(k).sel!=null && S.nodes[convMeta(k).sel] ? convMeta(k).sel : convTip(r); lastConv=k; setVisMode('focus'); }}]),
-    {label:'Schedule a prompt here…', run:()=>{ const tip=convKeyOf(sel)===k ? (opts.simple?composeParent():sel) : convTip(S.nodes[rootId]); openSchedules(schedFormFor(tip, '')); }},
     convMeta(k).unread ? {label:'Mark as read', run:()=>setUnread(k, false)} : {label:'Mark as unread', run:()=>setUnread(k, true)},
-    isArchived(S.nodes[rootId]) ? {label:'Unarchive', run:()=>setArchived(k, false)} : {label:'Archive', run:()=>setArchived(k, true)},
-    {label:'Clone', run:()=>duplicateConversation(rootId, DB.current)},
+    ...(onPage ? [
+      {heading:'On the page'},
+      ...(visMode()==='select' ? [isHidden(r) ? {label:'Show', run:()=>pickToggle(k)} : {label:'Hide', run:()=>pickToggle(k)}] : []),
+      {label:'Focus on this one', run:()=>{ if(visMode()==='focus' && convKeyOf(sel)===k) return; sel=convMeta(k).sel!=null && S.nodes[convMeta(k).sel] ? convMeta(k).sel : convTip(r); lastConv=k; setVisMode('focus'); }},
+    ] : []),
+    {heading:'Use'},
+    {label:'Schedule a prompt here…', run:()=>openSchedules(schedFormFor(here(), ''))},
+    {label:AI+'Distill into a brief…', disabled: sampleState!=='ready', run:()=>openDistill(convKeyOf(sel)===k ? sel : convTip(r))},
     {label:'Copy as Markdown', run:()=>copyText(treeMarkdown(rootId))},
-    {label:'Copy context as a prompt', run:()=>copyContextPrompt(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
-    {label:AI+'Distill into a brief…', disabled: sampleState!=='ready', run:()=>openDistill(convKeyOf(sel)===k ? sel : convTip(S.nodes[rootId]))},
+    {label:'Copy context as a prompt', run:()=>copyContextPrompt(convKeyOf(sel)===k ? sel : convTip(r))},
+    {heading:'Organize'},
+    {label:'Clone', run:()=>duplicateConversation(rootId, DB.current)},
+    {label:'Clone into', sub:()=>[...others.map(o=>({label:DB.spaces[o].name, run:()=>duplicateConversation(rootId, o)})), {label:'A new project', run:()=>duplicateConversation(rootId, 'new')}]},
+    {label:linked>0 ? `Move to (with ${linked} linked by a merge)` : 'Move to', sub:()=>[...others.map(o=>({label:DB.spaces[o].name, run:()=>moveConversation(rootId, o)})), {label:'A new project', run:()=>moveConversation(rootId, 'new')}]},
     {label:'Move along with others…', disabled: orderedRoots().length<2, run:()=>{ selecting=true; checked.clear(); checked.add(k); if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } morphTools(renderConvs); }},
     {sep:true},
-    {heading: linked>0 ? `Move, with ${linked} linked by a merge` : 'Move to project'},
-    ...others.map(o=>({label:DB.spaces[o].name, run:()=>moveConversation(rootId, o)})),
-    {label:'New project from this', run:()=>moveConversation(rootId, 'new')},
-    {heading:'Clone into'},
-    ...others.map(o=>({label:DB.spaces[o].name, run:()=>duplicateConversation(rootId, o)})),
-    {label:'A new project', run:()=>duplicateConversation(rootId, 'new')},
-    {sep:true}, {label:'Delete chat', danger:true, run:()=>deleteConv(rootId)}
+    isArchived(r) ? {label:'Unarchive', run:()=>setArchived(k, false)} : {label:'Archive', run:()=>setArchived(k, true)},
+    {label:'Delete chat', danger:true, run:()=>deleteConv(rootId)},
   ]);
 }
 
@@ -6090,14 +6166,14 @@ convListEl.addEventListener('click', e=>{
   const o=e.target.closest('[data-openconv]'); if(o){ if(pickingRows) pickToggle(+o.dataset.openconv); else openConv(+o.dataset.openconv); }
 });
 document.getElementById('cvBar').addEventListener('click', e=>{
-  const v=e.target.closest('[data-cvview]'); if(v){ if(convView!==v.dataset.cvview){ convView=v.dataset.cvview; Motion.run(convListEl, renderConvs); } return; }
+  const v=e.target.closest('[data-cvviewmenu]'); if(v){ viewMenu2(v); return; }
   const so=e.target.closest('[data-cvsort]'); if(so){ sortMenu(so); return; }
 });
 treeEl.addEventListener('click', e=>{ const u=e.target.closest('[data-unarchive]'); if(u) setArchived(+u.dataset.unarchive, false); });
 /* drag a chat in the list to put it in your own order */
 let dropAt=null;
 convListEl.addEventListener('dragover', e=>{
-  if(dragConv==null || convView!=='active' || convFilterEl.value.trim() || filters.size) return;
+  if(dragConv==null || listView().show!=='active' || convFilterEl.value.trim() || filters.size) return;
   const li=e.target.closest('.cv[data-key]'); for(const x of convListEl.querySelectorAll('.dropabove,.dropbelow')) x.classList.remove('dropabove','dropbelow');
   if(!li) return;
   const k=+li.dataset.key.slice(2); if(k===convKey(S.nodes[dragConv])) return;
