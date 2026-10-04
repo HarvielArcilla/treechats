@@ -72,12 +72,18 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
 
 Every prompt Treechats sends on your behalf (✦ marks tools that use Claude) is shown before it's used and editable in Settings › Prompts.
 
+## Comparison grid
+
+Try one prompt, or several wordings of it, against several setups at once: a setup is a model with its settings (thinking, effort, tools, a system prompt). Open it with `/grid`, **Comparison grid from here…** in the Ctrl/⌘-K palette, or **Grid…** in Variants. Every wording × setup becomes its own branch from the selected prompt, so any of them can be continued, and the grid shows the replies side by side as they arrive, with what each cost and took, its tokens and tool steps.
+
+**Score** has Claude rate every reply from 1 to 10 against your criteria, in one request, without being told which setup wrote which. The best is outlined, and each setup and wording shows its average score. **Make mainline** keeps the one you want. Grids are saved with the chat: a *grid* tag on the prompt and on each of its branches reopens it, and Undo removes it with its branches. The scoring prompt can be edited in Settings › Prompts.
+
 ## Commands and saved prompts
 
 Type `/` in the input box for commands, as in Claude Code (they're also in the Ctrl/⌘-K palette):
 - `/btw question` asks a side question from the chat's context. The answer shows above the input box and nothing is added to the chat, unless you keep it as a branch.
 - `/loop 3 Tighten it` sends a prompt again after each reply. Add `until: under 100 words` to stop when a quick check says the condition is met (its verdict is noted under each reply), or `every 10m` to wait between sends while Treechats is open.
-- `/schedule Summarize what changed today` sends a prompt at a set time (see Scheduled tasks below).
+- `/schedule Summarize what changed today` sends a prompt at a set time (see Scheduled tasks below), and `/grid` opens the comparison grid.
 - `/run npm test` and `/diff` work with linked folders (see Coding tools), and `/folder` adds one.
 - `/context` and `/cost` show what the next prompt sends and what the chat has cost; `/rewind` goes back to an earlier prompt; `/model`, `/compact`, `/review`, `/branch`, `/clear`, `/memory`, `/search`, `/settings`, `/export` and `/help` do what they say. Anything else that starts with `/` is sent as written.
 
