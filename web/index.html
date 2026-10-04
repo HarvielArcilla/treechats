@@ -6685,7 +6685,15 @@ const PALETTES={
   slate:{name:'Slate', light:['#ECEFF3','#FAFBFC','#161B22','#5A6472','#CDD4DD','#E1E6EC','#E7EBF0','#EEF1F5','#E3E7EC'],
                       dark:['#0F1216','#161B21','#E1E6EC','#8E99A7','#29313B','#0A0D10','#0D1014','#1A1F26','#0C0F13']},
   ink:{name:'Ink', light:['#F1F1F1','#FFFFFF','#0A0A0A','#4A4A4A','#C2C2C2','#E6E6E6','#EBEBEB','#F5F5F5','#E8E8E8'],
-                  dark:['#0A0A0A','#141414','#F3F3F3','#A8A8A8','#333333','#060606','#0D0D0D','#1A1A1A','#090909']}
+                  dark:['#0A0A0A','#141414','#F3F3F3','#A8A8A8','#333333','#060606','#0D0D0D','#1A1A1A','#090909']},
+  fjord:{name:'Fjord', light:['#E9EEF4','#F8FAFC','#1B2430','#556274','#C9D3DF','#DCE4EE','#E3E9F1','#EEF2F8','#E1E7EF'],
+                      dark:['#1E2430','#252C3A','#E5EAF2','#97A3B6','#364052','#181D27','#1B212C','#2A3242','#1A202A']},
+  ocean:{name:'Ocean', light:['#E6F0EF','#F8FBFB','#12211F','#4D6662','#C3D7D4','#D8E7E5','#DFEBE9','#EBF4F3','#DCE9E7'],
+                      dark:['#0D1818','#132121','#DDEBE9','#8DA8A4','#253939','#091313','#0B1515','#172828','#0A1414']},
+  dusk:{name:'Dusk', light:['#EEEBF4','#FBFAFD','#1F1A2B','#625A74','#D5CFE1','#E4DFEE','#E9E5F1','#F2EFF8','#E6E1EF'],
+                    dark:['#16131E','#1E1A29','#E8E4F1','#A39CB5','#352F45','#110E18','#14111C','#241F31','#13101A']},
+  rose:{name:'Rose', light:['#F4ECEE','#FDFAFA','#2A1A1F','#74585F','#E2D0D4','#EEE0E3','#F1E6E8','#F8EFF1','#EFE3E6'],
+                    dark:['#1B1214','#24191C','#F0E4E7','#B59CA2','#423036','#150E10','#181012','#2B1E22','#160E11']}
 };
 const ACCENTS={
   blue:{name:'Blue', light:'#2350D8', dark:'#7C9BFF'},
@@ -6806,7 +6814,7 @@ let setReturn=null;
 const segs=(key, choices, label)=>`<div class="segs" role="group" aria-label="${esc(label)}">${choices.map(([v,l])=>`<button class="seg" data-set="${key}" data-val="${v}" aria-pressed="${String(set(key))===String(v)}">${esc(l)}</button>`).join('')}</div>`;
 const setRow=(lab, sub, ctl)=>`<div class="setrow"><div class="lab">${lab}${sub?`<small>${sub}</small>`:''}</div>${ctl}</div>`;
 function palCard(id){
-  const t=paletteTokens(id, shownMode()), name=PALETTES[id]?PALETTES[id].name:themeFor(id).name;
+  const t=paletteTokens(id, colorsMode || shownMode()), name=PALETTES[id]?PALETTES[id].name:themeFor(id).name;
   return `<button class="pal" data-set="palette" data-val="${id}" aria-pressed="${set('palette')===id}"><div class="pv" style="background:${t.bg}"><i style="background:${t.side}"></i><div class="pm"><b style="background:${t.accent};width:55%"></b><b style="background:${t.line};width:85%"></b><b style="background:${t.line};width:70%"></b><b style="background:${t.surface};border:1px solid ${t.line};height:10px"></b></div></div><span>${esc(name||'Untitled')}${PALETTES[id]?'':' <em class="mine">yours</em>'}</span></button>`;
 }
 function swatch(key, label, val, auto){
@@ -6960,7 +6968,8 @@ function renderSettings(){
       ${setRow('Branch map in the panel','A small graph of the chat\u2019s branches under the chat list. The full map opens with M or Map.',segs('map',[['true','Show'],['false','Hide']],'Branch map in the panel'))}</section>`;
     h+=`<section class="setsec"><h3>Theme</h3>${setRow('Mode', set('theme')==='system'?`Following your device: ${resolvedMode()}`:'', segs('theme',[['system','System'],['light','Light'],['dark','Dark']],'Mode'))}</section>`;
     const mine=Object.keys(customThemes()), activeMine=!!themeFor(set('palette'));
-    h+=`<section class="setsec"><h3>Palette</h3><div class="palettes">${[...Object.keys(PALETTES),...mine].map(palCard).join('')}<button class="pal newpal" data-tnew><span class="plus" aria-hidden="true">+</span><span>New theme</span></button></div>
+    const cmode=colorsMode || shownMode();
+    h+=`<section class="setsec"><div class="colhead"><h3>Palette</h3><div class="segs" role="group" aria-label="Show colors for">${['light','dark'].map(m=>`<button class="seg" data-colorsmode="${m}" aria-pressed="${cmode===m}" title="Show and pick the colors for ${m} mode. The app stays as it is; Mode above switches it.">${m==='light'?'Light mode':'Dark mode'}</button>`).join('')}</div></div><p class="note">The palettes and colors below are shown for ${cmode} mode${cmode===shownMode()?'':`, while the app stays in ${shownMode()} mode`}. Every palette has both.</p><div class="palettes">${[...Object.keys(PALETTES),...mine].map(palCard).join('')}<button class="pal newpal" data-tnew><span class="plus" aria-hidden="true">+</span><span>New theme</span></button></div>
       <div class="tbar">${activeMine&&!editingTheme?`<button class="btn" data-tedit>Edit ${esc(themeFor(set('palette')).name)}</button>`:''}<button class="rmore" data-timport>${importOpen?'Cancel import':'Import a theme…'}</button></div>
       ${importOpen?`<div class="timport"><textarea data-timporttext rows="3" placeholder="Paste theme code copied from Treechats" aria-label="Theme code"></textarea><button class="btn" data-timportadd>Add theme</button></div>`:''}
     </section>`;
@@ -6979,11 +6988,11 @@ function renderSettings(){
           <div class="rbpreview reply ${view==='chat'?'rbchat':''} ${plain?'rbplain':''}" data-rbprev="${view}" style="--code-bg:${t['code-bg']};--accent:${t.accent};--line:${t.line};--muted:${t.muted};--fg:${plain?t.fg:rb.fg};--reply-fg:${plain?t.fg:rb.fg};--reply-chip:${plain?t['code-bg']:mixHex(rb.fg, rb.bg, .1)};${plain?`background:${t.bg};color:${t.fg};`:`background:${rb.bg};color:${rb.fg};`}${rb.rule&&view==='editor'?`border-left-color:${rb.rule}`:''}${view==='chat'&&!plain?`box-shadow:inset 0 0 0 ${rb.rule?'1.5px '+rb.rule:'1px var(--line)'}`:''}">${view==='editor'?`<span class="who" style="${cur==='theme'?'':`color:${rb.fg};opacity:.75`}">Claude · ${esc(REPLY_BOXES[cur]?REPLY_BOXES[cur].name:'Theme')}</span>`:''}<div class="rbody"><p>This is how a reply reads ${view==='chat'?'in Chat':'in Editor'}, with <code>inline code</code> and a <a href="#" tabindex="-1">link</a>.</p></div></div>
           <p class="note rbcontrast" data-rbct="${view}"><b>${esc(REPLY_BOXES[cur]?name(cur):'Theme')}.</b> ${plain?'Replies are text on the page, as in Claude.':rbContrastText(contrast(rb.bg, rb.fg))}</p>`;
       };
-      h+=`<section class="setsec colorsec"><div class="colhead"><h3>Colors</h3><div class="segs" role="group" aria-label="Colors for">${['light','dark'].map(m=>`<button class="seg" data-colorsmode="${m}" aria-pressed="${mode===m}" title="Show and pick the colors for ${m} mode. The app stays as it is.">${m==='light'?'Light mode':'Dark mode'}</button>`).join('')}</div></div>
+      h+=`<section class="setsec colorsec"><h3>Colors</h3>
         ${activeMine?'':`<div class="colrow"><div class="lab">Accent<small>Buttons, the selected prompt and the main branch line.</small></div><div class="accents">${Object.entries(ACCENTS).map(([k,a])=>`<button class="acc" data-set="accent" data-val="${k}" aria-pressed="${set('accent')===k}" aria-label="${a.name}" title="${a.name}" style="background:${a[mode]}"></button>`).join('')}</div></div>`}
         ${rbRow('editor', 'Claude’s replies in Editor', 'The box replies sit in. Its text color follows it.')}
         ${rbRow('chat', 'Claude’s replies in Chat', 'Theme shows them as plain text, as in Claude. Pick a color to put them in a box.')}
-        <p class="note">Each mode keeps its own custom colors; the switch above chooses which you’re looking at and picking. The app shows ${shownMode()} mode${set('theme')==='system'?', following your device':''}.</p></section>`; }
+        <p class="note">Each mode keeps its own custom colors; Light mode / Dark mode above chooses which you’re seeing and picking.</p></section>`; }
   } else if(tab==='saved'){
     const list=savedPrompts(), missing=SAVED_STARTERS.filter(x=>!list.some(y=>y.id===x.id));
     h+=`<section class="setsec"><h3>Saved prompts</h3><p class="note">Insert one with <b>Saved prompts</b> under the input box, or by typing <kbd>/</kbd> in an empty box. Nothing is sent until you send it. Words in {braces} are placeholders: what you’ve already typed goes into the first one, and the next is selected for you to fill in. Agents can read this list through MCP.</p>
