@@ -815,6 +815,28 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .fvbar{padding:8px 18px;border-top:1px solid var(--line)}
 .fvbody>.note{padding:0 18px 12px;margin:0}
 .fvmd{flex:1;overflow:auto;padding:16px 22px;display:block;align-content:start}
+.steps{margin:2px 0 8px;font-size:.84rem;color:var(--muted)}
+.steps summary{cursor:pointer;display:inline-flex;align-items:center;gap:6px;list-style:none;padding:2px 0;user-select:none}
+.steps summary::-webkit-details-marker{display:none}
+.steps summary::after{content:'›';display:inline-block;transition:transform .15s;font-size:1.05em}
+.steps[open] summary::after{transform:rotate(90deg)}
+.steps ol{list-style:none;margin:6px 0 4px;padding:0 0 0 2px;display:grid;gap:8px;border-left:2px solid var(--line)}
+.steps li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:4px;padding-left:8px}
+.sticon{font:600 .78rem var(--mono);color:var(--muted);text-align:center;padding-top:1px}
+.stline{color:var(--fg)} .stline b{font-weight:600} .stline code{font-size:.82em}
+.stepres{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:2px;font-size:.8rem}
+.stepres a{color:var(--accent)} .stepres .note{font-size:.74rem}
+.stepcode,.stepout{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--code-bg);font:.76rem/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;color:var(--fg)}
+.stepout.err{color:var(--danger)}
+.spin{width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sources{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0 2px;font-size:.78rem}
+.sources .srchead{color:var(--muted);font-weight:600;margin-right:2px}
+.sources a{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:2px 8px 2px 3px;border:1px solid var(--line);border-radius:999px;color:var(--fg);text-decoration:none;background:var(--surface)}
+.sources a:hover{border-color:var(--accent)}
+.sources a span{display:inline-grid;place-items:center;min-width:16px;height:16px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font:600 .66rem var(--mono)}
+.sources a em{font-style:normal;color:var(--muted)}
+.btn.toolson{border-color:var(--accent);color:var(--accent)}
 .pvframe{display:block;flex:1;width:100%;min-height:360px;border:0;background:#fff}
 .codehead .codeprev{margin-left:auto}
 .codehead .codeprev + .codecopy{margin-left:0}
@@ -3297,7 +3319,7 @@ function contextEntries(id){
    A system prompt, thinking, effort, temperature and a reply length limit, set on a prompt and used by it and every
    prompt after it, unless a later prompt sets its own. Forking and changing one setting compares the same
    conversation under a different setup. Each field is inherited on its own; null means "back to the default". */
-const SET_FIELDS=['system','thinking','effort','temperature','maxTokens'];
+const SET_FIELDS=['system','thinking','effort','temperature','maxTokens','tools'];
 function settingsFor(id){
   const out={}, from={};
   for(const x of chain(id).reverse()){ const st=S.nodes[x] && S.nodes[x].set; if(!st) continue; for(const f of SET_FIELDS) if(!(f in from) && f in st){ from[f]=x; if(st[f]!=null) out[f]=st[f]; } }
@@ -3473,9 +3495,13 @@ async function startReply(sid, id){
     const extra = imgs.length && imageLimits ? {images: imgs.slice(0, imageLimits.maxCount)} : {};
     if(imgs.length && !imageLimits) toast('Images can’t be sent from this view, so Claude only sees their names.');
     const settings=withTree(tree, ()=>settingsFor(id).values);
+    /* tools: the branch's own choice if it has one, else the Tools menu by the input box */
+    if(settings.tools==null && activeTools().length) settings.tools=activeTools();
+    g.steps=[];
     const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal, settings,
-      onText:({text})=>{ g.text=text; paintGen(g); }});
-    g.usage=r.usage||null; g.thinking=r.thinking||'';
+      onText:({text})=>{ g.text=text; paintGen(g); },
+      onStep:(kind, d)=>{ if(kind==='step') g.steps.push({...d}); else { const st=g.steps.find(x=>x.id===d.id); if(st){ const {id:_, ...res}=d; st.result=res; } } paintSteps(g); }});
+    g.usage=r.usage||null; g.thinking=r.thinking||''; g.steps=r.steps||g.steps; g.sources=r.sources||null;
     const unused=(r.notes||[]).length ? `Model settings not used by this model: ${r.notes.join(', ')}.` : null;
     finishGen(g, r.text, r.modelTierApplied, [r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null), unused].filter(Boolean).join(' ') || null);
   }catch(e){
@@ -3488,7 +3514,7 @@ function finishGen(g, text, tier, note){
   gens.delete(gkey(g.sid,g.id));
   const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
   if(n){
-    if(text){ markUnreadFor(g.sid, g.id); n.reply=text; n.rt=[g.started, Date.now()]; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; if(g.thinking) n.thinking=g.thinking; else delete n.thinking; withTree(tree, ()=>touch(g.id)); }
+    if(text){ markUnreadFor(g.sid, g.id); n.reply=text; n.rt=[g.started, Date.now()]; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; if(g.thinking) n.thinking=g.thinking; else delete n.thinking; if(g.steps && g.steps.length) n.steps=g.steps; else delete n.steps; if(g.sources && g.sources.length) n.sources=g.sources; else delete n.sources; withTree(tree, ()=>touch(g.id)); }
     if(note) genNotes[gkey(g.sid,g.id)]=note;
     delete n.askTier;
     save();
@@ -4823,7 +4849,7 @@ function composerHTML(forId){
     ${cmdCardsHTML(null)}
     <textarea id="composeText" placeholder="First prompt of a new chat (type / for commands)" aria-label="First prompt">${esc(draftRoot)}</textarea>
     ${fileChips(pendingFiles, true, 'p')}
-    <div class="bar"><button class="btn primary" data-compose="add-root">Start chat <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach aria-haspopup="menu" title="Attach text, code or image files, or files from a folder. You can also drop or paste files.">Attach ▾</button><button class="btn" data-savedmenu="composeText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}</div>
+    <div class="bar"><button class="btn primary" data-compose="add-root">Start chat <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach aria-haspopup="menu" title="Attach text, code or image files, or files from a folder. You can also drop or paste files.">Attach ▾</button><button class="btn" data-savedmenu="composeText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${vRoots().length?'<button class="btn" data-compose="cancel-root">Cancel</button>':''}${modelPicker('modelSelRoot')}${toolsPicker()}</div>
     <p class="note">${sendNote()} Have a chat elsewhere? <button class="rmore" data-openimport>Import it</button>.</p></div>`;
   const onTip = S.head && S.refs[S.head] && S.refs[S.head].tip===forId;
   const here = refsAt(forId);
@@ -4843,9 +4869,62 @@ function composerHTML(forId){
     ${cmdCardsHTML(forId)}
     <textarea id="contText" placeholder="Your next prompt (type / for commands)" rows="2" aria-label="Next prompt">${esc(draft)}</textarea>
     ${fileChips(pendingFiles, true, 'p')}
-    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:'Send'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach aria-haspopup="menu" title="Attach text, code or image files, or files from a folder. You can also drop or paste files.">Attach ▾</button><button class="btn" data-savedmenu="contText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${modelPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
+    <div class="bar"><button class="btn primary" data-compose="cont">${alsoTargets.size?`Send to ${alsoTargets.size+1}`:'Send'} <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-attach aria-haspopup="menu" title="Attach text, code or image files, or files from a folder. You can also drop or paste files.">Attach ▾</button><button class="btn" data-savedmenu="contText" aria-haspopup="menu" title="Insert one of your saved prompts (or type / in the box)">Saved prompts</button>${modelPicker()}${toolsPicker()}${meterHTML(turnsFor(forId,true), true)}</div>
     ${replyBusy(forId)?'<p class="note">You can send now. Claude answers it as soon as the reply above is done.</p>':''}
     ${sampleState==='off'?'<p class="note">To get replies, add an API key to .env or sign in to Claude Code (run claude once), then restart Treechats. Prompts still get added.</p>':''}</div>`;
+}
+/* ---- Tools Claude can use ----
+   Searching the web, reading pages and running code, all run by Anthropic, not on this computer. The Tools menu by the
+   input box sets them for new replies; a branch can have its own in its model settings. Each step shows in the reply,
+   and pages its answer cites are listed under it. */
+const TOOL_LIST=[['search','Search the web','Claude looks things up and cites its sources. Searches cost $10 per 1,000, on top of tokens.'],['fetch','Read web pages','Claude opens links you give it, or that it found, and reads them.'],['code','Run code','Claude writes and runs code in a sandbox at Anthropic, for math, data and files.']];
+const toolsOK = () => { const L=window.TREECHATS_LOCAL; return !!L && (L.provider==='api' || L.provider==='fake'); };
+const activeTools = () => toolsOK() && Array.isArray(opts.tools) ? opts.tools.filter(t=>TOOL_LIST.some(x=>x[0]===t)) : [];
+function toolsPicker(){
+  if(!toolsOK()) return '';
+  const n=activeTools().length;
+  return `<button class="btn ${n?'toolson':''}" data-toolsmenu aria-haspopup="menu" title="Tools Claude can use in its replies">${n?`Tools · ${n}`:'Tools'} ▾</button>`;
+}
+function toolsMenu(anchor){
+  const on=new Set(activeTools());
+  openMenu(anchor, [
+    {heading:'Claude can'},
+    ...TOOL_LIST.map(([k,l])=>({label:(on.has(k)?'✓ ':'\u2003 ')+l, run:()=>{ const s2=new Set(activeTools()); if(s2.has(k)) s2.delete(k); else s2.add(k); opts.tools=[...s2]; save(); keepDraft(()=>renderTree()); toast(`${l}: ${s2.has(k)?'on':'off'} for new replies. ${TOOL_LIST.find(x=>x[0]===k)[2]}`); }})),
+  ]);
+}
+const TOOL_ICONS={web_search:'⌕', web_fetch:'↗', code_execution:'›_', bash_code_execution:'›_', text_editor_code_execution:'✎'};
+const hostOf = u => { try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return u; } };
+function stepLine(st){
+  const i=st.input||{}, r=st.result||{};
+  if(st.tool==='web_search') return `Searched <b>${esc(i.query||'')}</b>${r.results?` · ${r.results.length} result${r.results.length===1?'':'s'}`:r.error?` · <span class="serr">${esc(r.error)}</span>`:''}`;
+  if(st.tool==='web_fetch') return `Read <b>${esc(r.title||hostOf(i.url||r.url||''))}</b>${r.error?` · <span class="serr">${esc(r.error)}</span>`:''}`;
+  if(st.tool==='text_editor_code_execution') return `${esc(i.command==='create'?'Wrote':i.command==='view'?'Opened':'Edited')} <b>${esc(i.path||'a file')}</b>`;
+  return `Ran <code>${esc(clip(String(i.command||i.code||'code').split('\n')[0], 80))}</code>${r.code!=null?` · exit ${r.code}`:''}${r.error?` · <span class="serr">${esc(r.error)}</span>`:''}`;
+}
+function stepDetail(st){
+  const r=st.result||{};
+  if(r.results && r.results.length) return `<ul class="stepres">${r.results.map(x=>`<li><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title||x.url)}</a> <span class="note">${esc(hostOf(x.url))}</span></li>`).join('')}</ul>`;
+  if(st.tool==='web_fetch' && (r.url || (st.input||{}).url)) return `<p class="stepres"><a href="${esc(r.url||st.input.url)}" target="_blank" rel="noopener noreferrer">${esc(r.url||st.input.url)}</a></p>`;
+  const code=(st.input||{}).command||(st.input||{}).code;
+  if(r.stdout!=null || r.stderr || code) return `${code?`<pre class="stepcode">${esc(code)}</pre>`:''}${r.stdout?`<pre class="stepout">${esc(r.stdout)}</pre>`:''}${r.stderr?`<pre class="stepout err">${esc(r.stderr)}</pre>`:''}`;
+  return '';
+}
+function stepsHTML(steps, live){
+  if(!steps || !steps.length) return '';
+  const n=k=>steps.filter(s=>k.includes(s.tool)).length, sr=n(['web_search']), rd=n(['web_fetch']), rc=n(['code_execution','bash_code_execution','text_editor_code_execution']);
+  const sum=[sr?`searched the web${sr>1?` ${sr} times`:''}`:'', rd?`read ${rd} page${rd===1?'':'s'}`:'', rc?`ran code${rc>1?` ${rc} times`:''}`:''].filter(Boolean).join(', ');
+  const running = live && steps.some(s=>!s.result);
+  return `<details class="steps" ${live?'open':''}><summary>${running?'<span class="spin" aria-hidden="true"></span>':''}${esc(sum.charAt(0).toUpperCase()+sum.slice(1))}</summary><ol>${steps.map(st=>`<li><span class="sticon" aria-hidden="true">${TOOL_ICONS[st.tool]||'•'}</span><div><div class="stline">${stepLine(st)}${st.result?'':' <span class="note">…</span>'}</div>${stepDetail(st)}</div></li>`).join('')}</ol></details>`;
+}
+function sourcesHTML(src){
+  if(!src || !src.length) return '';
+  return `<div class="sources"><span class="srchead">Sources</span>${src.map((x,i)=>`<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" title="${esc(x.url)}"><span>${i+1}</span>${esc(clip(x.title||hostOf(x.url), 60))} <em>${esc(hostOf(x.url))}</em></a>`).join('')}</div>`;
+}
+/* the steps of a reply being written, kept up to date as they come in */
+function paintSteps(g){
+  if(g.sid!==DB.current) return;
+  const slot=treeEl.querySelector(`.reply[data-gen="${g.id}"] .stepslot`); if(slot){ const open=slot.querySelector('details'); slot.innerHTML=stepsHTML(g.steps, true); if(open && !open.open) slot.querySelector('details').open=false; }
+  const th=treeEl.querySelector(`.reply[data-gen="${g.id}"] .rbody .thinking`); if(th) th.textContent='Working…';
 }
 function modelPicker(id='modelSel'){
   return `<label class="model"><span>Model</span><select id="${id}" data-model>${TIERS.map(([v,l])=>`<option value="${v}" ${opts.model===v?'selected':''}>${l}</option>`).join('')}</select></label>`;
@@ -5063,7 +5142,7 @@ function replyHTML(id){
   const n=S.nodes[id];
   const gn=genNotes[gkey(DB.current,id)], note = gn ? `<p class="gnote">${esc(gn)}</p>` : '';
   const g=liveGen(id);
-  if(g) return `<div class="reply live" data-gen="${id}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude · ${esc(g.tier||opts.model)}</span><span class="ts" data-since="${g.started||Date.now()}" title="Time so far">${fmtElapsed(Date.now()-(g.started||Date.now()))}</span></span><button class="rmore" data-stop="${id}" title="Stop this reply${id===sel?' (Esc)':''}">Stop</button></div><div class="rbody">${g.text?md(g.text):'<p class="thinking">Thinking…</p>'}</div>${replyFoot(id)}</div>`;
+  if(g) return `<div class="reply live" data-gen="${id}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude · ${esc(g.tier||opts.model)}</span><span class="ts" data-since="${g.started||Date.now()}" title="Time so far">${fmtElapsed(Date.now()-(g.started||Date.now()))}</span></span><button class="rmore" data-stop="${id}" title="Stop this reply${id===sel?' (Esc)':''}">Stop</button></div><div class="stepslot">${stepsHTML(g.steps, true)}</div><div class="rbody">${g.text?md(g.text):`<p class="thinking">${g.steps&&g.steps.length?'Working…':'Thinking…'}</p>`}</div>${replyFoot(id)}</div>`;
   if(!n.reply && queuedGen(id)){
     const w=waitingOn(genQueue.find(q=>q.sid===DB.current && q.id===id));
     return `<div class="reply empty" data-key="r${id}"><div class="rhead"><span class="who">Claude</span><button class="rmore" data-stop="${id}">Cancel</button></div><p class="thinking">${w!=null&&w!=='gone'?`Waiting for the reply to #${w} first…`:'Waiting its turn…'}</p></div>`;
@@ -5084,10 +5163,10 @@ function replyHTML(id){
     const ed = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited</span>' : '';
     const ready = sampleState==='ready' && !liveGen(id);
     const extra = id===sel && ready ? `${!(fan && fan.id===id)?`<button class="act" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out</button>`:''}${!(distill && distill.id===id)?`<button class="act" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">${AI}Distill</button>`:''}${!(reviewAsk && reviewAsk.id===id)?`<button class="act" data-review="${id}" title="A second opinion from a new chat that sees only this reply">${AI}Review</button>`:''}` : '';
-    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${replyTime(n)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
+    return `<div class="reply" data-key="r${id}">${ed?`<div class="rtop">${ed}</div>`:''}${thinkHTML(n)}${stepsHTML(n.steps)}<div class="rbody">${md(n.reply)}</div>${sourcesHTML(n.sources)}${note}${proposalsHTML(id)}<div class="ractrow"><button class="act" data-copyreply="${id}">Copy</button>${ready?`<button class="act" data-regen="${id}" title="Ask for another reply. This one is kept as the other version.">Regenerate</button>`:''}<button class="act" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button>${extra}${reviewLinksHTML(id)}${replyTime(n)}${(()=>{ const cm=ctxMarkHTML(id); return cm ? `<span class="ctxwrap">${cm}</span>` : ''; })()}</div></div>`;
   }
   const edited = n.replyEdited ? '<span class="edtag" title="You changed this reply. Claude sees your version from here on.">edited by you</span>' : '';
-  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${replyTime(n)}${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}<div class="rbody">${md(n.reply)}</div>${note}${proposalsHTML(id)}${replyFoot(id)}</div>`;
+  return `<div class="reply ${full||!long?'':'clamp'}" data-key="r${id}"><div class="rhead"><span class="rwho"><span class="who">Claude${n.model?' · '+esc(n.model):''}</span>${replyTime(n)}${edited}</span><span class="racts">${more}<button class="rmore" data-editreply="${id}" title="Change what Claude said. Prompts below see your version.">Edit</button><button class="rmore" data-copyreply="${id}">Copy</button></span></div>${thinkHTML(n)}${stepsHTML(n.steps)}<div class="rbody">${md(n.reply)}</div>${sourcesHTML(n.sources)}${note}${proposalsHTML(id)}${replyFoot(id)}</div>`;
 }
 /* The straight line at each fork follows main, then the oldest child, so main never shifts right.
    A branch's lane color comes from where it starts, so it stays the same as the tree grows. */
@@ -6378,6 +6457,7 @@ function toast(msg, withUndo, action){
   r.innerHTML=`<div class="toast"><span>${esc(msg)}</span>${action?`<button id="toastAct">${esc(action.label)}</button>`:''}${withUndo?'<button id="toastUndo">Undo</button>':''}</div>`;
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>r.innerHTML='', action?6000:3800);
 }
+document.addEventListener('click', e=>{ const b=e.target.closest('[data-toolsmenu]'); if(b){ e.stopPropagation(); toolsMenu(b); } }, true);
 /* a code block's Preview button, wherever the block is */
 document.addEventListener('click', e=>{
   const b=e.target.closest('[data-previewcode]'); if(!b) return;

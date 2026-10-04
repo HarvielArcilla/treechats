@@ -140,6 +140,7 @@
           if (!line.trim()) continue;
           var ev = JSON.parse(line);
           if (ev.t === 'text') { text += ev.d; if (o.onText) o.onText({ text: text, delta: ev.d }); }
+          else if (ev.t === 'step' || ev.t === 'stepresult') { if (o.onStep) o.onStep(ev.t, ev.d); }
           else if (ev.t === 'done') done = ev;
           else if (ev.t === 'error') throw fail(ev.code, ev.text || text, ev.message);
         }
@@ -151,7 +152,7 @@
       throw fail('network', text, e && e.message);
     }
     if (!done) throw fail('network', text, 'The reply ended early.');
-    return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage, notes: done.notes || [], thinking: done.thinking || '' };
+    return { text: done.text, truncated: !!done.truncated, modelTierApplied: done.tier, model: done.model, usage: done.usage, notes: done.notes || [], thinking: done.thinking || '', steps: done.steps || null, sources: done.sources || null };
   }
 
   /* the reply as JSON: the whole reply, else a code fence, else from the first { or [ to the last } or ] */

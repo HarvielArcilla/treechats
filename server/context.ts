@@ -98,7 +98,7 @@ const fileStub = (f: { name: string; kind?: string; src?: { root?: string; path?
 };
 
 /* model settings in effect at a prompt (page: settingsFor) */
-const SET_FIELDS = ['system', 'thinking', 'effort', 'temperature', 'maxTokens'];
+const SET_FIELDS = ['system', 'thinking', 'effort', 'temperature', 'maxTokens', 'tools'];
 export function settingsFor(tree: Tree, id: number) {
   const v = new TreeView(tree), out: Record<string, unknown> = {}, seen = new Set<string>();
   for (const x of v.chain(id).reverse()) { const st = tree.nodes[x]?.set; if (!st) continue; for (const f of SET_FIELDS) if (!seen.has(f) && f in st) { seen.add(f); if (st[f] != null) out[f] = st[f]; } }

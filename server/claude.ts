@@ -6,8 +6,11 @@ import { caps, costOf, prices, type Usage } from './models.ts';
 /* Calls to Claude go through here. The browser never sees the API key: it sends the turns to
    /api/sample and reads the reply back as a stream of newline-separated JSON events:
      {"t":"text","d":"…"}                         a piece of the reply
-     {"t":"done","text","truncated","tier","model","usage","notes","thinking"}   usage: tokens and cost; notes: settings the
-                                                                       model didn't use; thinking: what the API returned of it
+     {"t":"step","d":{id,tool,input}}             Claude used a tool (web search, fetching a page, running code)
+     {"t":"stepresult","d":{id,…}}                what came back from it, in brief
+     {"t":"done","text","truncated","tier","model","usage","notes","thinking","steps","sources"}   usage: tokens and cost;
+                                                  notes: settings the model didn't use; thinking: what the API returned of it;
+                                                  steps: the tool steps; sources: the pages its answer cites
      {"t":"error","code","message"}                                                          */
 
 export type Turn = { role: 'user' | 'assistant'; content: string };
@@ -17,8 +20,30 @@ export type SampleRequest = {
   images?: { mediaType: string; data: string }[];
   maxTokens?: number;
   /* model settings (see "Model settings" in web/index.html) */
-  settings?: { system?: string; temperature?: number; thinking?: boolean; effort?: string; maxTokens?: number };
+  settings?: { system?: string; temperature?: number; thinking?: boolean; effort?: string; maxTokens?: number; tools?: string[] };
 };
+/* Tools Claude can use in a reply, all run by Anthropic (nothing runs on this computer): searching the web, reading a
+   web page, and running code in a sandbox. The newest versions first; a model that doesn't take them gets the first
+   versions instead (see streamReply). */
+export const TOOL_KEYS = ['search', 'fetch', 'code'] as const;
+function toolDefs(keys: string[], legacy = false): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  if (keys.includes('search')) out.push({ type: legacy ? 'web_search_20250305' : 'web_search_20260318', name: 'web_search', max_uses: 5 });
+  if (keys.includes('fetch')) out.push({ type: legacy ? 'web_fetch_20250910' : 'web_fetch_20260318', name: 'web_fetch', max_uses: 5, max_content_tokens: 40000, citations: { enabled: true } });
+  if (keys.includes('code')) out.push({ type: legacy ? 'code_execution_20250825' : 'code_execution_20260521', name: 'code_execution' });
+  return out;
+}
+export type Step = { id: string; tool: string; input: Record<string, unknown>; result?: Record<string, unknown> };
+const clip = (s: unknown, n: number) => { const t = String(s ?? ''); return t.length > n ? t.slice(0, n) + `\n… ${(t.length - n).toLocaleString()} more characters` : t; };
+/* a tool result, in brief: enough to show what happened, not the whole page or output */
+function resultOf(b: any): Record<string, unknown> | null {
+  const c = b.content;
+  if (b.type === 'web_search_tool_result') return Array.isArray(c) ? { results: c.slice(0, 10).map((r: any) => ({ title: r.title, url: r.url })) } : { error: c?.error_code || 'error' };
+  if (b.type === 'web_fetch_tool_result') return c?.type === 'web_fetch_result' ? { url: c.url, title: c.content?.title || null } : { error: c?.error_code || 'error' };
+  if (b.type === 'code_execution_tool_result' || b.type === 'bash_code_execution_tool_result') return c && 'stdout' in c ? { stdout: clip(c.stdout, 4000), stderr: clip(c.stderr, 2000), code: c.return_code } : { error: c?.error_code || 'error' };
+  if (b.type === 'text_editor_code_execution_tool_result') return c?.error_code ? { error: c.error_code } : { ok: true };
+  return null;
+}
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const BUDGET: Record<string, number> = { low: 2048, medium: 6000, high: 12000, xhigh: 24000, max: 32000 };
 
@@ -80,6 +105,8 @@ export function buildParams(req: SampleRequest) {
     else if (st.thinking) notes.push('temperature (not used while thinking is on)');
     else params.temperature = Math.min(1, Math.max(0, st.temperature));
   }
+  const tools = (st.tools || []).filter((t) => (TOOL_KEYS as readonly string[]).includes(t));
+  if (tools.length) params.tools = toolDefs(tools);
   params.max_tokens = maxTokens;
   return { tier, model, notes, params: params as unknown as Anthropic.Messages.MessageStreamParams & { messages: Anthropic.Messages.MessageParam[] } };
 }
@@ -124,6 +151,9 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
         if (config.fake) {
           const last = params.messages[params.messages.length - 1];
           const said = (last.content as Block[]).filter((b) => b.type === 'text').map((b) => (b as Anthropic.Messages.TextBlockParam).text).join(' ');
+          const fakeTools = req.settings?.tools || [], fsteps: Step[] = [];
+          if (fakeTools.includes('search')) { const st: Step = { id: 'fake1', tool: 'web_search', input: { query: said.slice(0, 60) } }; send({ t: 'step', d: st }); st.result = { results: [{ title: 'Example result', url: 'https://example.com/result' }] }; send({ t: 'stepresult', d: { id: 'fake1', ...st.result } }); fsteps.push(st); }
+          if (fakeTools.includes('code')) { const st: Step = { id: 'fake2', tool: 'bash_code_execution', input: { command: 'python -c "print(6*7)"' } }; send({ t: 'step', d: st }); st.result = { stdout: '42\n', stderr: '', code: 0 }; send({ t: 'stepresult', d: { id: 'fake2', ...st.result } }); fsteps.push(st); }
           const reply = (params.system ? '[system prompt set] ' : '') + fakeReply(said);
           for (const piece of reply.match(/.{1,12}/gs) || []) {
             if (signal.aborted) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
@@ -132,7 +162,7 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
           }
           const input = JSON.stringify(params.messages).length, u: Usage = { input: Math.ceil(input / 4), output: Math.ceil(text.length / 4), cacheWrite: 0, cacheRead: 0 };
           u.cost = costOf(u, prices(model, process.env['TREECHATS_PRICE_' + tier.toUpperCase()]));
-          send({ t: 'done', text, truncated: false, tier, model: 'fake', usage: u, notes });
+          send({ t: 'done', text, truncated: false, tier, model: 'fake', usage: u, notes, ...(fsteps.length ? { steps: fsteps, sources: fakeTools.includes('search') ? [{ url: 'https://example.com/result', title: 'Example result' }] : undefined } : {}) });
           return;
         }
         if (provider() === 'claude-code') {
@@ -144,14 +174,40 @@ export function streamReply(req: SampleRequest, signal: AbortSignal): ReadableSt
           return;
         }
         if (!config.apiKey) throw Object.assign(new Error('No API key.'), { code: 'no_api_key' });
-        const stream = getClient().messages.stream(params, { signal });
-        let thinking = '';
-        stream.on('text', (d) => { text += d; send({ t: 'text', d }); });
-        stream.on('thinking', (d) => { thinking += d; });
-        const msg = await stream.finalMessage();
-        const mu = msg.usage, u: Usage = { input: mu.input_tokens || 0, output: mu.output_tokens || 0, cacheWrite: mu.cache_creation_input_tokens || 0, cacheRead: mu.cache_read_input_tokens || 0 };
+        let thinking = '', messages = params.messages, legacy = false, msg: Anthropic.Messages.Message | null = null;
+        const u: Usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, steps: Step[] = [], sources = new Map<string, string>();
+        let searches = 0;
+        /* With tools, a long turn can pause ("pause_turn"): it is sent back as it is and Claude carries on, up to a limit */
+        for (let round = 0; round < 8; round++) {
+          const p = { ...params, messages } as typeof params;
+          if (legacy && (params as any).tools) (p as any).tools = toolDefs(req.settings?.tools || [], true);
+          const stream = getClient().messages.stream(p, { signal });
+          stream.on('text', (d) => { text += d; send({ t: 'text', d }); });
+          stream.on('thinking', (d) => { thinking += d; });
+          stream.on('contentBlock', (b: any) => {
+            if (b.type === 'server_tool_use') { const st: Step = { id: b.id, tool: b.name, input: b.input || {} }; steps.push(st); send({ t: 'step', d: st }); }
+            else if (b.type === 'text') { for (const c of b.citations || []) if (c.url && !sources.has(c.url)) sources.set(c.url, c.title || c.url); }
+            else { const r = resultOf(b); if (r) { const st = steps.find((x) => x.id === b.tool_use_id); if (st) st.result = r; send({ t: 'stepresult', d: { id: b.tool_use_id, ...r } }); } }
+          });
+          try { msg = await stream.finalMessage(); }
+          catch (e) {
+            /* a model that doesn't know the newest tool versions gets the first ones, once */
+            if (!legacy && (params as any).tools && e instanceof Anthropic.APIError && e.status === 400 && /tool|web_search|web_fetch|code_execution/i.test(e.message || '') && !text) { legacy = true; round--; continue; }
+            throw e;
+          }
+          const mu: any = msg.usage;
+          u.input += mu.input_tokens || 0; u.output += mu.output_tokens || 0; u.cacheWrite += mu.cache_creation_input_tokens || 0; u.cacheRead += mu.cache_read_input_tokens || 0;
+          searches += mu.server_tool_use?.web_search_requests || 0;
+          if (msg.stop_reason !== 'pause_turn') break;
+          messages = [...messages, { role: 'assistant', content: msg.content as any }];
+          /* code that ran keeps its sandbox (files, installed packages) when the turn carries on */
+          const cont = (msg as any).container?.id; if (cont) (params as any).container = cont;
+        }
         u.cost = costOf(u, prices(model, process.env['TREECHATS_PRICE_' + tier.toUpperCase()]));
-        send({ t: 'done', text, truncated: msg.stop_reason === 'max_tokens', tier, model, usage: u, notes, thinking: thinking || undefined });
+        /* web searches are charged per search ($10 per 1,000), on top of tokens */
+        if (searches && u.cost != null) u.cost += searches * 0.01;
+        send({ t: 'done', text, truncated: msg?.stop_reason === 'max_tokens', tier, model, usage: u, notes, thinking: thinking || undefined,
+          ...(steps.length ? { steps } : {}), ...(sources.size ? { sources: [...sources].map(([url, title]) => ({ url, title })) } : {}) });
       } catch (e) {
         const { code, message } = errorCode(e);
         if (code !== 'cancelled') console.warn(`  Reply failed (${code})${message ? ': ' + message : ''}`);

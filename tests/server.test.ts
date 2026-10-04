@@ -246,3 +246,10 @@ test('scheduled tasks: when each kind runs next', async () => {
   assert.equal(nextRun({ every: 'week', day: 3, time: '08:30' }, sat), at(2026, 10, 7, 8, 30), 'the next Wednesday');
   assert.equal(nextRun({ every: 'week', day: 6, time: '22:00' }, sat), at(2026, 10, 10, 22), 'today’s time has passed, so next week');
 });
+
+test('tools: chosen tools become Anthropic server tools; unknown ones are ignored', () => {
+  const p = buildParams({ input: 'hi', settings: { tools: ['search', 'fetch', 'code', 'shell'] } }).params as any;
+  assert.deepEqual(p.tools.map((t: any) => t.name), ['web_search', 'web_fetch', 'code_execution']);
+  assert.ok(p.tools.every((t: any) => /_\d{8}$/.test(t.type)));
+  assert.equal((buildParams({ input: 'hi' }).params as any).tools, undefined, 'no tools unless asked');
+});
