@@ -381,6 +381,12 @@ app.post('/api/sessions/parse', sessionRoute((b) => parseSession(String(b.text |
 /* MCP: lets Claude Code and other MCP clients read your spaces, conversations and context (see server/mcp.ts) */
 app.all('/mcp', (c) => handleMcp(c.req.raw, () => loadState()));
 
+/* the diagram library for previews (it runs in the sandboxed preview frame, which loads it from here); code only */
+const mermaidFile = resolve(root, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
+app.get('/vendor/mermaid.min.js', (c) => existsSync(mermaidFile)
+  ? c.body(readFileSync(mermaidFile), 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=86400' })
+  : c.text('The diagram library is missing. Run npm install.', 404));
+
 /* the page itself: the built app in dist/ (npm start builds it first) */
 const dist = resolve(root, 'dist');
 app.use('/*', serveStatic({ root: './dist' }));
