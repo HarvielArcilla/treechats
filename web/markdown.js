@@ -85,7 +85,12 @@ marked.use({
         body = name && hljs.getLanguage(name) ? hljs.highlight(text, { language: name, ignoreIllegals: true }).value
           : text.length < 20000 ? hljs.highlightAuto(text).value : esc(text);
       } catch { body = esc(text); }
-      return `<div class="codewrap"><div class="codehead"><span class="codelang">${esc(name || 'code')}</span><button class="codecopy" data-copycode type="button">Copy</button></div><pre><code class="hljs">${body}</code></pre></div>`;
+      /* blocks that can be drawn get a Preview button, which opens them in the side panel (see previewKind in the page) */
+      const lc = name.toLowerCase(), t0 = text.trimStart();
+      const kind = ['html', 'htm', 'xhtml'].includes(lc) ? 'html' : lc === 'svg' || (lc === 'xml' && /^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(t0)) ? 'svg'
+        : lc === 'mermaid' ? 'mermaid' : ['md', 'markdown'].includes(lc) ? 'markdown' : !lc && /^<svg[\s>]/i.test(t0) ? 'svg' : !lc && /^<!doctype html|^<html[\s>]/i.test(t0) ? 'html' : '';
+      const prev = kind ? `<button class="codecopy codeprev" data-previewcode="${kind}" type="button">Preview</button>` : '';
+      return `<div class="codewrap"><div class="codehead"><span class="codelang">${esc(name || 'code')}</span>${prev}<button class="codecopy" data-copycode type="button">Copy</button></div><pre><code class="hljs">${body}</code></pre></div>`;
     },
     /* replies are shown as text, never as live HTML */
     html({ text }) { return esc(text); },

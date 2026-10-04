@@ -815,6 +815,9 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .fvbar{padding:8px 18px;border-top:1px solid var(--line)}
 .fvbody>.note{padding:0 18px 12px;margin:0}
 .fvmd{flex:1;overflow:auto;padding:16px 22px;display:block;align-content:start}
+.pvframe{display:block;flex:1;width:100%;min-height:360px;border:0;background:#fff}
+.codehead .codeprev{margin-left:auto}
+.codehead .codeprev + .codecopy{margin-left:0}
 .fvimg{flex:1;overflow:auto;display:grid;place-items:center;padding:16px;background:var(--bg)}
 .fvimg img{max-width:100%;height:auto}
 
@@ -2334,15 +2337,53 @@ function fileAt(where){
 }
 function openFileView(where){
   const m=fileAt(where); if(!m) return;
+  /* an HTML, SVG or diagram file opens as a preview too, with its source a click away */
+  const r0=Files.get(m.id), pk=r0 && r0.kind==='text' ? (/\.html?$/i.test(m.name) ? 'html' : /\.svg$/i.test(m.name) ? 'svg' : /\.(mmd|mermaid)$/i.test(m.name) ? 'mermaid' : '') : '';
+  if(pk){ openPreview(pk, r0.text, null, m.name); fileView.where=where; return; }
   if(!Files.get(m.id)){ toast(`${m.name} isn’t stored in this browser, so it can’t be shown here.`); return; }
   fileView={where, id:m.id, mode: /\.(md|markdown)$/i.test(m.name) ? 'preview' : 'view', saveDisk:true, ret:document.activeElement};
   showPane(); paintFileView();
   const b=fviewEl.querySelector('[data-fvclose]'); if(b) b.focus({preventScroll:true});
 }
+/* ---- Previews ----
+   A code block Claude wrote as HTML, SVG, Markdown or a Mermaid diagram, drawn in the side panel. HTML, SVG and
+   diagrams run in a sandboxed frame with no access to this page: it can't read your chats, the token or anything
+   stored here, and the server refuses its requests (they come from no origin). */
+const PREVIEW_NAMES={html:'HTML', svg:'SVG', markdown:'Markdown', mermaid:'Diagram'};
+const PREVIEW_EXT={html:'html', svg:'svg', markdown:'md', mermaid:'mmd'};
+function openPreview(kind, code, from, title){
+  if(fileView && fileView.url) URL.revokeObjectURL(fileView.url);
+  fileView={art:{kind, code, from, title, key:Math.random().toString(36).slice(2)}, mode:'preview', ret:document.activeElement};
+  showPane(); paintPreview();
+  const b=fviewEl.querySelector('[data-fvclose]'); if(b) b.focus({preventScroll:true});
+}
+/* the page the frame shows: the code itself for HTML; SVG and diagrams centered on a plain page */
+function previewDoc(kind, code){
+  const base='<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
+  if(kind==='html') return /<html[\s>]|<!doctype/i.test(code) ? code : `<!doctype html>${base}<body>${code}</body>`;
+  const page='<style>html,body{margin:0;min-height:100%;background:#fff;color:#111;font-family:system-ui,sans-serif}body{display:grid;place-items:center;min-height:100vh;padding:16px;box-sizing:border-box}svg{max-width:100%;height:auto}.err{color:#b3261e;white-space:pre-wrap;font:13px ui-monospace,monospace}</style>';
+  if(kind==='svg') return `<!doctype html>${base}${page}<body>${code}</body>`;
+  if(kind==='mermaid') return `<!doctype html>${base}${page}<body><pre class="mermaid">${esc(code)}</pre><script src="${location.origin}/vendor/mermaid.min.js"><\/script><script>try{mermaid.initialize({startOnLoad:false,securityLevel:'strict'});mermaid.run().catch(function(e){document.body.innerHTML='<p class=err></p>';document.querySelector('.err').textContent='This diagram has an error: '+(e&&e.message||e);});}catch(e){document.body.innerHTML='<p class=err>Diagrams need the Treechats server, which serves the diagram library.</p>';}<\/script></body>`;
+  return '';
+}
+function paintPreview(){
+  const fv=fileView, a=fv.art, box=fviewEl.querySelector('.fview'), name=PREVIEW_NAMES[a.kind]||'Preview';
+  const sw=`<div class="viewsw fvsw" role="radiogroup" aria-label="Show as" data-pos="${fv.mode==='preview'?2:1}"><span class="vtrack"><span class="vthumb" aria-hidden="true"></span><button role="radio" aria-checked="${fv.mode!=='preview'}" data-pvmode="source">Source</button><button role="radio" aria-checked="${fv.mode==='preview'}" data-pvmode="preview">Preview</button></span></div>`;
+  const lines=a.code.replace(/\n$/,'').split('\n').length;
+  let body;
+  if(fv.mode==='source'){ const hl=hlFor(a.code, 'preview.'+(a.kind==='mermaid'?'txt':PREVIEW_EXT[a.kind])); body=`<div class="fvcode"><pre class="fvgutter" aria-hidden="true">${Array.from({length:lines}, (_,i)=>i+1).join('\n')}</pre><pre class="fvsrc"><code class="hljs">${hl}</code></pre></div>`; }
+  else if(a.kind==='markdown') body=`<div class="rbody fvmd">${md(a.code)}</div>`;
+  else body=`<iframe class="pvframe" sandbox="allow-scripts allow-popups allow-forms allow-modals" referrerpolicy="no-referrer" title="${name} preview"></iframe>`;
+  box.innerHTML=`<div class="fvhead"><div class="fvtitle"><h2 id="fvTitle">${esc(a.title || name+' preview')}</h2><p class="note">${a.from!=null&&S.nodes[a.from]?`From the reply to #${a.from} · `:''}${lines.toLocaleString()} line${lines===1?'':'s'}${a.kind==='html'?' · runs sandboxed, apart from Treechats':''}</p></div>${sw}<button class="btn" data-fvclose aria-label="Close the preview">Close</button></div>
+    <div class="bar fvtools"><button class="btn" data-pvcopy>Copy</button><button class="btn" data-pvdownload title="Save it as a file">Download</button>${fv.mode==='preview'&&a.kind!=='markdown'?'<button class="btn" data-pvreload title="Draw it again from the start">Reload</button>':''}</div>
+    <div class="fvbody">${body}</div>`;
+  box.dataset.art=a.key+fv.mode;
+  const f=box.querySelector('.pvframe'); if(f) f.srcdoc=previewDoc(a.kind, a.code);
+}
 function closeFileView(force){
   const fv=fileView; if(!fv) return;
   if(!force && fv.mode==='edit'){ const t=fviewEl.querySelector('#fvText'), r=Files.get(fv.id); if(t && r && t.value!==r.text && t.value!==fv.draft){ toast('You have unsaved edits. Save them, or Cancel to drop them.'); return; } }
-  fileView=null; hidePane(); if(fv.url) URL.revokeObjectURL(fv.url);
+  fileView=null; hidePane(); if(fv.url) URL.revokeObjectURL(fv.url); delete fviewEl.querySelector('.fview').dataset.art;
   if(fv.ret && fv.ret.focus && document.contains(fv.ret)) fv.ret.focus({preventScroll:true});
 }
 function fileSource(m, where){
@@ -2352,6 +2393,8 @@ function fileSource(m, where){
 }
 function paintFileView(){
   const fv=fileView; if(!fv) return;
+  /* a preview is drawn when it opens or you change it, not on every redraw of the page, so a running page keeps its state */
+  if(fv.art){ if(fviewEl.querySelector('.fview').dataset.art!==fv.art.key+fv.mode) paintPreview(); return; }
   const m=fileAt(fv.where), r=m && Files.get(m.id); if(!m || !r){ closeFileView(true); return; }
   const box=fviewEl.querySelector('.fview'), isImg=r.kind==='image', text=r.text||'', lines=isImg?0:text.replace(/\n$/,'').split('\n').length;
   const isMd=!isImg && /\.(md|markdown)$/i.test(m.name), editable=!isImg;
@@ -6335,6 +6378,22 @@ function toast(msg, withUndo, action){
   r.innerHTML=`<div class="toast"><span>${esc(msg)}</span>${action?`<button id="toastAct">${esc(action.label)}</button>`:''}${withUndo?'<button id="toastUndo">Undo</button>':''}</div>`;
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>r.innerHTML='', action?6000:3800);
 }
+/* a code block's Preview button, wherever the block is */
+document.addEventListener('click', e=>{
+  const b=e.target.closest('[data-previewcode]'); if(!b) return;
+  e.stopPropagation();
+  const code=b.closest('.codewrap').querySelector('pre code').textContent;
+  const r=b.closest('.reply[data-key^="r"]'), from=r ? +r.dataset.key.slice(1) : null;
+  openPreview(b.dataset.previewcode, code, Number.isFinite(from) ? from : null);
+}, true);
+fviewEl.addEventListener('click', e=>{
+  const fv=fileView; if(!fv || !fv.art) return;
+  const c=q=>e.target.closest(q);
+  const m=c('[data-pvmode]'); if(m){ fv.mode=m.dataset.pvmode; paintPreview(); return; }
+  if(c('[data-pvcopy]')){ copyText(fv.art.code, true).then(ok=>{ if(ok) toast('Copied.'); }); return; }
+  if(c('[data-pvreload]')){ paintPreview(); return; }
+  if(c('[data-pvdownload]')){ const a=fv.art, url=URL.createObjectURL(new Blob([a.code], {type:'text/plain'})), l=document.createElement('a'); l.href=url; l.download=a.title || `preview${a.from!=null?'-'+a.from:''}.${PREVIEW_EXT[a.kind]||'txt'}`; l.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000); return; }
+}, true);
 /* a code block's Copy button, wherever the block is (a reply, Compare) */
 document.addEventListener('click', async e=>{
   const b=e.target.closest('[data-copycode]'); if(!b) return;
