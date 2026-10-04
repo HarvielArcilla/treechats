@@ -39,6 +39,19 @@ async function startServer(env: Record<string, string>, attempts = 4): Promise<{
   throw new Error('server did not start:\n' + log);
 }
 
+/* another server on a data folder already used (a restart) */
+async function startServerOn(env: Record<string, string>, data: string): Promise<string> {
+  for (const s of servers) if (s.exitCode == null && (s as any).dataDir === data) s.kill();
+  await new Promise((r) => setTimeout(r, 400));
+  const port = 5400 + Math.floor(Math.random() * 2000);
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'server/start.ts'], {
+    cwd: root, env: { ...process.env, TREECHATS_PORT: String(port), TREECHATS_DATA_DIR: data, TREECHATS_OPEN: '0', ANTHROPIC_API_KEY: '', TREECHATS_TOKEN: TOKEN, ...env }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  (child as any).dataDir = data; servers.push(child);
+  const base = `http://localhost:${port}`;
+  for (let i = 0; i < 150; i++) { try { if ((await fetch(base + '/api/auth')).ok) return base; } catch {} await new Promise((r) => setTimeout(r, 200)); }
+  throw new Error('server did not start');
+}
 const post = (base: string, body: object, signal?: AbortSignal) => fetch(base + '/api/sample', {
   method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify(body), signal,
 });
@@ -261,13 +274,19 @@ test('the token and the password lock, over HTTP: nothing without the token; loc
   /* without the token: refused, but the page itself (code, no data) still loads so it can show the sign-in screen */
   assert.equal((await rawFetch(base + '/api/state')).status, 401);
   assert.equal((await rawFetch(base + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401);
-  assert.deepEqual(await (await rawFetch(base + '/api/auth')).json(), { authed: false, lock: { on: false, unlocked: false, autoLock: 15 } });
-  /* the link with the token becomes a cookie and leaves the address bar */
-  const link = await rawFetch(base + '/?token=' + TOKEN, { redirect: 'manual' });
-  assert.equal(link.status, 302);
-  const cookie = link.headers.get('set-cookie')!;
-  assert.match(cookie, /HttpOnly/i); assert.match(cookie, /SameSite=Strict/i);
-  assert.equal((await rawFetch(base + '/api/state', { headers: { cookie: cookie.split(';')[0] } })).status, 204);
+  assert.deepEqual(await (await rawFetch(base + '/api/auth')).json(), { authed: false, lock: { on: false, password: false, unlocked: false, autoLock: 15, keychain: null } });
+  /* signing in hands the page the token to keep (no cookie, which browsers would send to every localhost port) */
+  const json = { 'content-type': 'application/json' };
+  const login = await rawFetch(base + '/api/auth/login', { method: 'POST', headers: json, body: JSON.stringify({ token: TOKEN }) });
+  assert.equal((await login.json()).token, TOKEN); assert.equal(login.headers.get('set-cookie'), null);
+  assert.equal((await rawFetch(base + '/api/auth/login', { method: 'POST', headers: json, body: JSON.stringify({ code: 'made-up-code' }) })).status, 400, 'a made-up one-time code signs nothing in');
+  assert.equal((await rawFetch(base + '/api/state', { headers: { cookie: 'treechats_1=' + TOKEN } })).status, 401, 'cookies don’t sign requests in');
+  /* a browser signed in by an older version's cookie gets the token once, and the cookie is deleted */
+  const port = new URL(base).port, migrated = await rawFetch(base + '/api/auth', { headers: { cookie: `treechats_${port}=${TOKEN}` } });
+  assert.equal((await migrated.json()).token, TOKEN); assert.match(migrated.headers.get('set-cookie') || '', /treechats_\d+=;/);
+  /* the event stream, which can't send headers, takes the token in its address */
+  const ctl = new AbortController(), ev = await rawFetch(base + '/api/agent/events?token=' + TOKEN, { signal: ctl.signal });
+  assert.equal(ev.status, 200); ctl.abort();
 
   const state = { db: { spaces: { s1: { id: 's1', name: 'P', tree: { nodes: { 1: { id: 1, parents: [], text: 'PLAINTEXT-MARKER', reply: 'r' } }, refs: { r1: { name: 'main', tip: 1 } } } } }, order: ['s1'], current: 's1' }, opts: {} };
   await fetch(base + '/api/state', { method: 'PUT', headers: { origin: base }, body: JSON.stringify(state) });
@@ -297,7 +316,7 @@ test('the token and the password lock, over HTTP: nothing without the token; loc
   await new Promise((r) => setTimeout(r, 1100));
   /* the password signs a browser in, even without the token */
   const ok = await rawFetch(base + '/api/vault/unlock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'correct horse battery' }) });
-  assert.equal(ok.status, 200); assert.match(ok.headers.get('set-cookie') || '', /treechats_/);
+  assert.equal(ok.status, 200); assert.equal((await ok.json()).token, TOKEN);
   assert.match(await (await fetch(base + '/api/state')).text(), /PLAINTEXT-MARKER/);
   assert.equal((await post('/api/vault/disable', { password: 'correct horse battery' })).status, 200);
   assert.ok(onDisk(), 'turning it off saves it readable again');
@@ -312,10 +331,62 @@ test('the token and the password lock, over HTTP: nothing without the token; loc
   await post('/api/vault/lock', {});
   assert.equal((await post('/api/vault/unlock', { password: 'after recovery' })).status, 200, 'the recovery key set a new password');
 
+  /* coding tools hold the token but can't change encryption (no Origin header: not the page) */
+  assert.equal((await fetch(base + '/api/vault/disable', { method: 'POST', body: JSON.stringify({ password: 'after recovery' }) })).status, 403);
+  assert.equal((await fetch(base + '/api/vault/recovery', { method: 'POST', body: '{}' })).status, 403);
   /* other ways in that must stay shut */
   const devPort = new URL(base).port; const other = `http://localhost:${Number(devPort) + 1}`;
   assert.equal((await fetch(base + '/api/state', { headers: { origin: other } })).status, 403, 'the dev port is only trusted with npm run dev');
   assert.equal((await fetch(base + '/api/vault/lock', { method: 'POST', headers: { origin: base, 'content-type': 'text/plain' }, body: '{}' })).status, 415, 'changes must be JSON');
-  const once = await rawFetch(base + '/?login=made-up-code', { redirect: 'manual' });
-  assert.equal(once.status, 302); assert.equal(once.headers.get('set-cookie'), null, 'a made-up one-time code signs nothing in');
+});
+
+test('encryption without a password (Linux, with a stand-in keyring): opens by itself, needs the recovery key elsewhere', { skip: process.platform !== 'linux' }, async () => {
+  const bin = mkdtempSync(join(tmpdir(), 'tc-kr-')), store = join(bin, 'store');
+  /* a stand-in secret-tool keeping each account in its own file */
+  writeFileSync(join(bin, 'secret-tool'), `#!/bin/sh\nf="${store}-$5"\ncase "$1" in store) f="${store}-$6"; cat > "$f";; lookup) [ -f "$f" ] && cat "$f" || exit 1;; clear) rm -f "$f";; esac\n`);
+  chmodSync(join(bin, 'secret-tool'), 0o755);
+  const env = { TREECHATS_FAKE: '1', TREECHATS_TEST_KEYCHAIN: '1', PATH: `${bin}:${process.env.PATH}` };
+  const first = await startServer(env), base = first.base, data = first.data;
+  const post = (b: string, path: string, body: object) => fetch(b + path, { method: 'POST', headers: { origin: b }, body: JSON.stringify(body) });
+  const state = { db: { spaces: {}, order: [], current: '' }, opts: {}, marker: 'KEYCHAIN-MARKER' };
+  await fetch(base + '/api/state', { method: 'PUT', headers: { origin: base }, body: JSON.stringify(state) });
+  const info = async (b: string) => (await (await fetch(b + '/api/auth')).json()).lock;
+  assert.equal((await info(base)).keychain, 'your system keyring');
+  const on = await post(base, '/api/vault/enable', {});
+  assert.equal(on.status, 200);
+  const { recovery } = await on.json();
+  assert.ok(existsSync(store + '-data-key'), 'the key went into the keyring');
+  const disk = () => ['treechats.db', 'treechats.db-wal'].some((f) => existsSync(join(data, f)) && readFileSync(join(data, f)).includes('KEYCHAIN-MARKER'));
+  assert.ok(!disk(), 'encrypted on disk');
+  assert.deepEqual(await info(base), { on: true, password: false, unlocked: true, autoLock: 15, keychain: 'your system keyring' });
+  assert.equal((await post(base, '/api/vault/lock', {})).status, 400, 'nothing to lock with, without a password');
+
+  /* a restart opens by itself, with the key from the keyring */
+  first.child.kill(); await new Promise((r) => setTimeout(r, 500));
+  const again = await startServerOn(env, data);
+  assert.match(await (await fetch(again + '/api/state')).text(), /KEYCHAIN-MARKER/);
+
+  /* adding the password lock keeps the data and the recovery key, and takes the key out of the keyring */
+  const add = await post(again, '/api/vault/enable', { password: 'correct horse battery', autoLock: 0 });
+  assert.equal((await add.json()).recovery, null);
+  assert.ok(!existsSync(store + '-data-key'));
+  await post(again, '/api/vault/lock', {});
+  assert.equal((await fetch(again + '/api/state')).status, 423);
+  assert.equal((await post(again, '/api/vault/unlock', { password: 'correct horse battery' })).status, 200);
+  /* turning the lock off but keeping encryption puts the key back */
+  assert.equal((await post(again, '/api/vault/nopassword', { password: 'correct horse battery' })).status, 200);
+  assert.ok(existsSync(store + '-data-key'));
+  assert.equal((await info(again)).password, false);
+
+  /* "another computer": the key is gone from the keyring, so only the recovery key opens it, and puts the key back */
+  rmSync(store + '-data-key');
+  const third = await startServerOn(env, data);
+  assert.equal((await fetch(third + '/api/state')).status, 423);
+  assert.equal((await post(third, '/api/vault/unlock', { password: 'x' })).status, 400);
+  assert.equal((await post(third, '/api/vault/unlock', { recovery })).status, 200);
+  assert.ok(existsSync(store + '-data-key'));
+  assert.match(await (await fetch(third + '/api/state')).text(), /KEYCHAIN-MARKER/);
+  /* and off again: readable, and the key leaves the keyring */
+  assert.equal((await post(third, '/api/vault/disable', {})).status, 200);
+  assert.ok(disk()); assert.ok(!existsSync(store + '-data-key'));
 });

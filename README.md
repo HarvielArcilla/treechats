@@ -248,24 +248,31 @@ To bring spaces over from the claude.ai version (where projects were called spac
 **Import / export › Copy this space as JSON**, then here open a project's **⋯ › Import / export JSON…**, paste it
 and choose **Import pasted JSON as a new project**.
 
-### Password lock
+### Encryption and the password lock
 
-**Settings › Privacy & security › Password lock** encrypts your chats, settings, snapshots and attachments with a
-password, and Treechats asks for it whenever it starts or locks. It can lock by itself after a while without use, and
-**Lock Treechats now** is in the Ctrl/⌘-K palette. While it's locked, coding tools get "Treechats is locked" instead of
-your chats.
+Both are off by default, in **Settings › Privacy & security**:
 
-Turn it on if other people use this computer or your account, or if your data folder is backed up or synced
-somewhere. On a computer only you use, with disk encryption on, it adds little.
+- **Encryption** encrypts your chats, settings, snapshots and attachments, and keeps the key in the system keychain,
+  so Treechats still opens without asking. It protects copies of your data folder (backups, synced folders, a copied
+  disk). It doesn't stop someone using your account, since they could open Treechats too.
+- **The password lock** asks for a password whenever Treechats starts or locks, and turns encryption on (the key is
+  then opened by your password instead of kept in the keychain). It can lock by itself after a while without use, and
+  **Lock Treechats now** is in the Ctrl/⌘-K palette. While it's locked, coding tools get "Treechats is locked"
+  instead of your chats. Turning it off lets you keep encryption on or turn both off.
 
-When you turn it on you get a **recovery key**. If you forget your password, the recovery key is the only way back
-in; with neither, your chats can't be recovered by anyone. Exports you make (Import / export) are not encrypted.
+Turn on encryption if your data folder is backed up or synced; add the password lock if other people use this
+computer or your account. On a computer only you use, with disk encryption on, neither adds much.
 
-How it works: a random key encrypts the data (AES-256-GCM). That key is stored twice, encrypted with a key made from
-your password (scrypt, deliberately slow to make guessing expensive) and with your recovery key. While Treechats is
-unlocked the key is kept in memory only; locking forgets it. Attachments are encrypted in the browser with a key
-derived from it (the browser may keep older unencrypted copies in its own files for a while after you turn the lock
-on). Wrong passwords slow down further tries.
+When you turn encryption on you get a **recovery key**. It opens your data if you forget your password, or on another
+computer (where the keychain doesn't have the key); with neither the password, the keychain entry nor the recovery
+key, your chats can't be recovered by anyone. Exports you make (Import / export) are not encrypted.
+
+How it works: a random key encrypts the data (AES-256-GCM). That key is stored encrypted with your recovery key, and
+either kept in the keychain or encrypted with a key made from your password (scrypt, deliberately slow to make
+guessing expensive). Adding or removing the password only changes how the key is stored; the data isn't re-encrypted.
+While Treechats is unlocked the key is kept in memory only; locking forgets it. Attachments are encrypted in the
+browser with a key derived from it (the browser may keep older unencrypted copies in its own files for a while after
+you turn encryption on). Wrong passwords slow down further tries.
 
 ## Security
 
@@ -276,12 +283,12 @@ Who can use Treechats:
   read your chats or reach your folders.
 - **Only you.** Every request needs Treechats' token, so other accounts and programs on this computer can't use it
   either. `npm start` opens your browser with a one-time sign-in link (a command line can be seen by other accounts,
-  so the token itself never goes on one), and the terminal prints a link with the token for other browsers. Signing
-  in sets a cookie; coding tools send the token in a header. The token is in the file `token` in the data folder.
-  **Copy sign-in link** and **Reset the token** are in Settings › Privacy & security. With the password lock on, the
-  password signs a browser in too, and wrong guesses are checked one at a time with a growing wait.
-- Browsers send cookies to every port on localhost, so another local server you open in the same browser could see
-  the token. If that may have happened, reset it.
+  so the token itself never goes on one), and the terminal prints a link with the token for other browsers. The page
+  keeps the token in its own storage, which browsers keep apart for each port, so no other local server can see it
+  (a cookie would go to every port on localhost); coding tools send it in a header. The token is in the file `token`
+  in the data folder. **Copy sign-in link** and **Reset the token** are in Settings › Privacy & security. With the
+  password lock on, the password signs a browser in too, and wrong guesses are checked one at a time with a growing
+  wait.
 
 What it can reach:
 - The API key stays on the server and is never sent to the browser.
@@ -298,7 +305,7 @@ What it can reach:
 
 ```
 npm run dev     # server with auto-restart, page with live reload at http://localhost:5179 (sign in once with the
-                # link the server prints; the cookie works for both ports)
+                # dev link the server prints)
 npm test        # tests
 npm run check   # type check
 ```

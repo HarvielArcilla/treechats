@@ -11,18 +11,63 @@
   /* this tab, so a notice about a change it made itself can be ignored */
   window.TREECHATS_TAB = Math.random().toString(36).slice(2);
 
-  function getSync(url) {
+  /* ---- the token ----
+     Kept in localStorage, which browsers keep apart for each port, so no other local server can read it (a cookie
+     would go to every port on localhost). Every request to the server carries it in the Authorization header. */
+  var TOKEN_KEY = 'treechats-token', token = null;
+  function readToken() { try { return window.localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+  function keepToken(t) { token = t || null; try { if (t) window.localStorage.setItem(TOKEN_KEY, t); else window.localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+  window.TREECHATS_KEEP_TOKEN = keepToken;
+  token = readToken();
+  function xhr(method, url, body) {
     try {
       var x = new XMLHttpRequest();
-      x.open('GET', url, false);
-      x.send();
-      return x.status === 200 ? x.responseText : x.status === 204 ? '' : null;
+      x.open(method, url, false);
+      if (token) x.setRequestHeader('authorization', 'Bearer ' + token);
+      if (body != null) x.setRequestHeader('content-type', 'application/json');
+      x.send(body == null ? null : JSON.stringify(body));
+      return x;
     } catch (e) { return null; }
+  }
+  function getSync(url) {
+    var x = xhr('GET', url);
+    return !x ? null : x.status === 200 ? x.responseText : x.status === 204 ? '' : null;
+  }
+  /* a sign-in link: ?token=… (printed in the terminal) or ?login=… (a one-time code from the link Treechats opens).
+     Either is traded for the token, and taken out of the address bar. */
+  (function () {
+    var q = new URLSearchParams(location.search), t = q.get('token'), code = q.get('login');
+    if (!t && !code) return;
+    var x = xhr('POST', '/api/auth/login', t ? { token: t } : { code: code });
+    try { if (x && x.status === 200) keepToken(JSON.parse(x.responseText).token); } catch (e) {}
+    q.delete('token'); q.delete('login');
+    history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+  })();
+  /* same-origin requests to the server carry the token; a refused one (the token was reset, or Treechats locked)
+     reloads the page into the sign-in or unlock screen, which also clears what it was showing */
+  var rawFetch = window.fetch.bind(window), reloading = false;
+  /* only this page's own origin (same port) ever gets the token */
+  var isApi = function (url) { try { var u = new URL(String(url), location.href); return u.origin === location.origin && /^\/(api\/|mcp)/.test(u.pathname); } catch (e) { return false; } };
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' || input instanceof URL ? String(input) : (input && input.url) || '';
+    if (token && isApi(url)) { init = Object.assign({}, init); var h = new Headers(init.headers || (typeof input !== 'string' && input.headers) || {}); if (!h.has('authorization')) h.set('authorization', 'Bearer ' + token); init.headers = h; }
+    return rawFetch(input, init).then(function (r) {
+      if (!reloading && !window.TREECHATS_GATE && (r.status === 423 || r.status === 401) && isApi(url)) { reloading = true; location.reload(); }
+      return r;
+    });
+  };
+  /* EventSource can't send headers, so the event stream gets the token in its address (it never leaves this computer) */
+  if (window.EventSource) {
+    var RawES = window.EventSource;
+    window.EventSource = function (url, opts) { if (token && isApi(String(url))) url += (String(url).indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token); return new RawES(url, opts); };
+    window.EventSource.prototype = RawES.prototype;
   }
 
   /* ---- signed in, and unlocked? ---- */
   var auth = null;
   try { auth = JSON.parse(getSync('/api/auth') || 'null'); } catch (e) { auth = null; }
+  /* signed in by an older version's cookie: keep the token it hands over */
+  if (auth && auth.token) keepToken(auth.token);
   if (auth && (!auth.authed || (auth.lock.on && !auth.lock.unlocked))) { gate(auth); return; }
 
   var cfgText = getSync('/api/config');
@@ -136,23 +181,12 @@
     use: function (name) { return Promise.resolve(name === 'sample' && cfg.hasKey ? sample : null); }
   };
 
-  /* ---- staying signed in and locking ----
-     If Treechats locks while the page is open (Lock now, the auto-lock, or a restart with the lock on), the next
-     request is refused, and the page reloads into the unlock screen, which also clears what it was showing. */
-  var reloading = false, rawFetch = window.fetch.bind(window);
-  window.fetch = function (input, init) {
-    return rawFetch(input, init).then(function (r) {
-      var url = typeof input === 'string' ? input : (input && input.url) || '';
-      if (!reloading && (r.status === 423 || r.status === 401) && /^(\/|https?:\/\/[^/]+\/)api\//.test(url)) { reloading = true; location.reload(); }
-      return r;
-    });
-  };
-  /* while you're using the page, the auto-lock waits (reading counts, not only saving) */
+  /* ---- while you're using the page, the auto-lock waits (reading counts, not only saving) ---- */
   var lastPing = Date.now();
   function alive() {
-    if (!cfg.lock || !cfg.lock.on || !cfg.lock.autoLock || Date.now() - lastPing < 60000) return;
+    if (!cfg.lock || !cfg.lock.password || !cfg.lock.autoLock || Date.now() - lastPing < 60000) return;
     lastPing = Date.now();
-    rawFetch('/api/vault/alive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(function (r) { if (r.status === 423 && !reloading) { reloading = true; location.reload(); } }).catch(function () {});
+    window.fetch('/api/vault/alive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(function () {});
   }
   ['pointerdown', 'keydown', 'wheel'].forEach(function (t) { window.addEventListener(t, alive, { passive: true, capture: true }); });
 
@@ -172,12 +206,17 @@
       '#tcgate button{font:inherit;cursor:pointer}#tcgate .go{padding:10px;border-radius:8px;border:0;background:var(--g-acc);color:var(--g-card);font-weight:600}' +
       '#tcgate .go:disabled{opacity:.6;cursor:wait}#tcgate .alt{border:0;background:none;color:var(--g-acc);padding:0;justify-self:start;font-size:.85rem}' +
       '#tcgate .err{color:var(--g-err);font-size:.85rem;min-height:1.2em}#tcgate code{font-size:.85em}';
-    var mode = a.lock.on ? 'password' : 'token';
+    /* encrypted without a password and the key isn't in this computer's keychain: only the recovery key opens it */
+    var mode = !a.lock.on || (a.authed && a.lock.unlocked) ? 'token' : a.lock.password ? 'password' : a.lock.unlocked ? 'token' : 'recovery';
     function html() {
       if (mode === 'password') return (a.lock.unlocked ? '<h1>Sign in to Treechats</h1><p>Enter your Treechats password to use it in this browser.</p>' : '<h1>Treechats is locked</h1><p>Enter your password to open your chats.</p>') +
         '<label>Password<input type="password" name="password" autocomplete="current-password" required autofocus></label>' +
         '<div class="err" role="alert"></div><button class="go">Unlock</button>' +
         '<button type="button" class="alt" data-mode="recovery">Forgot it? Use your recovery key</button>' +
+        (a.authed ? '' : '<button type="button" class="alt" data-mode="token">Sign in with the token instead</button>');
+      if (mode === 'recovery' && !a.lock.password) return '<h1>Enter your recovery key</h1><p>Your Treechats data is encrypted, and its key isn’t in this computer’s keychain (a different computer, or a reinstalled system, say). The recovery key is the code you saved when you turned encryption on.</p>' +
+        '<label>Recovery key<input name="recovery" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required autofocus></label>' +
+        '<div class="err" role="alert"></div><button class="go">Open</button>' +
         (a.authed ? '' : '<button type="button" class="alt" data-mode="token">Sign in with the token instead</button>');
       if (mode === 'recovery') return '<h1>Use your recovery key</h1><p>The code you saved when you turned the lock on. Then choose a new password.</p>' +
         '<label>Recovery key<input name="recovery" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required autofocus></label>' +
@@ -188,7 +227,7 @@
       return '<h1>Sign in to Treechats</h1><p>Open Treechats from the link it printed in the terminal when it started (it ends in <code>?token=…</code>). Or paste the token here. It is also in the file named <code>token</code> in Treechats’ data folder.</p>' +
         '<label>Token<input name="token" autocomplete="off" spellcheck="false" required autofocus></label>' +
         '<div class="err" role="alert"></div><button class="go">Sign in</button>' +
-        (a.lock.on ? '<button type="button" class="alt" data-mode="password">Use the password instead</button>' : '');
+        (a.lock.password ? '<button type="button" class="alt" data-mode="password">Use the password instead</button>' : '');
     }
     function show() {
       var root = document.getElementById('tcgate');
@@ -207,6 +246,7 @@
       var url, body;
       if (mode === 'token') { url = '/api/auth/login'; body = { token: v('token') }; }
       else if (mode === 'password') { url = '/api/vault/unlock'; body = { password: v('password') }; }
+      else if (!a.lock.password) { url = '/api/vault/unlock'; body = { recovery: v('recovery') }; }
       else {
         if (v('newPassword') !== v('again')) { err.textContent = 'The two passwords don’t match.'; return; }
         url = '/api/vault/unlock'; body = { recovery: v('recovery'), newPassword: v('newPassword') };
@@ -216,8 +256,10 @@
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (x) {
           if (x.ok) {
-            /* signed in with the token, but the lock is on and locked: the password is still needed */
-            if (mode === 'token' && a.lock.on && !a.lock.unlocked) { a.authed = true; mode = 'password'; show(); return; }
+            if (x.d.token) keepToken(x.d.token);
+            if (x.d.warning) { try { sessionStorage.setItem('treechats-warning', x.d.warning); } catch (e) {} }
+            /* signed in with the token, but locked: the password (or recovery key) is still needed */
+            if (mode === 'token' && a.lock.on && !a.lock.unlocked) { a.authed = true; mode = a.lock.password ? 'password' : 'recovery'; show(); return; }
             location.reload(); return;
           }
           go.disabled = false; err.textContent = x.d.message || 'That didn’t work.';
@@ -226,5 +268,7 @@
         .catch(function () { go.disabled = false; err.textContent = 'Treechats isn’t answering. Is it still running?'; });
     }
     if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+    /* signed in from another tab (a new token kept there): this one follows */
+    window.addEventListener('storage', function (e) { if (e.key === TOKEN_KEY && e.newValue) location.reload(); });
   }
 })();

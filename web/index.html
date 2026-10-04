@@ -4481,7 +4481,7 @@ function paletteCommands(q){
   add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
   add('Settings', 'Open settings', ()=>openSettings());
-  if(lockInfo().on) add('App', 'Lock Treechats now', ()=>lockNow());
+  if(lockInfo().password) add('App', 'Lock Treechats now', ()=>lockNow());
   if(hasServer()) add('Settings', 'Privacy & security', ()=>openSettings('privacy'));
   add('Settings', 'Keyboard shortcuts', ()=>openSettings('keys'));
   for(const [m,l] of [['system','System'],['light','Light'],['dark','Dark']]) add('Settings', `Theme mode: ${l}`, ()=>{ opts.theme=m; afterSetting('theme'); });
@@ -6363,34 +6363,50 @@ function themeEditorHTML(){
    and the token that signs browsers and coding tools in. */
 const lockInfo = () => (window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.lock) || {on:false};
 const AUTO_LOCKS=[[5,'5 min'],[15,'15 min'],[60,'1 hour'],[240,'4 hours'],[1440,'1 day'],[0,'Never']];
-let priv={form:null, recovery:null, busy:false, err:''};
+let priv={form:null, recovery:null, recoveryFor:null, busy:false, err:'', offMode:'off'};
 function autoLockText(n){ const x=AUTO_LOCKS.find(a=>a[0]===n); return n ? `after ${x?x[1]:n+' min'} without use` : 'only when you lock it or Treechats stops'; }
 function privacyHTML(){
   if(!hasServer()) return `<section class="setsec"><p class="note">This page isn’t connected to the Treechats server, so everything is kept in this browser’s storage.</p></section>`;
   const L=window.TREECHATS_LOCAL, lk=lockInfo(), key=L.key||{}, err=priv.err?`<p class="perr" role="alert">${esc(priv.err)}</p>`:'', busy=priv.busy?'disabled':'';
   const pw=(name, label, auto)=>`<label class="pfield">${label}<input type="password" data-pw="${name}" autocomplete="${auto}" ${busy}></label>`;
   let h=`<section class="setsec"><h3>Your data</h3>
-    <p class="note">Your chats, projects and settings are saved in <code>${esc(L.dataDir||'the data folder')}</code>, which only your account on this computer can open${lk.on?', and they are encrypted with your password':''}. Attachments are kept in this browser’s storage${lk.on?', also encrypted':''}. Files from linked folders stay where they are. Nothing is sent anywhere except the requests to Claude you make.</p>
+    <p class="note">Your chats, projects and settings are saved in <code>${esc(L.dataDir||'the data folder')}</code>, which only your account on this computer can open${lk.on?', and they are encrypted':''}. Attachments are kept in this browser’s storage${lk.on?', also encrypted':''}. Files from linked folders stay where they are. Nothing is sent anywhere except the requests to Claude you make.</p>
     <p class="note">The best protection for a lost or stolen computer is disk encryption: FileVault on a Mac, BitLocker or Device encryption on Windows, or full-disk encryption on Linux. It covers Treechats and everything else.</p></section>`;
-  /* the lock */
+  const recBox = priv.recovery ? `<div class="recbox"><b>Your recovery key</b><code class="reccode">${esc(priv.recovery)}</code>
+      <p class="note">If you forget your password, or move to another computer, this is the only way back in. Nobody else can recover your chats: not Treechats, not anyone. Save it somewhere safe that isn’t this computer, like a password manager or on paper. It won’t be shown again.</p>
+      <div class="tbar"><button class="btn" data-reccopy>Copy</button><button class="btn" data-recsave>Save as a file</button><button class="btn primary" data-recdone>I’ve saved it</button></div></div>` : '';
+  /* encryption */
+  h+=`<section class="setsec"><h3>Encryption</h3>`;
+  if(priv.recovery && priv.recoveryFor==='encrypt') h+=recBox;
+  else if(lk.on && lk.password) h+=`<p class="note">On, because the password lock is on. Your chats, settings and attachments are encrypted with a key only your password or recovery key opens.</p>`;
+  else if(lk.on) h+=`<p class="note">On. Your chats, settings and attachments are encrypted, and the key is kept in ${esc(lk.keychain||'the system keychain')}, so Treechats opens without asking. Copies of the data folder (backups, sync, a copied disk) can’t be read without it. On another computer, your recovery key opens it.</p>
+      <div class="tbar"><button class="btn" data-lockform="recovery" aria-pressed="${priv.form==='recovery'}">New recovery key</button><button class="btn danger" data-lockform="decrypt" aria-pressed="${priv.form==='decrypt'}">Turn off encryption</button></div>
+      ${priv.form==='recovery'?`<form class="pform" data-privform="recovery"><p class="note">Makes a new recovery key. The old one stops working.</p>${err}<div class="tbar"><button class="btn primary" ${busy}>Make a new recovery key</button></div></form>`:''}
+      ${priv.form==='decrypt'?`<form class="pform" data-privform="decrypt"><p class="note">Your data is decrypted and saved readable again, protected by your account’s file permissions only.</p>${err}<div class="tbar"><button class="btn danger" ${busy}>${priv.busy?'Decrypting…':'Turn off encryption'}</button></div></form>`:''}`;
+  else {
+    h+=`<p class="note">Off. Encrypts your chats, settings and attachments, with the key kept in the system keychain so Treechats still opens without asking. It protects copies of your data folder, such as backups and synced folders; it doesn’t stop someone using your account (the password lock does). The password lock turns it on too.</p>`;
+    h+= lk.keychain
+      ? `<form class="pform" data-privform="encrypt">${err&&priv.form==='encrypt'?err:''}<div class="tbar"><button class="btn" ${busy}>${priv.busy&&priv.form==='encrypt'?'Encrypting…':'Turn on encryption'}</button></div></form>`
+      : `<p class="note">There’s no system keychain Treechats can use here${navigator.platform.startsWith('Linux')?' (it needs secret-tool from libsecret and a running keyring)':''}, so encryption comes with the password lock.</p>`;
+  }
+  h+=`</section>`;
+  /* the password lock */
   h+=`<section class="setsec"><h3>Password lock</h3>`;
-  if(priv.recovery){
-    h+=`<div class="recbox"><b>Your recovery key</b><code class="reccode">${esc(priv.recovery)}</code>
-      <p class="note">If you forget your password, this is the only way back in. Nobody else can recover your chats: not Treechats, not anyone. Save it somewhere safe that isn’t this computer, like a password manager or on paper. It won’t be shown again.</p>
-      <div class="tbar"><button class="btn" data-reccopy>Copy</button><button class="btn" data-recsave>Save as a file</button><button class="btn primary" data-recdone>I’ve saved it</button></div></div>`;
-  } else if(!lk.on){
-    h+=`<p class="note">Encrypts your chats, settings and attachments with a password, and asks for it whenever Treechats starts or locks. Useful if other people use this computer or your account, or if your data folder is backed up or synced somewhere. Coding tools can’t read your chats while it’s locked.</p>
+  if(priv.recovery && priv.recoveryFor!=='encrypt') h+=recBox;
+  else if(!lk.password){
+    h+=`<p class="note">Asks for a password whenever Treechats starts or locks, and turns on encryption${lk.on?' (already on)':''} so the data can’t be read without it. Useful if other people use this computer or your account. Coding tools can’t read your chats while it’s locked.</p>
       <form class="pform" data-privform="on">${pw('p1','Password','new-password')}${pw('p2','Password again','new-password')}
         <label class="pfield">Lock by itself<select data-lauto ${busy}>${AUTO_LOCKS.map(([v,l])=>`<option value="${v}" ${v===15?'selected':''}>${v?'After '+l+' without use':'Never'}</option>`).join('')}</select></label>
-        ${err}<p class="note">Choose something you’ll remember. If you lose both the password and the recovery key you get next, your chats can’t be recovered.</p>
-        <div class="tbar"><button class="btn primary" ${busy}>${priv.busy?'Encrypting…':'Turn on the lock'}</button></div></form>`;
+        ${priv.form==='on'||!priv.form?err:''}<p class="note">Choose something you’ll remember. If you lose both the password and the recovery key${lk.on?' you already have':' you get next'}, your chats can’t be recovered.</p>
+        <div class="tbar"><button class="btn primary" ${busy}>${priv.busy&&priv.form!=='encrypt'?'Encrypting…':'Turn on the lock'}</button></div></form>`;
   } else {
-    h+=`<p class="note">On. Your data is encrypted, and Treechats locks ${autoLockText(lk.autoLock)}.</p>
+    h+=`<p class="note">On. Treechats locks ${autoLockText(lk.autoLock)}.</p>
       ${setRow('Lock by itself','', `<div class="segs" role="group" aria-label="Lock by itself">${AUTO_LOCKS.map(([v,l])=>`<button class="seg" data-lautoset="${v}" aria-pressed="${lk.autoLock===v}">${l}</button>`).join('')}</div>`)}
       <div class="tbar"><button class="btn" data-locknow>Lock now</button><button class="btn" data-lockform="password" aria-pressed="${priv.form==='password'}">Change password</button><button class="btn" data-lockform="recovery" aria-pressed="${priv.form==='recovery'}">New recovery key</button><button class="btn danger" data-lockform="off" aria-pressed="${priv.form==='off'}">Turn off</button></div>`;
     if(priv.form==='password') h+=`<form class="pform" data-privform="password">${pw('cur','Current password','current-password')}${pw('p1','New password','new-password')}${pw('p2','New password again','new-password')}${err}<div class="tbar"><button class="btn primary" ${busy}>Change password</button></div></form>`;
     if(priv.form==='recovery') h+=`<form class="pform" data-privform="recovery"><p class="note">Makes a new recovery key. The old one stops working.</p>${pw('cur','Password','current-password')}${err}<div class="tbar"><button class="btn primary" ${busy}>Make a new recovery key</button></div></form>`;
-    if(priv.form==='off') h+=`<form class="pform" data-privform="off"><p class="note">Your data is decrypted and saved readable again, protected by your account’s file permissions only.</p>${pw('cur','Password','current-password')}${err}<div class="tbar"><button class="btn danger" ${busy}>${priv.busy?'Decrypting…':'Turn off the lock'}</button></div></form>`;
+    if(priv.form==='off') h+=`<form class="pform" data-privform="off"><p class="note">${lk.keychain?`Keep encryption on, with the key in ${esc(lk.keychain)} so Treechats opens without asking, or turn both off and save your data readable again.`:'Your data is decrypted and saved readable again, protected by your account’s file permissions only.'}</p>${pw('cur','Password','current-password')}${err}
+      <div class="tbar">${lk.keychain?`<button class="btn primary" data-offmode="nopass" ${busy}>Turn off the lock, keep encryption</button>`:''}<button class="btn danger" data-offmode="off" ${busy}>${priv.busy?'Decrypting…':lk.keychain?'Turn off both':'Turn off the lock'}</button></div></form>`;
   }
   h+=`</section>`;
   /* the API key */
@@ -6403,7 +6419,7 @@ function privacyHTML(){
   h+=`</section>`;
   /* the token */
   const M=L.mcp||{}, link=`${location.origin}/?token=${M.token||''}`;
-  h+=`<section class="setsec"><h3>Signing in</h3><p class="note">Treechats only answers this computer, and only browsers and tools that have its token, so other accounts and programs here, and websites you visit, can’t use it. This browser is signed in. To sign in another browser, open this link in it. Coding tools get the token in the commands under System.</p>
+  h+=`<section class="setsec"><h3>Signing in</h3><p class="note">Treechats only answers this computer, and only browsers and tools that have its token, so other accounts and programs here, and websites you visit, can’t use it. This browser is signed in, and keeps the token where only Treechats’ own page can read it. To sign in another browser, open this link in it. Coding tools get the token in the commands under System.</p>
     <div class="tbar"><button class="btn" data-copylink="${esc(link)}">Copy sign-in link</button><button class="btn" data-tokenreset>Reset the token</button></div>
     <p class="note">Reset it if the token or the link may have been seen by someone else. Other browsers are signed out, and coding tools need the new commands from System.</p></section>`;
   return h;
@@ -6412,30 +6428,36 @@ async function privCall(path, body){ return folderApi(path, body||{}); }
 function privVal(sel){ const e=setEl.querySelector(sel); return e ? e.value : ''; }
 async function privSubmit(kind){
   const p1=privVal('[data-pw="p1"]'), p2=privVal('[data-pw="p2"]'), cur=privVal('[data-pw="cur"]');
-  const L=window.TREECHATS_LOCAL;
+  const L=window.TREECHATS_LOCAL, lk=lockInfo();
   priv.err='';
-  if((kind==='on' || kind==='password') && p1!==p2){ priv.err='The two passwords don’t match.'; renderSettings(); return; }
-  if((kind==='on' || kind==='password') && [...p1].length<8){ priv.err='Use a password of at least 8 characters. A few unrelated words make a strong one.'; renderSettings(); return; }
+  if((kind==='on' || kind==='password') && p1!==p2){ priv.err='The two passwords don’t match.'; priv.form=kind==='on'?null:kind; renderSettings(); return; }
+  if((kind==='on' || kind==='password') && [...p1].length<8){ priv.err='Use a password of at least 8 characters. A few unrelated words make a strong one.'; priv.form=kind==='on'?null:kind; renderSettings(); return; }
+  if(kind==='encrypt') priv.form='encrypt';
   priv.busy=true; renderSettings();
+  /* the lock state as the server sees it now */
+  const refresh=async()=>{ try{ const r=await fetch('/api/auth'); if(r.ok) L.lock=(await r.json()).lock; }catch(e){} };
   try{
-    if(kind==='on'){
+    if(kind==='on' || kind==='encrypt'){
       await flushState();
-      const d=await privCall('/api/vault/enable', {password:p1, autoLock:+privVal('[data-lauto]')});
+      const auto=+privVal('[data-lauto]')||0;
+      const d=await privCall('/api/vault/enable', kind==='on' ? {password:p1, autoLock:auto} : {});
       await Files.rekey(d.filesKey);
-      L.lock={on:true, unlocked:true, autoLock:+privVal('[data-lauto]')||0};
-      priv.recovery=d.recovery;
+      await refresh();
+      if(d.recovery){ priv.recovery=d.recovery; priv.recoveryFor=kind; }
+      else toast('The password lock is on. Your recovery key stays the same.');
+      priv.form=null;
     } else if(kind==='password'){ await privCall('/api/vault/password', {password:cur, next:p1}); priv.form=null; toast('Password changed.'); }
-    else if(kind==='recovery'){ const d=await privCall('/api/vault/recovery', {password:cur}); priv.form=null; priv.recovery=d.recovery; }
-    else if(kind==='off'){
-      /* attachments are made readable first, while their key still exists; if the password turns out wrong they are sealed again */
+    else if(kind==='recovery'){ const d=await privCall('/api/vault/recovery', {password:cur}); priv.form=null; priv.recovery=d.recovery; priv.recoveryFor=lk.password?'on':'encrypt'; }
+    else if(kind==='nopass'){ await privCall('/api/vault/nopassword', {password:cur}); await refresh(); priv.form=null; toast(`The lock is off. Your data stays encrypted, with its key in ${lk.keychain}.`); }
+    else if(kind==='off' || kind==='decrypt'){
+      /* attachments are made readable first, while their key still exists; if that fails they are sealed again */
       await flushState(); const was=Files.keyNow(); await Files.rekey(null);
       try{ await privCall('/api/vault/disable', {password:cur}); }catch(e){ await Files.rekey(was); throw e; }
-      L.lock={on:false, unlocked:false, autoLock:15}; priv.form=null; toast('The lock is off. Your data is saved readable again.');
+      await refresh(); priv.form=null; toast(kind==='off' && lk.password ? 'The lock and encryption are off. Your data is saved readable again.' : 'Encryption is off. Your data is saved readable again.');
     }
     else if(kind==='key'){ priv.form='key'; L.key=await privCall('/api/key/save', {key:privVal('[data-keyval]')}); priv.form=null; toast(`Saved to ${L.key.keychain}. Reloading to use it…`); setTimeout(()=>location.reload(), 900); }
-  }catch(e){ priv.err=e.message; if(kind==='key') priv.form='key'; }
+  }catch(e){ priv.err=e.message; if(kind==='key' || kind==='encrypt') priv.form=kind; if(kind==='nopass') priv.form='off'; }
   priv.busy=false;
-  if(L.lock && L.lock.on) L.lock.autoLock = L.lock.autoLock ?? 15;
   renderSettings();
   const f=setEl.querySelector('.perr'); if(f){ const i=f.closest('form')?.querySelector('input'); if(i) i.focus(); }
 }
@@ -6595,7 +6617,10 @@ document.getElementById('palInput').addEventListener('keydown', e=>{
   if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); closePalette(); return; }
   if(e.key==='Tab'){ e.preventDefault(); e.stopPropagation(); }
 });
-setEl.addEventListener('submit', e=>{ const f=e.target.closest('[data-privform]'); if(!f) return; e.preventDefault(); if(!priv.busy) privSubmit(f.dataset.privform); });
+setEl.addEventListener('submit', e=>{ const f=e.target.closest('[data-privform]'); if(!f) return; e.preventDefault(); if(priv.busy) return;
+  /* turning the lock off: which button was used (Enter in the password field means the first one) */
+  let kind=f.dataset.privform; if(kind==='off'){ const b=e.submitter && e.submitter.dataset.offmode ? e.submitter : f.querySelector('[data-offmode]'); kind=b ? b.dataset.offmode : 'off'; }
+  privSubmit(kind); });
 setEl.addEventListener('click', e=>{
   if(!setEl.contains(e.target)) return;
   const c2=q=>e.target.closest(q);
@@ -6611,10 +6636,10 @@ setEl.addEventListener('click', e=>{
   const la=c2('[data-lautoset]'); if(la){ privCall('/api/vault/settings', {autoLock:+la.dataset.lautoset}).then(d=>{ window.TREECHATS_LOCAL.lock=d.lock; renderSettings(); }).catch(err=>toast(err.message)); return; }
   if(c2('[data-reccopy]')){ copyText(priv.recovery, true).then(ok=>{ if(ok) toast('Copied. Paste it somewhere safe, then clear your clipboard.'); }); return; }
   if(c2('[data-recsave]')){ recoveryFile(); return; }
-  if(c2('[data-recdone]')){ priv.recovery=null; renderSettings(); return; }
+  if(c2('[data-recdone]')){ priv.recovery=null; priv.recoveryFor=null; renderSettings(); return; }
   if(c2('[data-keymove]')){ priv.busy=true; renderSettings(); privCall('/api/key/move').then(k=>{ window.TREECHATS_LOCAL.key=k; toast(`Moved to ${k.keychain}.`); }).catch(err=>toast(err.message)).finally(()=>{ priv.busy=false; renderSettings(); }); return; }
   if(c2('[data-keyremove]')){ privCall('/api/key/remove').then(k=>{ window.TREECHATS_LOCAL.key=k; toast('Removed. Reloading…'); setTimeout(()=>location.reload(), 900); }).catch(err=>toast(err.message)); return; }
-  if(c2('[data-tokenreset]')){ privCall('/api/auth/reset').then(d=>{ window.TREECHATS_LOCAL.mcp=d.mcp; renderSettings(); toast('New token made. Add Treechats to your coding tools again with the commands under System.'); }).catch(err=>toast(err.message)); return; }
+  if(c2('[data-tokenreset]')){ privCall('/api/auth/reset').then(d=>{ if(window.TREECHATS_KEEP_TOKEN) window.TREECHATS_KEEP_TOKEN(d.token); window.TREECHATS_LOCAL.mcp=d.mcp; renderSettings(); toast('New token made. Add Treechats to your coding tools again with the commands under System.'); }).catch(err=>toast(err.message)); return; }
   const cl=c2('[data-copylink]'); if(cl){ copyText(cl.dataset.copylink, true).then(ok=>{ if(ok) toast('Copied. Open it in the other browser on this computer.'); }); return; }
   const cs=e.target.closest('[data-copysnip]'); if(cs){ copyText(cs.dataset.copysnip, true).then(ok=>{ if(ok) toast('Copied.'); }); return; }
   if(e.target.closest('[data-namenow]')){ for(const rid of numberedBranches()) queueBranchName(rid, true); renderSettings(); toast('Claude is naming them. They update as each name arrives.'); return; }
@@ -7139,7 +7164,11 @@ const topbarEl=document.getElementById('topbar');
 let wasScrolled=null;
 const onScroll=()=>{ const on=window.scrollY>4; if(on!==wasScrolled){ wasScrolled=on; topbarEl.classList.toggle('scrolled', on); } };
 window.addEventListener('scroll', onScroll, {passive:true});
-Files.init().then(()=>render(true));
+Files.init().then(()=>{
+  render(true);
+  /* a note from the unlock screen (the key couldn't be kept in the keychain, say) */
+  try{ const w=sessionStorage.getItem('treechats-warning'); if(w){ sessionStorage.removeItem('treechats-warning'); toast(w, false, {label:'Open settings', fn:()=>openSettings('privacy')}); } }catch(e){}
+});
 load(); applyAppearance(); applyLayout(); applySimple(); renderOpsCard();
 render(true); onScroll(); placeAside(); connectModel(); Agent.connect();
 </script>

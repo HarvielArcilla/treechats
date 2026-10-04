@@ -15,24 +15,28 @@ server/mcp.ts           MCP server for Claude Code: read (list, search, get cont
 server/relay.ts         passes subagent commands to the open page and waits for results; request budget per run
 server/context.ts       reads the saved tree on the server; builds context the same way the page does
 server/store.ts         SQLite in the app data folder: the state document, rolling snapshots, the token, the lock record
-server/vault.ts         The password lock: scrypt-wrapped data key, AES-256-GCM, recovery key, auto-lock
-server/secrets.ts       The API key in the system keychain (macOS Keychain, Windows DPAPI, libsecret)
+server/vault.ts         Encryption at rest and the password lock: data key kept in the keychain or wrapped by
+                        scrypt(password), AES-256-GCM, recovery key, auto-lock
+server/secrets.ts       The system keychain (macOS Keychain, Windows DPAPI, libsecret): the API key, the data key
 server/redact.ts        Hides secrets in command output and diffs
 server/config.ts        .env settings
 ```
 
 ## API
 
-Every route below needs the token (a cookie from the sign-in link, or `Authorization: Bearer <token>`), except
-`GET /api/auth`, `POST /api/auth/login` and `POST /api/vault/unlock`. With the password lock on and locked, `/api/*`
-answers 423 and MCP tools answer "Treechats is locked".
+Every route below needs `Authorization: Bearer <token>` (the page keeps the token in localStorage and adds it to each
+request; the event stream, which can't send headers, takes `?token=`), except `GET /api/auth`, `POST /api/auth/login`
+and `POST /api/vault/unlock`. No cookies are used. With the data encrypted and locked, `/api/*` answers 423 and MCP
+tools answer "Treechats is locked".
 
 | Route | What it does |
 |---|---|
-| `GET /api/auth` | Whether this browser is signed in, and whether the lock is on and unlocked |
-| `POST /api/auth/login` | `{token}`: signs a browser in with the token (sets the cookie) |
-| `POST /api/vault/unlock` | `{password}`, or `{recovery, newPassword}`: unlocks, and signs the browser in |
-| `POST /api/vault/enable`, `/disable`, `/password`, `/recovery`, `/settings`, `/lock`, `/alive` | Turn the lock on (returns the recovery key) or off, change the password, make a new recovery key, set the auto-lock, lock now, and count as activity |
+| `GET /api/auth` | Whether this browser is signed in, and the encryption state: `{on, password, unlocked, autoLock, keychain}` |
+| `POST /api/auth/login` | `{token}` or `{code}` (the one-time code from the link Treechats opens): returns `{token}` |
+| `POST /api/vault/unlock` | `{password}`; or `{recovery}` (keychain mode, puts the key back in the keychain) or `{recovery, newPassword}` (password mode): unlocks and returns `{token}` |
+| `POST /api/vault/enable` | `{}`: encryption with the key in the keychain; `{password, autoLock}`: the password lock (adds it to keychain-mode encryption without re-encrypting). Returns the recovery key when encryption was off |
+| `POST /api/vault/disable`, `/nopassword` | Turn encryption off (decrypts everything), or drop the password lock and keep the key in the keychain |
+| `POST /api/vault/password`, `/recovery`, `/settings`, `/lock`, `/alive` | Change the password, make a new recovery key, set the auto-lock, lock now, and count as activity |
 | `GET /api/vault/fileskey` | While unlocked, the key the page encrypts attachments with |
 | `POST /api/key/save`, `/move`, `/remove` | The API key in the system keychain |
 | `POST /api/auth/reset` | A new token; other browsers and coding tools are signed out |

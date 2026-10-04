@@ -1,12 +1,18 @@
-/* The password lock. When it is on, everything Treechats saves on the server (your conversations, settings and
-   their snapshots) is encrypted, and the page encrypts attachments in the browser with a key it gets from here.
+/* Encryption at rest, and the password lock. With encryption on, everything Treechats saves on the server (your
+   conversations, settings and their snapshots) is encrypted, and the page encrypts attachments in the browser with a
+   key it gets from here. It is off by default, and comes in two modes:
+   - "keychain": the data key is kept in the system keychain, so Treechats opens without asking. This protects copies
+     of the data folder (backups, sync, a copied disk) but not someone using your account.
+   - "password": the password lock. The data key is wrapped by a key made from your password, and Treechats asks for
+     it whenever it starts or locks. Turning the lock on turns encryption on.
 
-   How: a random 256-bit data key encrypts the data with AES-256-GCM. The data key itself is saved twice, each copy
-   encrypted ("wrapped"): once with a key made from your password by scrypt (slow on purpose, so guessing is
-   expensive), and once with your recovery key, a random code shown when you turn the lock on. Changing the password
-   only re-wraps the data key. While unlocked, the data key is kept in memory only; locking forgets it.
+   How: a random 256-bit data key encrypts the data with AES-256-GCM. The data key is saved wrapped by your recovery
+   key (a random code shown when encryption is turned on), and in password mode also wrapped with a key made from your
+   password by scrypt (slow on purpose, so guessing is expensive). Changing the password only re-wraps the data key.
+   While unlocked, the data key is kept in memory only; locking forgets it.
 
-   Nothing here can get the data back without the password or the recovery key. That is the point, and the risk. */
+   Nothing here can get the data back without the password, the keychain entry or the recovery key. That is the
+   point, and the risk. */
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
@@ -17,7 +23,9 @@ const WRAP_AAD = Buffer.from('treechats-vault-v1');
 /* OWASP's recommended scrypt cost: 128 MB of memory and a few hundred milliseconds per try */
 const KDF = { N: 2 ** 17, r: 8, p: 1 };
 
-export type VaultRecord = { v: 1; kdf: { N: number; r: number; p: number; salt: string }; pw: string; rk: string; autoLock: number; check: string };
+/* mode is missing on records made before the keychain mode existed: those are password records */
+export type VaultRecord = { v: 1; mode?: 'password' | 'keychain'; kdf?: { N: number; r: number; p: number; salt: string }; pw?: string; rk: string; autoLock: number; check: string };
+export const modeOf = (r: VaultRecord) => r.mode || 'password';
 export class VaultError extends Error { constructor(public code: string, message: string) { super(message); } }
 
 const b64 = (b: Buffer) => b.toString('base64');
@@ -36,7 +44,7 @@ function ungcm(key: Buffer, blob: Buffer, aad?: Buffer) {
   return Buffer.concat([d.update(blob.subarray(28)), d.final()]);
 }
 
-const passwordKey = (password: string, kdf: VaultRecord['kdf']) =>
+const passwordKey = (password: string, kdf: NonNullable<VaultRecord['kdf']>) =>
   scrypt(password.normalize('NFKC'), unb64(kdf.salt), 32, { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: 256 * 1024 * 1024 });
 /* the recovery key is 160 random bits already, so it needs no slow stretching */
 const recoveryKeyBytes = (code: string) => Buffer.from(hkdfSync('sha256', Buffer.from(normRecovery(code)), Buffer.alloc(0), 'treechats-recovery', 32));
@@ -76,39 +84,53 @@ export function checkPassword(pw: string) {
   if (pw.length > 1024) throw new VaultError('weak_password', 'That password is too long.');
 }
 
-/* turns the lock on: a new data key, wrapped by the password and by a new recovery key */
-export async function create(password: string, autoLock: number): Promise<{ record: VaultRecord; recovery: string }> {
-  checkPassword(password);
-  const key = randomBytes(32), salt = randomBytes(16), recovery = newRecoveryCode();
-  const kdf = { ...KDF, salt: b64(salt) };
-  const record: VaultRecord = {
-    v: 1, kdf, autoLock,
-    pw: b64(gcm(await passwordKey(password, kdf), key, WRAP_AAD)),
+/* turns encryption on: a new data key, wrapped by a new recovery key, and by the password when one is given (without
+   one, the caller keeps the key in the keychain: see rawKey) */
+export async function create(password: string | null, autoLock: number): Promise<{ record: VaultRecord; recovery: string }> {
+  if (password != null) checkPassword(password);
+  const key = randomBytes(32), recovery = newRecoveryCode();
+  let record: VaultRecord = {
+    v: 1, mode: 'keychain', autoLock,
     rk: b64(gcm(recoveryKeyBytes(recovery), key, WRAP_AAD)),
     check: b64(gcm(key, Buffer.from('treechats'), WRAP_AAD)),
   };
   forget(); dataKey = key; touch();
+  if (password != null) record = await rewrap(record, password);
   return { record, recovery };
 }
+/* the data key as text, for the keychain; and unlocking with it */
+export function rawKey(): string {
+  if (!dataKey) throw new VaultError('locked', LOCKED_MSG);
+  return dataKey.toString('base64url');
+}
+export function unlockWithRaw(record: VaultRecord, raw: string) {
+  const key = Buffer.from(String(raw || ''), 'base64url');
+  try { if (key.length !== 32 || !timingSafeEqual(ungcm(key, unb64(record.check), WRAP_AAD), Buffer.from('treechats'))) throw 0; }
+  catch { throw new VaultError('wrong_key', 'The key in the keychain doesn’t open this data.'); }
+  forget(); dataKey = key; touch();
+}
+/* password mode back to keychain mode: the password wrap is dropped (the caller puts rawKey in the keychain) */
+export const withoutPassword = (record: VaultRecord): VaultRecord => { const { kdf, pw, ...rest } = record; return { ...rest, mode: 'keychain' }; };
 
 /* unlocks with the password or the recovery key; a wrong one throws */
 export async function unlock(record: VaultRecord, secret: { password?: string; recovery?: string }) {
   let key: Buffer;
   try {
     if (secret.recovery != null) key = ungcm(recoveryKeyBytes(secret.recovery), unb64(record.rk), WRAP_AAD);
-    else key = ungcm(await passwordKey(String(secret.password ?? ''), record.kdf), unb64(record.pw), WRAP_AAD);
+    else { if (!record.kdf || !record.pw) throw 0; key = ungcm(await passwordKey(String(secret.password ?? ''), record.kdf), unb64(record.pw), WRAP_AAD); }
   } catch { throw new VaultError('wrong_password', secret.recovery != null ? 'That recovery key isn’t right.' : 'That password isn’t right.'); }
   const ok = ungcm(key, unb64(record.check), WRAP_AAD);
   if (!timingSafeEqual(ok, Buffer.from('treechats'))) throw new VaultError('wrong_password', 'That password isn’t right.');
   forget(); dataKey = key; touch();
 }
 
-/* a new password for the data key that is unlocked now (after a password check, or a recovery key) */
+/* a new password for the data key that is unlocked now (after a password check, or a recovery key); this is also how
+   keychain mode becomes password mode */
 export async function rewrap(record: VaultRecord, password: string): Promise<VaultRecord> {
   checkPassword(password);
   if (!dataKey) throw new VaultError('locked', LOCKED_MSG);
   const kdf = { ...KDF, salt: b64(randomBytes(16)) };
-  return { ...record, kdf, pw: b64(gcm(await passwordKey(password, kdf), dataKey, WRAP_AAD)) };
+  return { ...record, mode: 'password', kdf, pw: b64(gcm(await passwordKey(password, kdf), dataKey, WRAP_AAD)) };
 }
 /* a new recovery key, replacing the old one */
 export function newRecovery(record: VaultRecord): { record: VaultRecord; recovery: string } {

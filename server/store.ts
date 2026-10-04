@@ -46,7 +46,7 @@ ownerOnly();
 
 /* ---- the token ----
    Anything on this computer can connect to localhost, including other people's accounts. The token is what proves a
-   request comes from you: the page gets it as a cookie from the link Treechats opens, MCP clients send it as a
+   request comes from you: the page keeps it in its own storage after signing in, MCP clients send it as a
    bearer token. It is kept in the data folder, readable only by you, so it survives restarts. */
 const tokenFile = join(config.dataDir, 'token');
 export let token = (() => {

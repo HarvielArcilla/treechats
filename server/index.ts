@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
+import { deleteCookie, getCookie } from 'hono/cookie';
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { config, modelLabel, root } from './config.ts';
@@ -13,7 +13,7 @@ import { provider, streamReply, type SampleRequest } from './claude.ts';
 import { cliStatus } from './cli.ts';
 import { decryptAll, encryptAll, getValue, putValue, resetToken, saveVaultRecord, snapshot, snapshots, token, vaultRecord } from './store.ts';
 import * as vault from './vault.ts';
-import { keyStatus, loadKeyFromKeychain, removeKey, saveKey, SecretError } from './secrets.ts';
+import { DATA_KEY, keychain, keyStatus, loadKeyFromKeychain, readSecret, removeKey, removeSecret, saveKey, saveSecret, SecretError } from './secrets.ts';
 import { handleMcp } from './mcp.ts';
 import { attachPage, settle } from './relay.ts';
 import { loadState } from './context.ts';
@@ -29,10 +29,11 @@ const MAX_STATE_BYTES = 200 * 1024 * 1024;
 /* Who may use Treechats. Three checks, each for a different way in:
    - Host: only names for this computer, so a website can't reach it through DNS rebinding
    - Origin: requests from other websites are refused, so a page you visit can't spend your key or read your chats
-   - the token: proves the request comes from you and not another account or program on this computer. The page
-     gets it as a cookie from the link Treechats opens (or by pasting it, or by entering the lock password); MCP
-     clients send it as "Authorization: Bearer <token>".
-   With the password lock on and locked, only unlocking works until the password is entered. */
+   - the token: proves the request comes from you and not another account or program on this computer. Every request
+     carries it as "Authorization: Bearer <token>": coding tools from their settings, the page from its own storage.
+     The page keeps it in localStorage, which browsers keep separately for each port, rather than in a cookie, which
+     browsers send to every port on localhost (so any other local server you opened would see it).
+   With the data encrypted and locked, only unlocking works until the password or recovery key is entered. */
 const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 const okOrigin = (origin: string) => {
   try {
@@ -40,23 +41,24 @@ const okOrigin = (origin: string) => {
     return u.protocol === 'http:' && localHosts.has(u.hostname) && (Number(u.port) === config.port || (config.dev && Number(u.port) === config.port + 1));
   } catch { return false; }
 };
-const COOKIE = `treechats_${config.port}`;
+/* versions before this one signed browsers in with this cookie; it is still accepted once, to hand the page the
+   token, and then deleted */
+const OLD_COOKIE = `treechats_${config.port}`;
 const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
+const bearerOf = (c: Context) => /^Bearer\s+(.+)$/i.exec(c.req.header('authorization') || '')?.[1]?.trim();
 function authed(c: Context) {
-  const h = c.req.header('authorization') || '';
-  const bearer = /^Bearer\s+(.+)$/i.exec(h)?.[1]?.trim();
-  if (bearer && same(bearer, token)) return true;
-  const ck = getCookie(c, COOKIE);
-  return !!ck && same(ck, token);
+  const t = bearerOf(c) || (c.req.path === '/api/agent/events' ? c.req.query('token') : undefined);
+  return !!t && same(t, token);
 }
-/* The cookie lasts as long as browsers allow (400 days). Browsers send it with requests to any port on localhost (cookies
-   don't separate ports), so another local server you open in this browser could see it: one more reason the token
-   can be reset in Settings › Privacy & security. */
-const grant = (c: Context) => setCookie(c, COOKIE, token, { httpOnly: true, sameSite: 'Strict', path: '/', maxAge: 400 * 86400 });
+const oldCookie = (c: Context) => { const ck = getCookie(c, OLD_COOKIE); return !!ck && same(ck, token); };
 const OPEN_PATHS = new Set(['/api/auth', '/api/auth/login', '/api/vault/unlock']);
+/* Changes to encryption and the token come only from the Treechats page (browsers always send Origin with these),
+   not from coding tools, which hold the same token: an agent following instructions it read somewhere can't turn
+   encryption off, replace your recovery key or sign everyone out. */
+const PAGE_ONLY = new Set(['/api/vault/enable', '/api/vault/disable', '/api/vault/nopassword', '/api/vault/password', '/api/vault/recovery', '/api/vault/settings', '/api/auth/reset', '/api/key/save', '/api/key/move', '/api/key/remove']);
 const locked = () => !!vaultRecord() && !vault.isUnlocked();
 /* The browser is opened with a one-time code rather than the token, because a command line (the browser's, here) can
-   be read by other accounts. The code works once, for 10 minutes. */
+   be read by other accounts. The page trades the code for the token; it works once, for 10 minutes. */
 const loginCodes = new Map<string, number>();
 export function oneTimeLink() {
   const code = randomBytes(24).toString('base64url');
@@ -76,43 +78,56 @@ app.use('*', async (c, next) => {
     /* changes must be sent as JSON: a browser can't send that from another site without asking first (a CORS
        preflight, which Treechats doesn't answer), so a page elsewhere can't post a form or a plain-text body here */
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD' && path.startsWith('/api/') && !/^application\/json\b/i.test(c.req.header('content-type') || '')) return c.json({ code: 'bad_request', message: 'Send JSON.' }, 415);
+    if (PAGE_ONLY.has(path) && !origin) return c.json({ code: 'forbidden', message: 'This can only be changed from the Treechats page.' }, 403);
     if (!OPEN_PATHS.has(path)) {
       if (!authed(c)) return c.json({ code: 'unauthorized', message: path === '/mcp' ? `Treechats needs its token. Add the header "Authorization: Bearer <token>"; Settings › System in Treechats shows the full command.` : 'Open Treechats from the link it printed when it started.' }, 401);
       if (locked() && path !== '/mcp') return c.json({ code: 'locked', message: vault.LOCKED_MSG }, 423);
       if (path !== '/api/agent/events') vault.touch();
     }
-  } else if (c.req.method === 'GET' && (c.req.query('token') || c.req.query('login'))) {
-    /* a sign-in link: the token (printed in the terminal) or a one-time code; it becomes a cookie and leaves the address bar */
-    const t = c.req.query('token'), l = c.req.query('login');
-    if ((t && same(t, token)) || (l && useCode(l))) grant(c);
-    return c.redirect('/', 302);
   }
   await next();
 });
 app.onError((e, c) => {
   if (e instanceof vault.VaultError) return c.json({ code: e.code, message: e.message }, e.code === 'locked' ? 423 : 400);
+  if (e instanceof SecretError) return c.json({ code: e.code, message: e.message }, 400);
   console.error(e);
   return c.json({ code: 'failed', message: (e as Error).message }, 500);
 });
 
-/* ---- signing in and the password lock (see server/vault.ts) ---- */
+/* ---- signing in, encryption and the password lock (see server/vault.ts) ---- */
 const lockListeners = new Set<SSEStreamingApi>();
+const isPassword = () => { const r = vaultRecord(); return !!r && vault.modeOf(r) === 'password'; };
 function lockNow() {
   vault.forget();
   for (const s of lockListeners) s.writeSSE({ event: 'lock', data: '' }).catch(() => {});
 }
-/* locks by itself after the chosen number of idle minutes (no requests from the page or MCP clients) */
+/* with the password lock, locks by itself after the chosen number of idle minutes (no requests from the page or MCP) */
 setInterval(() => {
   const r = vaultRecord();
-  if (r && r.autoLock > 0 && vault.isUnlocked() && vault.idleMs() > r.autoLock * 60_000) lockNow();
+  if (r && vault.modeOf(r) === 'password' && r.autoLock > 0 && vault.isUnlocked() && vault.idleMs() > r.autoLock * 60_000) lockNow();
 }, 15_000).unref();
-const lockInfo = () => { const r = vaultRecord(); return { on: !!r, unlocked: vault.isUnlocked(), autoLock: r ? r.autoLock : 15 }; };
+/* encrypted without a password: the key comes from the keychain when Treechats starts. If it isn't there (another
+   computer, a reinstalled system), Treechats stays locked until the recovery key is entered. */
+{
+  const r = vaultRecord();
+  if (r && vault.modeOf(r) === 'keychain') {
+    const raw = readSecret(DATA_KEY);
+    try { if (raw) vault.unlockWithRaw(r, raw); } catch { /* stays locked */ }
+    if (!vault.isUnlocked()) console.log('  Your data is encrypted, but its key isn’t in the keychain on this computer. Open Treechats and enter your recovery key.\n');
+  }
+}
+const lockInfo = () => {
+  const r = vaultRecord(), k = keychain();
+  /* on: the data is encrypted. password: with the password lock (otherwise the key is in the keychain) */
+  return { on: !!r, password: !!r && vault.modeOf(r) === 'password', unlocked: vault.isUnlocked(), autoLock: r ? r.autoLock : 15, keychain: k ? k.name : null };
+};
 const body = async (c: Context): Promise<any> => { try { return await c.req.json(); } catch { return {}; } };
 const autoLockOf = (v: unknown) => { const n = Number(v); return [0, 5, 15, 60, 240, 1440].includes(n) ? n : 15; };
-/* checks the password before a change, without counting as a sign-in */
+/* checks the password before a change, without counting as a sign-in; in keychain mode there is none to check (the
+   request already carries the token) */
 async function confirm(password: unknown) {
-  const r = vaultRecord(); if (!r) throw new vault.VaultError('not_on', 'The password lock is off.');
-  await vault.guarded(() => vault.unlock(r, { password: String(password ?? '') }));
+  const r = vaultRecord(); if (!r) throw new vault.VaultError('not_on', 'Encryption is off.');
+  if (vault.modeOf(r) === 'password') await vault.guarded(() => vault.unlock(r, { password: String(password ?? '') }));
   return r;
 }
 /* tells the other open tabs the lock changed, so they reload with or without it; the tab that made the change says
@@ -122,47 +137,101 @@ function lockChanged(c: Context) {
   for (const s of lockListeners) s.writeSSE({ event: 'vault', data: from }).catch(() => {});
 }
 
-app.get('/api/auth', (c) => c.json({ authed: authed(c), lock: lockInfo() }));
+app.get('/api/auth', (c) => {
+  /* a browser still signed in by the old cookie gets the token to keep, and the cookie is deleted */
+  if (getCookie(c, OLD_COOKIE) != null) {
+    const valid = oldCookie(c);
+    deleteCookie(c, OLD_COOKIE, { path: '/' });
+    if (!authed(c) && valid) return c.json({ authed: true, token, lock: lockInfo() });
+  }
+  return c.json({ authed: authed(c), lock: lockInfo() });
+});
+/* the token, or a one-time code from the link Treechats opened, in exchange for the token */
 app.post('/api/auth/login', async (c) => {
   const b = await body(c);
-  if (!same(String(b.token || '').trim(), token)) return c.json({ code: 'wrong_token', message: 'That isn’t the token. Copy it from the link Treechats printed when it started.' }, 400);
-  grant(c); return c.json({ ok: true });
+  const ok = b.code ? useCode(String(b.code)) : same(String(b.token || '').trim(), token);
+  if (!ok) return c.json({ code: 'wrong_token', message: b.code ? 'That sign-in link has been used or has expired. Use the link Treechats printed in the terminal.' : 'That isn’t the token. Copy it from the link Treechats printed when it started.' }, 400);
+  return c.json({ token });
 });
 app.post('/api/vault/unlock', async (c) => {
   const b = await body(c);
+  let warning: string | undefined;
   await vault.exclusive(async () => {
-    const r = vaultRecord(); if (!r) throw new vault.VaultError('not_on', 'The password lock is off.');
+    const r = vaultRecord(); if (!r) throw new vault.VaultError('not_on', 'Encryption is off.');
     if (b.recovery != null) {
-      vault.checkPassword(String(b.newPassword ?? ''));
+      if (vault.modeOf(r) === 'password') vault.checkPassword(String(b.newPassword ?? ''));
       await vault.guarded(() => vault.unlock(r, { recovery: String(b.recovery) }));
-      saveVaultRecord(await vault.rewrap(r, String(b.newPassword)));
-    } else await vault.guarded(() => vault.unlock(r, { password: String(b.password ?? '') }));
+      /* password mode: a new password; keychain mode: the key goes (back) into this computer's keychain. If there is
+         no keychain to keep it in, it's open for now and will ask for the recovery key again next start. */
+      if (vault.modeOf(r) === 'password') saveVaultRecord(await vault.rewrap(r, String(b.newPassword)));
+      else try { saveSecret(DATA_KEY, vault.rawKey()); } catch (e) { warning = `Opened, but the key couldn’t be kept in the keychain (${(e as Error).message}), so Treechats will ask for the recovery key again next time it starts. Add the password lock in Settings › Privacy & security to open it with a password instead.`; }
+    } else {
+      if (vault.modeOf(r) !== 'password') throw new vault.VaultError('no_password', 'There’s no password. Use your recovery key.');
+      await vault.guarded(() => vault.unlock(r, { password: String(b.password ?? '') }));
+    }
   });
-  /* knowing the password proves this is you, so it signs this browser in too */
-  grant(c); return c.json({ ok: true });
+  /* knowing the password (or the recovery key) proves this is you, so this browser gets the token too */
+  return c.json({ token, warning });
 });
-app.post('/api/vault/lock', (c) => { lockNow(); return c.json({ ok: true }); });
+app.post('/api/vault/lock', (c) => {
+  if (!isPassword()) return c.json({ code: 'no_password', message: 'Locking needs the password lock on.' }, 400);
+  lockNow(); return c.json({ ok: true });
+});
 app.post('/api/vault/alive', (c) => c.json({ ok: true }));
+/* Turns encryption on, with a password (the password lock) or with the key in the keychain. With a password while
+   already encrypted in keychain mode, it adds the password lock: nothing is re-encrypted and the recovery key stays. */
 app.post('/api/vault/enable', async (c) => {
-  const b = await body(c);
+  const b = await body(c), password = b.password == null ? null : String(b.password);
   const out = await vault.exclusive(async () => {
-    if (vaultRecord()) throw new vault.VaultError('already_on', 'The password lock is already on.');
-    const { record, recovery } = await vault.create(String(b.password ?? ''), autoLockOf(b.autoLock));
-    try { encryptAll(record); } catch (e) { vault.forget(); throw e; }
+    const r = vaultRecord();
+    if (r) {
+      if (vault.modeOf(r) === 'password' || password == null) throw new vault.VaultError('already_on', 'That’s already on.');
+      const next = { ...(await vault.rewrap(r, password)), autoLock: autoLockOf(b.autoLock) };
+      /* the key leaves the keychain first: the lock means nothing while it's still there */
+      removeSecret(DATA_KEY);
+      if (readSecret(DATA_KEY)) throw new vault.VaultError('keychain_failed', 'The key couldn’t be taken out of the keychain, so the password lock isn’t on. Try again, or remove “Treechats data-key” from the keychain yourself.');
+      saveVaultRecord(next);
+      return { recovery: null, filesKey: vault.filesKey() };
+    }
+    if (password == null && !keychain()) throw new vault.VaultError('no_keychain', 'There’s no system keychain here to keep the key in. Turn on the password lock instead.');
+    const { record, recovery } = await vault.create(password, autoLockOf(b.autoLock));
+    try {
+      if (password == null) saveSecret(DATA_KEY, vault.rawKey());
+      encryptAll(record);
+    } catch (e) { vault.forget(); if (password == null) removeSecret(DATA_KEY); throw e; }
     return { recovery, filesKey: vault.filesKey() };
   });
   lockChanged(c);
   return c.json(out);
 });
+/* Turns encryption off: everything is saved readable again (needs the password in password mode) */
 app.post('/api/vault/disable', async (c) => {
   const b = await body(c);
-  await vault.exclusive(async () => { await confirm(b.password); decryptAll(); vault.forget(); });
+  await vault.exclusive(async () => { await confirm(b.password); decryptAll(); vault.forget(); removeSecret(DATA_KEY); });
+  lockChanged(c);
+  return c.json({ ok: true });
+});
+/* Turns the password lock off but keeps the data encrypted, with its key in the keychain */
+app.post('/api/vault/nopassword', async (c) => {
+  const b = await body(c);
+  await vault.exclusive(async () => {
+    const r = await confirm(b.password);
+    if (vault.modeOf(r) !== 'password') throw new vault.VaultError('no_password', 'The password lock is already off.');
+    /* the record changes first, so a crash between the two leaves it asking for the recovery key, never a password
+       lock with its key sitting in the keychain */
+    saveVaultRecord(vault.withoutPassword(r));
+    try { saveSecret(DATA_KEY, vault.rawKey()); } catch (e) { saveVaultRecord(r); throw e; }
+  });
   lockChanged(c);
   return c.json({ ok: true });
 });
 app.post('/api/vault/password', async (c) => {
   const b = await body(c);
-  await vault.exclusive(async () => { const r = await confirm(b.password); saveVaultRecord(await vault.rewrap(r, String(b.next ?? ''))); });
+  await vault.exclusive(async () => {
+    const r = await confirm(b.password);
+    if (vault.modeOf(r) !== 'password') throw new vault.VaultError('no_password', 'The password lock is off.');
+    saveVaultRecord(await vault.rewrap(r, String(b.next ?? '')));
+  });
   return c.json({ ok: true });
 });
 app.post('/api/vault/recovery', async (c) => {
@@ -172,7 +241,7 @@ app.post('/api/vault/recovery', async (c) => {
 app.post('/api/vault/settings', async (c) => {
   const b = await body(c);
   return c.json(await vault.exclusive(async () => {
-    const r = vaultRecord(); if (!r) throw new vault.VaultError('not_on', 'The password lock is off.');
+    const r = vaultRecord(); if (!r) throw new vault.VaultError('not_on', 'Encryption is off.');
     saveVaultRecord({ ...r, autoLock: autoLockOf(b.autoLock) });
     return { lock: lockInfo() };
   }));
@@ -180,9 +249,10 @@ app.post('/api/vault/settings', async (c) => {
 /* a new token: other browsers and coding tools are signed out; this browser gets the new one */
 app.post('/api/auth/reset', (c) => {
   try { resetToken(); } catch (e) { return c.json({ code: 'fixed_token', message: (e as Error).message }, 400); }
-  grant(c);
-  for (const s of lockListeners) s.writeSSE({ event: 'vault', data: c.req.header('x-treechats-tab') || '' }).catch(() => {});
-  return c.json({ mcp: { url: `http://localhost:${config.port}/mcp`, token } });
+  /* the other tabs reload a moment later, once this tab has kept the new token where they read it */
+  const from = c.req.header('x-treechats-tab') || '';
+  setTimeout(() => { for (const s of lockListeners) s.writeSSE({ event: 'vault', data: from }).catch(() => {}); }, 800);
+  return c.json({ token, mcp: { url: `http://localhost:${config.port}/mcp`, token } });
 });
 /* the key the page encrypts attachments with in the browser, while unlocked */
 app.get('/api/vault/fileskey', (c) => c.json({ key: vaultRecord() ? vault.filesKey() : null }));
@@ -309,7 +379,9 @@ app.get('*', (c) => {
 const server = serve({ fetch: app.fetch, port: config.port, hostname: '127.0.0.1' }, (info) => {
   const url = `http://localhost:${info.port}`, link = `${url}/?token=${token}`;
   console.log(`\n  Treechats is running at ${link}\n`);
-  console.log(`  Data: ${config.dataDir}${vaultRecord() ? ' (password lock on)' : ''}\n`);
+  if (config.dev) console.log(`  Dev page (live reload): http://localhost:${config.port + 1}/?token=${token}\n`);
+  const vr = vaultRecord();
+  console.log(`  Data: ${config.dataDir}${vr ? (vault.modeOf(vr) === 'password' ? ' (encrypted, password lock on)' : ' (encrypted, key in the keychain)') : ''}\n`);
   if (config.fake) console.log('  Test mode: replies are canned (TREECHATS_FAKE=1).\n');
   else if (provider() === 'claude-code') console.log('  Replies come from your Claude Code CLI and whatever it is signed in with.\n  To use an API key instead, add ANTHROPIC_API_KEY to .env and restart.\n');
   else console.log('  Replies use your API key (ANTHROPIC_API_KEY).\n');
