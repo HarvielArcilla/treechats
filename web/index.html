@@ -815,6 +815,32 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .fvbar{padding:8px 18px;border-top:1px solid var(--line)}
 .fvbody>.note{padding:0 18px 12px;margin:0}
 .fvmd{flex:1;overflow:auto;padding:16px 22px;display:block;align-content:start}
+.setbox.gsheet{width:min(1180px,100%);max-height:calc(100vh - 32px)}
+.gbuild{display:grid;gap:16px;padding-top:12px}
+.gh{font-size:.9rem;margin:0 0 8px}
+.growin{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px}
+.growin textarea{flex:1;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.gcols{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.gcol{display:grid;gap:8px;align-content:start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.gcolhead{display:flex;justify-content:space-between;align-items:center}
+.gcol select,.gcol textarea{font:inherit;font-weight:400!important;padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.gchk{display:flex;gap:6px;align-items:center;font-size:.84rem}
+.gadd{place-items:center;align-content:center;min-height:140px;border-style:dashed;color:var(--muted);cursor:pointer;font:inherit}
+.gadd span{font-size:1.4rem}
+.gview{display:grid;gap:10px;padding-top:10px}
+.gtablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+.gtable{border-collapse:collapse;width:max-content;min-width:100%}
+.gtable th,.gtable td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top;text-align:left}
+.gtable thead th{position:sticky;top:0;background:var(--surface);z-index:1;font-size:.8rem;padding:8px 10px;font-weight:600}
+.gcl{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font:600 .7rem var(--mono);margin-right:4px}
+.growh{width:200px;max-width:220px;padding:10px;font-size:.84rem;font-weight:500;background:var(--surface);position:sticky;left:0;z-index:1}
+.gcell{width:340px;max-width:380px;padding:10px 12px;font-size:.85rem}
+.gcell.best{background:color-mix(in srgb, var(--accent) 7%, transparent);box-shadow:inset 0 0 0 2px var(--accent)}
+.gtext{max-height:260px;overflow:auto}
+.gmeta{margin:6px 0 0;font-size:.74rem;color:var(--muted)}
+.gacts{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.gscore{float:right;margin:0 0 4px 8px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:.74rem}
+.gscore b{font-size:.9rem}
 .steps{margin:2px 0 8px;font-size:.84rem;color:var(--muted)}
 .steps summary{cursor:pointer;display:inline-flex;align-items:center;gap:6px;list-style:none;padding:2px 0;user-select:none}
 .steps summary::-webkit-details-marker{display:none}
@@ -1412,6 +1438,7 @@ const COMMANDS=[
   {name:'search', args:'words', need:true, desc:'Find prompts and replies in this project.', root:true},
   {name:'settings', desc:'Open Settings.', root:true},
   {name:'schedule', args:'[prompt]', desc:'Send a prompt at a set time, once or on a schedule, here or as a new chat each time. Without a prompt, lists your scheduled tasks.'},
+  {name:'grid', args:'[prompt]', desc:'A comparison grid: one or more wordings against several setups (models, thinking, effort, tools), each its own fork, side by side with cost and time.'},
   {name:'export', desc:'Copy this line as Markdown.'},
   {name:'help', desc:'Every command and what it does.', root:true},
 ];
@@ -1435,6 +1462,7 @@ let cmdPanel=null;
 function runCommand(name, arg, at){
   const ready = () => { if(sampleState==='ready') return true; toast('This needs Claude. Add an API key to .env or sign in to Claude Code, then restart Treechats.'); return false; };
   if(name==='help'){ cmdPanel={kind:'help'}; return paintCmds(at); }
+  if(name==='grid'){ openGridBuilder(at, arg||''); return; }
   if(name==='schedule'){ if(arg && arg.trim()) openSchedules(schedFormFor(at, arg.trim())); else openSchedules(); return; }
   if(name==='context'){ cmdPanel={kind:'context', at}; return paintCmds(at); }
   if(name==='cost'){ cmdPanel={kind:'cost', at}; return paintCmds(at); }
@@ -3520,6 +3548,7 @@ function finishGen(g, text, tier, note){
     save();
   }
   settleReply(g.sid, g.id, n && text ? {reply:n.reply, note} : {error: note || 'No reply came back.'});
+  gridChanged();
   /* stopping a reply also cancels the prompts below it that were waiting for it */
   if(g.stopped) dropWaiting(g.sid, g.id);
   pumpReplies();
@@ -3563,6 +3592,7 @@ const atPageEnd = () => opts.simple && innerHeight+scrollY >= document.documentE
 /* streamed text is painted at most once a frame, however many replies are coming in */
 const paintDue=new Set(); let paintRaf=0;
 function paintGen(g){
+  gridChanged();
   paintDue.add(g);
   if(paintRaf) return;
   paintRaf=requestAnimationFrame(()=>{
@@ -4675,6 +4705,7 @@ function paletteCommands(q){
   add('Space', 'Import / export JSON', ()=>openIo());
   add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
+  if(sel!=null && S.nodes[sel] && S.nodes[sel].kind!=='merge') add(`Prompt #${sel}`, 'Comparison grid from here…', ()=>openGridBuilder(sel, ''));
   add('App', 'Scheduled tasks', ()=>openSchedules());
   add('App', 'Schedule a prompt…', ()=>openSchedules(schedFormFor(opts.simple?composeParent():sel, '')));
   add('Settings', 'Open settings', ()=>openSettings());
@@ -4793,6 +4824,149 @@ const Motion = (()=>{
 
 /* rendering */
 const treeEl=document.getElementById('tree');
+/* ---- Comparison grid ----
+   One prompt, or several wordings of it, against several setups (a model and its settings: thinking, effort, tools, a
+   system prompt), from the same point in a chat. Every pair becomes its own fork with its own reply, so nothing is lost
+   and any of them can be continued; the grid shows them side by side with what each cost and took, and can have
+   Claude score them against your criteria. Grids are kept with the chat (S.grids) and reopen from the prompt they
+   start from. */
+const gridsOf = id => (S.grids||[]).filter(g=>g.parent===id);
+function colLabel(c){
+  const t=TIERS.find(x=>x[0]===c.tier), bits=[t ? t[1].split(' · ')[0] : c.tier];
+  if(c.thinking) bits.push('thinking');
+  if(c.effort) bits.push(c.effort+' effort');
+  for(const k of c.tools||[]) bits.push({search:'web search', fetch:'reads pages', code:'runs code'}[k]||k);
+  if(c.system && c.system.trim()) bits.push('system prompt');
+  return bits.join(' · ');
+}
+const gridEl=(()=>{ const w=document.createElement('div'); w.className='setwrap'; w.id='gridSheet'; w.hidden=true; w.innerHTML='<div class="setbox fsheet gsheet" role="dialog" aria-modal="true" aria-labelledby="gridTitle"></div>'; document.body.append(w); return w; })();
+let gridUI=null;
+function openGridBuilder(parent, text){
+  if(parent==null || !S.nodes[parent] || S.nodes[parent].kind==='merge'){ toast('Select the prompt the grid should follow.'); return; }
+  if(sampleState!=='ready'){ toast('The grid needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
+  const other=TIERS.map(x=>x[0]).find(x=>x!==opts.model) || opts.model;
+  gridUI={mode:'build', draft:{parent, rows:[text||''], cols:[{tier:opts.model}, {tier:other}]}};
+  gridEl.hidden=false; document.body.style.overflow='hidden'; paintGrid();
+  setTimeout(()=>{ const f=gridEl.querySelector('[data-grow="0"]'); if(f) f.focus(); }, 30);
+}
+function openGrid(gid){
+  const g=(S.grids||[]).find(x=>x.id===gid); if(!g) return;
+  gridUI={mode:'view', gid}; gridEl.hidden=false; document.body.style.overflow='hidden'; paintGrid();
+}
+function closeGrid(){ gridUI=null; gridEl.hidden=true; document.body.style.overflow=''; }
+function readGridDraft(){
+  const d=gridUI.draft, q=s=>[...gridEl.querySelectorAll(s)];
+  for(const t of q('[data-grow]')) d.rows[+t.dataset.grow]=t.value;
+  for(const el of q('[data-gcol]')){ const c=d.cols[+el.dataset.gcol], f=el.dataset.f; if(!c) continue;
+    if(f==='tier') c.tier=el.value; else if(f==='thinking') c.thinking=el.checked; else if(f==='effort') c.effort=el.value; else if(f==='system') c.system=el.value;
+    else if(f.startsWith('tool:')){ const k=f.slice(5), s2=new Set(c.tools||[]); if(el.checked) s2.add(k); else s2.delete(k); c.tools=[...s2]; } }
+}
+function gridBuildHTML(){
+  const d=gridUI.draft, rows=d.rows, cols=d.cols, nRows=rows.filter(r=>r.trim()).length, n=nRows*cols.length;
+  const p=S.nodes[d.parent];
+  const colHTML=(c,i)=>`<div class="gcol"><div class="gcolhead"><b>Setup ${String.fromCharCode(65+i)}</b>${cols.length>1?`<button class="fx" data-gcoldel="${i}" aria-label="Remove setup ${String.fromCharCode(65+i)}">×</button>`:''}</div>
+    <label class="pfield">Model<select data-gcol="${i}" data-f="tier">${TIERS.map(([v,l])=>`<option value="${v}" ${c.tier===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+    <label class="gchk"><input type="checkbox" data-gcol="${i}" data-f="thinking" ${c.thinking?'checked':''}> Thinking</label>
+    <label class="pfield">Effort<select data-gcol="${i}" data-f="effort">${['', ...EFFORT_OPTS].map(v=>`<option value="${v}" ${(c.effort||'')===v?'selected':''}>${v?v[0].toUpperCase()+v.slice(1):'Default'}</option>`).join('')}</select></label>
+    ${TOOL_LIST.filter(([k])=>toolAvail(k)).map(([k,l])=>`<label class="gchk"><input type="checkbox" data-gcol="${i}" data-f="tool:${k}" ${(c.tools||[]).includes(k)?'checked':''}> ${esc(l)}</label>`).join('')}
+    <label class="pfield">System prompt<textarea data-gcol="${i}" data-f="system" rows="2" placeholder="Optional">${esc(c.system||'')}</textarea></label></div>`;
+  return `<div class="sethead"><div class="cmptitle"><h2 id="gridTitle">Comparison grid</h2><p class="note">From #${d.parent}: ${esc(clip(p.text||'', 90))}</p></div><div class="bar"><button class="btn" data-gclose>Cancel</button></div></div>
+    <div class="fbody gbuild">
+      <section><h3 class="gh">Wordings <span class="note">· one row each</span></h3>
+        ${rows.map((r,i)=>`<div class="growin"><textarea data-grow="${i}" rows="2" placeholder="${i?'Another wording':'The prompt to try'}" aria-label="Wording ${i+1}">${esc(r)}</textarea>${rows.length>1?`<button class="fx" data-growdel="${i}" aria-label="Remove wording ${i+1}">×</button>`:''}</div>`).join('')}
+        <div class="tbar"><button class="btn xs" data-growadd>+ Add a wording</button></div></section>
+      <section><h3 class="gh">Setups <span class="note">· one column each</span></h3>
+        <div class="gcols">${cols.map(colHTML).join('')}${cols.length<6?'<button class="gcol gadd" data-gcoladd><span>+</span>Add a setup</button>':''}</div></section>
+      <p class="perr" data-gerr role="alert"></p>
+      <div class="tbar"><button class="btn primary" data-gorun ${n?'':'disabled'}>Run the grid: ${n} repl${n===1?'y':'ies'}</button><span class="note">${nRows} wording${nRows===1?'':'s'} × ${cols.length} setup${cols.length===1?'':'s'}. Each becomes its own branch from #${d.parent}, and replies are written a few at a time.</span></div>
+    </div>`;
+}
+function runGridDraft(){
+  readGridDraft();
+  const d=gridUI.draft, rows=d.rows.map(r=>r.trim()).filter(Boolean);
+  if(!rows.length){ const e=gridEl.querySelector('[data-gerr]'); if(e) e.textContent='Write at least one wording.'; return; }
+  if(rows.length*d.cols.length>36){ const e=gridEl.querySelector('[data-gerr]'); if(e) e.textContent='That’s more than 36 replies. Use fewer wordings or setups.'; return; }
+  const gid='g'+Date.now().toString(36), conv=convOf(d.parent), made=[], cells={};
+  const cols=d.cols.map(c=>({tier:c.tier, ...(c.thinking?{thinking:true}:{}), ...(c.effort?{effort:c.effort}:{}), ...((c.tools||[]).length?{tools:[...c.tools]}:{}), ...(c.system&&c.system.trim()?{system:c.system.trim()}:{})}));
+  commit(`Made a comparison grid of ${rows.length*cols.length} from #${d.parent}`, ()=>{
+    rows.forEach((text, r)=>cols.forEach((c, ci)=>{
+      const nid=S.nextId++, set={};
+      if(c.thinking) set.thinking=true; if(c.effort) set.effort=c.effort; if(c.system) set.system=c.system;
+      /* a setup without tools turns them off for its fork, so the Tools menu doesn't leak in */
+      set.tools = c.tools ? c.tools : [];
+      S.nodes[nid]={id:nid, parents:[d.parent], text, askTier:c.tier, set, grid:{id:gid, r, c:ci}};
+      newRef(slugName(`grid-${r+1}${String.fromCharCode(97+ci)}`, conv), nid);
+      cells[`${r}:${ci}`]=nid; made.push(nid);
+    }));
+    S.grids=[...(S.grids||[]), {id:gid, parent:d.parent, rows, cols, cells, created:Date.now()}];
+  }, {touch:false});
+  wantReplies(made);
+  gridUI={mode:'view', gid}; paintGrid();
+}
+function cellMeta(n){
+  const bits=[];
+  if(n.usage && n.usage.cost!=null) bits.push(fmtCost(n.usage.cost));
+  if(n.rt) bits.push(fmtElapsed(n.rt[1]-n.rt[0]));
+  if(n.usage && n.usage.output) bits.push(`${n.usage.output.toLocaleString()} tokens out`);
+  if(n.steps && n.steps.length) bits.push(`${n.steps.length} tool step${n.steps.length===1?'':'s'}`);
+  return bits.join(' · ');
+}
+function gridViewHTML(){
+  const g=(S.grids||[]).find(x=>x.id===gridUI.gid); if(!g) return '<div class="fbody"><p class="note">This grid is gone (undone or deleted).</p></div>';
+  const p=S.nodes[g.parent], ids=Object.values(g.cells).filter(id=>S.nodes[id]);
+  const missing=ids.filter(id=>!S.nodes[id].reply && !replyBusy(id)), running=ids.filter(id=>replyBusy(id));
+  const cost=ids.reduce((a,id)=>a+((S.nodes[id].usage||{}).cost||0), 0);
+  const cell=(r,c)=>{
+    const id=g.cells[`${r}:${c}`], n=id!=null && S.nodes[id]; if(!n) return `<td class="gcell gone"><p class="note">Deleted</p></td>`;
+    const live=liveGen(id), sc=g.scores && g.scores[id], best=g.best===id;
+    const body = live ? `<div class="gtext rbody">${live.text?md(clip(live.text, 1500)):'<p class="thinking">Writing…</p>'}</div><p class="gmeta"><span class="ts" data-since="${live.started||Date.now()}">${fmtElapsed(Date.now()-(live.started||Date.now()))}</span></p>`
+      : queuedGen(id) ? `<p class="note thinking">Waiting its turn…</p>`
+      : n.reply ? `<div class="gtext rbody">${md(n.reply)}</div><p class="gmeta">${esc(cellMeta(n))}</p>`
+      : `<p class="note">${esc(genNotes[gkey(DB.current,id)]||'No reply.')}</p>`;
+    return `<td class="gcell ${best?'best':''}" data-gcell="${id}">${sc?`<div class="gscore" title="${esc(sc.why||'')}"><b>${sc.score}</b>/10${best?' · best':''}</div>`:''}${body}
+      <div class="gacts"><button class="btn xs" data-gopen="${id}">Open</button>${n.reply?`<button class="btn xs" data-gkeep="${id}" ${onMain(id)?'disabled title="Already on main"':''}>Make mainline</button>`:''}${!n.reply&&!replyBusy(id)&&sampleState==='ready'?`<button class="btn xs" data-gget="${id}">Get reply</button>`:''}</div></td>`;
+  };
+  return `<div class="sethead"><div class="cmptitle"><h2 id="gridTitle">Comparison grid</h2><p class="note">From #${g.parent}${p?`: ${esc(clip(p.text||'', 80))}`:''} · ${ids.length} repl${ids.length===1?'y':'ies'}${cost?` · ${fmtCost(cost)} so far`:''}</p></div>
+      <div class="bar">${missing.length&&sampleState==='ready'?`<button class="btn" data-ggetall>Get ${missing.length} missing</button>`:''}${running.length?`<button class="btn" data-gstopall>Stop ${running.length}</button>`:''}<button class="btn" data-gclose>Done <kbd class="inv">Esc</kbd></button></div></div>
+    <div class="fbody gview">${gridScoreHTML(g)}
+      <div class="gtablewrap"><table class="gtable"><thead><tr><th class="gcorner"></th>${g.cols.map((c,i)=>`<th><span class="gcl">${String.fromCharCode(65+i)}</span> ${esc(colLabel(c))}</th>`).join('')}</tr></thead>
+      <tbody>${g.rows.map((t,r)=>`<tr><th class="growh" title="${esc(t)}">${esc(clip(t, 140))}</th>${g.cols.map((_,c)=>cell(r,c)).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+}
+/* scoring comes in the next part; for now the row is empty */
+function gridScoreHTML(g){ return ''; }
+function paintGrid(){
+  if(!gridUI) return;
+  const box=gridEl.firstChild, keep=box.querySelector('.gtablewrap'), sx=keep?keep.scrollLeft:0, sy=box.querySelector('.fbody')?.scrollTop||0;
+  if(gridUI.mode==='build'){ box.innerHTML=gridBuildHTML(); return; }
+  box.innerHTML=gridViewHTML();
+  const w=box.querySelector('.gtablewrap'); if(w) w.scrollLeft=sx; const fb=box.querySelector('.fbody'); if(fb) fb.scrollTop=sy;
+}
+/* replies streaming into the grid repaint it at most a few times a second */
+let gridPaint=0;
+function gridChanged(){ if(!gridUI || gridUI.mode!=='view' || gridPaint) return; gridPaint=setTimeout(()=>{ gridPaint=0; paintGrid(); }, 250); }
+gridEl.addEventListener('click', e=>{
+  const c=q=>e.target.closest(q);
+  if(e.target===gridEl || c('[data-gclose]')){ closeGrid(); return; }
+  if(!gridUI) return;
+  if(gridUI.mode==='build'){
+    readGridDraft(); const d=gridUI.draft;
+    if(c('[data-growadd]')){ d.rows.push(''); paintGrid(); gridEl.querySelector(`[data-grow="${d.rows.length-1}"]`)?.focus(); return; }
+    const rd=c('[data-growdel]'); if(rd){ d.rows.splice(+rd.dataset.growdel, 1); paintGrid(); return; }
+    if(c('[data-gcoladd]')){ const used=new Set(d.cols.map(x=>x.tier)); d.cols.push({tier:(TIERS.find(x=>!used.has(x[0]))||TIERS[0])[0]}); paintGrid(); return; }
+    const cd=c('[data-gcoldel]'); if(cd){ d.cols.splice(+cd.dataset.gcoldel, 1); paintGrid(); return; }
+    if(c('[data-gorun]')){ runGridDraft(); return; }
+    return;
+  }
+  const g=(S.grids||[]).find(x=>x.id===gridUI.gid); if(!g) return;
+  const op=c('[data-gopen]'); if(op){ const id=+op.dataset.gopen; closeGrid(); gotoNode(id); return; }
+  const kp=c('[data-gkeep]'); if(kp){ promote(+kp.dataset.gkeep); paintGrid(); return; }
+  const gg=c('[data-gget]'); if(gg){ wantReplies([+gg.dataset.gget]); paintGrid(); return; }
+  if(c('[data-ggetall]')){ wantReplies(Object.values(g.cells).filter(id=>S.nodes[id] && !S.nodes[id].reply)); paintGrid(); return; }
+  if(c('[data-gstopall]')){ for(const id of Object.values(g.cells)) if(replyBusy(id)) stopReply(id); paintGrid(); return; }
+});
+gridEl.addEventListener('change', e=>{ if(gridUI && gridUI.mode==='build' && e.target.matches('[data-gcol]')) readGridDraft(); });
+gridEl.addEventListener('input', e=>{ if(gridUI && gridUI.mode==='build' && e.target.matches('[data-grow]')){ readGridDraft(); const n=gridUI.draft.rows.filter(r=>r.trim()).length*gridUI.draft.cols.length, b=gridEl.querySelector('[data-gorun]'); if(b){ b.disabled=!n; b.textContent=`Run the grid: ${n} repl${n===1?'y':'ies'}`; } } });
+gridEl.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); closeGrid(); } });
 let variants=null;
 function variantsHTML(forId){
   const v=variants, n=v.rows.filter(r=>r.text.trim()).length;
@@ -4802,7 +4976,7 @@ function variantsHTML(forId){
     <ol class="vrows">${v.rows.map((r,i)=>`<li class="vrow"><textarea data-vtext="${i}" rows="2" aria-label="Variant ${i+1}" placeholder="${i?'Another wording, or the same prompt for another model':'Your prompt'}">${esc(r.text)}</textarea>
       <div class="vside"><select data-vtier="${i}" aria-label="Model for variant ${i+1}">${TIERS.map(([t,l])=>`<option value="${t}" ${r.tier===t?'selected':''}>${l.replace(/ \(.*\)/,'')}</option>`).join('')}</select>${v.rows.length>1?`<button class="fx" data-vdel="${i}" aria-label="Remove variant ${i+1}">×</button>`:''}</div></li>`).join('')}</ol>
     ${v.suggesting?'<p class="thinking note">Claude is suggesting wordings…</p>':''}
-    <div class="bar"><button class="btn primary" data-vsend ${n?'':'disabled'}>Send ${n} variant${n===1?'':'s'}</button><button class="btn" data-vadd>+ Add variant</button>${sampleState==='ready'?`<button class="btn" data-vsuggest ${v.suggesting||!v.rows[0].text.trim()?'disabled':''} title="One quick request: Claude rewrites the first variant a few ways">${AI}Suggest wordings</button>`:''}<button class="btn" data-vcancel>Cancel</button></div>
+    <div class="bar"><button class="btn primary" data-vsend ${n?'':'disabled'}>Send ${n} variant${n===1?'':'s'}</button><button class="btn" data-vadd>+ Add variant</button><button class="btn" data-vgrid title="Try these wordings against several setups (models, thinking, effort, tools) and see the results side by side">Grid…</button>${sampleState==='ready'?`<button class="btn" data-vsuggest ${v.suggesting||!v.rows[0].text.trim()?'disabled':''} title="One quick request: Claude rewrites the first variant a few ways">${AI}Suggest wordings</button>`:''}<button class="btn" data-vcancel>Cancel</button></div>
     <p class="note">The first ${rid0?`continues <b>${esc(refName(rid0))}</b>`:'starts a branch'}; the others get their own. ${sampleState==='ready'&&n>1?'Claude answers each, and they open side by side in Compare.':''}</p></div>`;
 }
 function openVariants(id){
@@ -6515,6 +6689,13 @@ treeEl.addEventListener('click', e=>{
   if(variants){
     if(e.target.closest('[data-vcancel]')){ const keep=variants.rows[0].text; variants=null; draft=keep; animRender([sel]); return; }
     if(e.target.closest('[data-vsend]')){ sendVariants(); return; }
+    if(e.target.closest('[data-vgrid]')){
+      /* the variants' wordings become the grid's rows, and their models its setups */
+      const rows=[...new Set(variants.rows.map(r=>r.text.trim()).filter(Boolean))], tiers=[...new Set(variants.rows.map(r=>r.tier))], at=sel;
+      variants=null; animRender([at]);
+      openGridBuilder(at, rows[0]||''); if(gridUI){ gridUI.draft.rows=rows.length?rows:['']; gridUI.draft.cols=tiers.map(t=>({tier:t})); paintGrid(); }
+      return;
+    }
     if(e.target.closest('[data-vadd]')){ variants.rows.push({text:'', tier:opts.model}); paintVariants(); const t=treeEl.querySelectorAll('[data-vtext]'); t[t.length-1].focus(); return; }
     if(e.target.closest('[data-vsuggest]')){ suggestWordings(); return; }
     const vd=e.target.closest('[data-vdel]'); if(vd){ variants.rows.splice(+vd.dataset.vdel,1); paintVariants(); return; }
