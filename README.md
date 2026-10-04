@@ -136,7 +136,8 @@ and build folders are skipped, and lock files and `.env` files start unticked.
 - **Link a folder on this computer** (type its path) keeps them tied to the folder: **Sync** re-reads files that
   changed on disk, and replies written before the change say which file changed.
 
-Click any file (in Project files, on a prompt, or waiting in the input box) to open it:
+Click any file (in Project files, on a prompt, or waiting in the input box) to open it in a panel beside the chat, so
+you can keep reading, chatting or editing while it's open (drag its left edge to resize it):
 - syntax colors for about 60 languages, picked by extension or file name (`Dockerfile`, `Makefile`, `Gemfile`…),
   with line numbers, and Markdown and image previews (a Source / Preview switch for Markdown);
 - **Edit** colors code as you type, with Tab and Ctrl/⌘-S. Saving makes a new version of the file: Undo brings the
