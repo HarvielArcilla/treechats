@@ -11,7 +11,7 @@
     "prestart": "node scripts/ensure-deps.mjs",
     "start": "vite build && tsx --disable-warning=ExperimentalWarning server/start.ts --open",
     "predev": "node scripts/ensure-deps.mjs",
-    "dev": "concurrently -k -n server,web -c blue,green \"tsx watch --disable-warning=ExperimentalWarning server/start.ts\" \"vite\"",
+    "dev": "concurrently -k -n server,web -c blue,green \"tsx watch --disable-warning=ExperimentalWarning server/start.ts --dev\" \"vite\"",
     "build": "vite build",
     "check": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --test --import tsx \"tests/*.test.ts\"",

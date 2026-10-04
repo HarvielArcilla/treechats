@@ -10,6 +10,11 @@ import { join, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const isWin = process.platform === 'win32';
 const servers: ChildProcess[] = [];
+/* every server here uses this token; requests carry it the way an MCP client would */
+const TOKEN = 'test-token-0123456789abcdefghijklmnopqrstuvwxyz';
+const rawFetch = globalThis.fetch;
+const fetch = (url: string | URL, init: RequestInit = {}) => rawFetch(url, { ...init, headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json', ...(init.headers as Record<string, string> || {}) } });
+const mcpTransport = async (base: string) => { const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js'); return new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers: { authorization: `Bearer ${TOKEN}` } } }); };
 after(() => { for (const s of servers) s.kill(); });
 
 /* Starts the server on a random free-looking port; if that port turns out to be taken (or the process dies
@@ -18,7 +23,7 @@ async function startServer(env: Record<string, string>, attempts = 4): Promise<{
   const port = 5400 + Math.floor(Math.random() * 2000);
   const data = mkdtempSync(join(tmpdir(), 'treechats-data-'));
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'server/start.ts'], {
-    cwd: root, env: { ...process.env, TREECHATS_PORT: String(port), TREECHATS_DATA_DIR: data, TREECHATS_OPEN: '0', ANTHROPIC_API_KEY: '', ...env }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: root, env: { ...process.env, TREECHATS_PORT: String(port), TREECHATS_DATA_DIR: data, TREECHATS_OPEN: '0', ANTHROPIC_API_KEY: '', TREECHATS_TOKEN: TOKEN, ...env }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   servers.push(child);
   let log = '', exited = false;
@@ -167,7 +172,7 @@ test('MCP: Claude Code can list, search and read the context of a saved chat', a
   assert.equal(put.status, 204);
 
   const client = new Client({ name: 'test', version: '1' });
-  await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
+  await client.connect(await mcpTransport(base));
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_chats', 'list_projects', 'regenerate', 'replay', 'search', 'spawn', 'combine', 'judge', 'list_saved_prompts', 'review', 'describe', 'edit_prompt', 'fan_out', 'get_tree', 'operate', 'btw', 'loop'].sort());
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
@@ -195,7 +200,7 @@ test('MCP subagents: commands go to the open page, results come back, and each r
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const { base } = await startServer({ TREECHATS_FAKE: '1', TREECHATS_AGENT_MAX_REQUESTS: '2' });
   const client = new Client({ name: 'test', version: '1' });
-  await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
+  await client.connect(await mcpTransport(base));
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
 
   /* without the page open, agent tools say so and spend nothing */
@@ -248,4 +253,69 @@ test('MCP subagents: commands go to the open page, results come back, and each r
 
   ctl.abort();
   await client.close();
+});
+
+test('the token and the password lock, over HTTP: nothing without the token; locked means encrypted and refused', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { base, data } = await startServer({ TREECHATS_FAKE: '1' });
+  /* without the token: refused, but the page itself (code, no data) still loads so it can show the sign-in screen */
+  assert.equal((await rawFetch(base + '/api/state')).status, 401);
+  assert.equal((await rawFetch(base + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401);
+  assert.deepEqual(await (await rawFetch(base + '/api/auth')).json(), { authed: false, lock: { on: false, unlocked: false, autoLock: 15 } });
+  /* the link with the token becomes a cookie and leaves the address bar */
+  const link = await rawFetch(base + '/?token=' + TOKEN, { redirect: 'manual' });
+  assert.equal(link.status, 302);
+  const cookie = link.headers.get('set-cookie')!;
+  assert.match(cookie, /HttpOnly/i); assert.match(cookie, /SameSite=Strict/i);
+  assert.equal((await rawFetch(base + '/api/state', { headers: { cookie: cookie.split(';')[0] } })).status, 204);
+
+  const state = { db: { spaces: { s1: { id: 's1', name: 'P', tree: { nodes: { 1: { id: 1, parents: [], text: 'PLAINTEXT-MARKER', reply: 'r' } }, refs: { r1: { name: 'main', tip: 1 } } } } }, order: ['s1'], current: 's1' }, opts: {} };
+  await fetch(base + '/api/state', { method: 'PUT', headers: { origin: base }, body: JSON.stringify(state) });
+  const onDisk = () => ['treechats.db', 'treechats.db-wal'].some((f) => existsSync(join(data, f)) && readFileSync(join(data, f)).includes('PLAINTEXT-MARKER'));
+  assert.ok(onDisk());
+  const post = (path: string, body: object, h: Record<string, string> = {}) => fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', origin: base, ...h }, body: JSON.stringify(body) });
+  const on = await post('/api/vault/enable', { password: 'correct horse battery', autoLock: 15 });
+  assert.equal(on.status, 200);
+  const { recovery } = await on.json();
+  assert.match(recovery, /^([A-Z0-9]{4}-){7}[A-Z0-9]{4}$/);
+  assert.ok(!onDisk(), 'nothing readable left in the database file or its journal');
+  assert.match(await (await fetch(base + '/api/state')).text(), /PLAINTEXT-MARKER/, 'unlocked, it reads as before');
+
+  assert.equal((await post('/api/vault/lock', {})).status, 200);
+  assert.equal((await fetch(base + '/api/state')).status, 423);
+  const client = new Client({ name: 'test', version: '1' });
+  await client.connect(await mcpTransport(base));
+  const r = (await client.callTool({ name: 'list_chats', arguments: {} })) as { content: { text: string }[]; isError?: boolean };
+  assert.equal(r.isError, true); assert.match(r.content[0].text, /locked/);
+  await client.close();
+
+  /* guesses sent all at once are checked one at a time, and after a few wrong ones the rest are turned away */
+  const guesses = await Promise.all(Array.from({ length: 8 }, (_, i) => post('/api/vault/unlock', { password: 'wrong guess ' + i })));
+  const codes = await Promise.all(guesses.map((g) => g.json().then((j: any) => j.code)));
+  assert.ok(codes.filter((c) => c === 'wrong_password').length <= 3, codes.join());
+  assert.ok(codes.includes('too_many_tries'), codes.join());
+  await new Promise((r) => setTimeout(r, 1100));
+  /* the password signs a browser in, even without the token */
+  const ok = await rawFetch(base + '/api/vault/unlock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'correct horse battery' }) });
+  assert.equal(ok.status, 200); assert.match(ok.headers.get('set-cookie') || '', /treechats_/);
+  assert.match(await (await fetch(base + '/api/state')).text(), /PLAINTEXT-MARKER/);
+  assert.equal((await post('/api/vault/disable', { password: 'correct horse battery' })).status, 200);
+  assert.ok(onDisk(), 'turning it off saves it readable again');
+
+  /* two requests to turn it on at once: one wins, and the data still opens with its password */
+  const both = await Promise.all([post('/api/vault/enable', { password: 'first password', autoLock: 0 }), post('/api/vault/enable', { password: 'second password', autoLock: 0 })]);
+  assert.deepEqual(both.map((r) => r.status).sort(), [200, 400]);
+  const winner = both[0].status === 200 ? 'first password' : 'second password', rec = (await (both[0].status === 200 ? both[0] : both[1]).json()).recovery;
+  await post('/api/vault/lock', {});
+  assert.equal((await post('/api/vault/unlock', { recovery: rec, newPassword: 'after recovery' })).status, 200);
+  assert.match(await (await fetch(base + '/api/state')).text(), /PLAINTEXT-MARKER/, `${winner}'s data opens with its recovery key`);
+  await post('/api/vault/lock', {});
+  assert.equal((await post('/api/vault/unlock', { password: 'after recovery' })).status, 200, 'the recovery key set a new password');
+
+  /* other ways in that must stay shut */
+  const devPort = new URL(base).port; const other = `http://localhost:${Number(devPort) + 1}`;
+  assert.equal((await fetch(base + '/api/state', { headers: { origin: other } })).status, 403, 'the dev port is only trusted with npm run dev');
+  assert.equal((await fetch(base + '/api/vault/lock', { method: 'POST', headers: { origin: base, 'content-type': 'text/plain' }, body: '{}' })).status, 415, 'changes must be JSON');
+  const once = await rawFetch(base + '/?login=made-up-code', { redirect: 'manual' });
+  assert.equal(once.status, 302); assert.equal(once.headers.get('set-cookie'), null, 'a made-up one-time code signs nothing in');
 });

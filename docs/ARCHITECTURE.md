@@ -14,14 +14,31 @@ server/cli.ts           the same through `claude -p` (Claude Code, e.g. with a s
 server/mcp.ts           MCP server for Claude Code: read (list, search, get context) and subagents (spawn, ask, fork…)
 server/relay.ts         passes subagent commands to the open page and waits for results; request budget per run
 server/context.ts       reads the saved tree on the server; builds context the same way the page does
-server/store.ts         SQLite: the app state document and rolling snapshots
+server/store.ts         SQLite in the app data folder: the state document, rolling snapshots, the token, the lock record
+server/vault.ts         The password lock: scrypt-wrapped data key, AES-256-GCM, recovery key, auto-lock
+server/secrets.ts       The API key in the system keychain (macOS Keychain, Windows DPAPI, libsecret)
+server/redact.ts        Hides secrets in command output and diffs
 server/config.ts        .env settings
 ```
 
 ## API
 
+Every route below needs the token (a cookie from the sign-in link, or `Authorization: Bearer <token>`), except
+`GET /api/auth`, `POST /api/auth/login` and `POST /api/vault/unlock`. With the password lock on and locked, `/api/*`
+answers 423 and MCP tools answer "Treechats is locked".
+
 | Route | What it does |
 |---|---|
+| `GET /api/auth` | Whether this browser is signed in, and whether the lock is on and unlocked |
+| `POST /api/auth/login` | `{token}`: signs a browser in with the token (sets the cookie) |
+| `POST /api/vault/unlock` | `{password}`, or `{recovery, newPassword}`: unlocks, and signs the browser in |
+| `POST /api/vault/enable`, `/disable`, `/password`, `/recovery`, `/settings`, `/lock`, `/alive` | Turn the lock on (returns the recovery key) or off, change the password, make a new recovery key, set the auto-lock, lock now, and count as activity |
+| `GET /api/vault/fileskey` | While unlocked, the key the page encrypts attachments with |
+| `POST /api/key/save`, `/move`, `/remove` | The API key in the system keychain |
+| `POST /api/auth/reset` | A new token; other browsers and coding tools are signed out |
+
+Requests that change something (`POST`/`PUT` under `/api/`) must be sent as `application/json`, which a page on
+another site can't do without a CORS preflight that Treechats doesn't answer.
 | `GET /api/config` | Which provider is active and ready, model labels for each tier, limits |
 | `GET /api/state`, `PUT /api/state` | Load and save the app state (one JSON document) |
 | `GET /api/snapshots`, `GET /api/snapshots/:id` | Earlier saved states |
@@ -29,9 +46,9 @@ server/config.ts        .env settings
 | `GET /api/agent/events` | Server-sent events: subagent commands for the open page to carry out |
 | `POST /api/agent/result` | The page's answer to a command: `{id, ok, result}` or `{id, ok:false, error}` |
 | `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |
-| `POST /api/folder/list`, `/read`, `/write` | Linked folders (server/folders.ts): list files (git-aware), read them, write one back. Paths stay inside the folder; a write refuses a disk copy that changed since it was read |
-| `POST /api/folder/git`, `/diff` | Branch, changed files and diffs for a linked folder (server/run.ts) |
-| `POST /api/folder/run` | Runs a command in a linked folder; refused unless Settings › System allows it and the folder is linked, both checked against the saved state |
+| `POST /api/folder/list`, `/read`, `/write` | Folders (server/folders.ts): list files (git-aware), read them, write one back. Paths stay inside the folder; writes only go to folders linked to a project, never into `.git`, and refuse a disk copy that changed since it was read |
+| `POST /api/folder/git`, `/diff` | Branch, changed files and diffs for a linked folder (server/run.ts), with secrets hidden |
+| `POST /api/folder/run` | Runs a command in a linked folder; refused unless Settings › System allows it and the folder is linked, both checked against the saved state. Secrets in the output are hidden |
 | `POST /api/sessions/list`, `/read`, `/parse` | Claude Code and Codex session logs as chats (server/sessions.ts), read-only |
 
 ## Why the app is still one file

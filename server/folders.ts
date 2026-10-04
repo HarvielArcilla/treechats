@@ -1,5 +1,5 @@
 /* Folders on this computer, for project files. The page lists a folder, reads the files you tick, and can write
-   a file back when you save an edit to disk. Everything stays inside the folder you linked: paths are resolved
+   a file back when you save an edit to disk (only in a folder linked to a project). Everything stays inside the folder: paths are resolved
    against it and anything that escapes it (.., symlinks out) is refused. Writes refuse to overwrite a file that
    changed on disk since it was read, unless the page says to.
 
@@ -15,6 +15,20 @@ const MAX_LIST = 5000;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.cache', 'coverage', '__pycache__', '.venv', 'venv', 'target', '.idea', '.vscode', '.turbo', 'vendor']);
 
 export class FolderError extends Error { constructor(public code: string, message: string) { super(message); } }
+
+/* the saved state, for checking which folders are linked to a project */
+export type St = { db: { spaces: Record<string, { tree: { files?: { src?: { root?: string } }[] } }> }; opts?: Record<string, unknown> } | null;
+function linked(state: St, root: string) {
+  if (!state) return false;
+  return Object.values(state.db.spaces).some((sp) => (sp.tree.files || []).some((f) => f.src && f.src.root === root));
+}
+/* changing anything (writing a file, running a command) needs the folder to be linked to a project; listing and
+   reading a folder you are choosing files from doesn't */
+export function checkLinked(state: St, input: string) {
+  const root = folderRoot(input);
+  if (!linked(state, root)) throw new FolderError('not_linked', 'That folder isn’t linked to a project. Link it from Project files first.');
+  return root;
+}
 
 /* "~/code/app" or an absolute path → the real folder, or an error a person can act on */
 export function folderRoot(input: string): string {
@@ -105,8 +119,10 @@ export async function readFolderFiles(input: string, paths: string[]) {
 }
 
 /* writes one file back; refuses when it changed on disk since `mtime`, unless force */
-export async function writeFolderFile(input: string, rel: string, text: string, mtime: number | null, force: boolean) {
-  const root = folderRoot(input), abs = inside(root, rel);
+export async function writeFolderFile(state: St, input: string, rel: string, text: string, mtime: number | null, force: boolean) {
+  const root = checkLinked(state, input), abs = inside(root, rel);
+  /* case and trailing dots don't matter to macOS and Windows: .GIT and .git. are the same folder there */
+  if (relative(root, abs).split(/[\\/]/).some((seg) => seg.replace(/[. ]+$/, '').toLowerCase() === '.git')) throw new FolderError('outside', 'Treechats doesn’t write inside .git.');
   if (Buffer.byteLength(text) > MAX_FILE) throw new FolderError('too_large', `Files can be up to ${MAX_FILE / 1024} KB.`);
   if (existsSync(abs) && !force && mtime != null) {
     const now = Math.round((await fs.stat(abs)).mtimeMs);

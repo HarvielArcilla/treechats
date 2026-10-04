@@ -656,6 +656,12 @@ html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
 .fvedarea .fvedit::selection{background:color-mix(in srgb, var(--accent) 30%, transparent);color:transparent}
 
 .mcpsnip{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.pform{display:grid;gap:10px;max-width:420px;margin-top:6px}
+.pfield{display:grid;gap:4px;font-size:.84rem;font-weight:600}
+.pfield input,.pfield select{font:inherit;font-weight:400!important;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.perr{margin:0;color:var(--danger,#b3261e);font-size:.84rem}
+.recbox{display:grid;gap:8px;padding:14px;border:1px solid var(--accent);border-radius:10px;background:var(--surface)}
+.reccode{font:600 1.02rem/1.5 var(--mono);letter-spacing:.04em;padding:10px 12px;border-radius:8px;background:var(--bg);user-select:all;overflow-wrap:anywhere}
 .mcphead{display:flex;gap:8px;align-items:baseline;padding:6px 10px;background:var(--panel)}
 .mcphead .note{flex:1;font-size:.76rem}
 .mcpsnip pre{margin:0;padding:8px 10px;font:.76rem/1.4 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg)}
@@ -1165,6 +1171,8 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
 </div>
 
 <script>
+/* not signed in yet, or locked: the sign-in screen (local-shim.js) shows instead, and the app waits for a reload */
+if(window.TREECHATS_GATE) throw new Error('Treechats is waiting for you to sign in or unlock it.');
 const KEY = 'treechats-v1', OLD_KEY = 'chat-tree-editor-v1';
 const EXAMPLE = {nextId:32, nextRef:8, nodes:{
   1:{id:1,parents:[],text:"I'm building a rate limiter for our public API. Peak traffic is about 4k requests per second. Where do I start?",reply:"Start by pinning down what you're limiting: per API key, per IP, or per endpoint. At 4k req/s the limiter check sits on every request, so it needs to be O(1) and close to the edge.\n\nThe usual path is:\n- Pick an algorithm (token bucket, sliding window, or GCRA)\n- Decide where counters live (in-process, Redis, or both)\n- Define what a rejected client sees: `429` plus a `Retry-After` header"},
@@ -1875,14 +1883,49 @@ function mdRaw(src){
 const TEXT_EXT=/\.(txt|md|mdx|markdown|csv|tsv|json|jsonc|json5|jsonl|geojson|xml|xhtml|plist|csproj|yaml|yml|toml|ini|cfg|conf|properties|editorconfig|env|log|sql|psql|html?|css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|mts|cts|py|pyi|pyw|rb|rake|gemspec|go|rs|java|kt|kts|swift|m|mm|c|h|cc|cpp|cxx|hpp|hh|hxx|cs|csx|fs|fsx|vb|php|sh|bash|zsh|fish|ksh|ps1|psm1|psd1|bat|cmd|r|lua|pl|pm|scala|sc|sbt|dart|ex|exs|erl|hrl|hs|lhs|ml|mli|clj|cljs|cljc|edn|elm|jl|nix|vue|svelte|astro|hbs|handlebars|twig|tex|sty|rst|proto|graphql|gql|wat|f90|cmake|mk|dockerfile|containerfile|makefile|gradle|groovy|tf|tfvars|hcl|zig|sol|vim|diff|patch)$/i;
 const MAX_TEXT_FILE=300*1024, MAX_IMAGE_FILE=20*1024*1024;
 const Files=(()=>{
-  const cache=new Map(); let db=null;
+  /* With the password lock on, each record is encrypted (AES-GCM) before it is stored, with a key the server derives
+     from the lock's data key and hands to the page only while unlocked. The cache in memory holds them readable. */
+  const cache=new Map(); let db=null, key=null, keyB64=null;
   const open=()=>new Promise(res=>{ try{ const r=indexedDB.open('treechats-files',1); r.onupgradeneeded=()=>r.result.createObjectStore('f'); r.onsuccess=()=>{ db=r.result; res(); }; r.onerror=()=>res(); }catch(e){ res(); } });
-  async function init(){
-    await open(); if(!db) return;
-    await new Promise(res=>{ try{ const rq=db.transaction('f').objectStore('f').openCursor(); rq.onsuccess=()=>{ const c=rq.result; if(c){ cache.set(c.key, c.value); c.continue(); } else res(); }; rq.onerror=()=>res(); }catch(e){ res(); } });
+  async function useKey(b64){
+    key = b64 ? await crypto.subtle.importKey('raw', Uint8Array.from(atob(b64), c=>c.charCodeAt(0)), 'AES-GCM', false, ['encrypt','decrypt']) : null; keyB64=b64||null;
   }
-  function put(id, rec){ cache.set(id, rec); if(db) try{ db.transaction('f','readwrite').objectStore('f').put(rec, id); }catch(e){} }
-  return {init, put, get:id=>cache.get(id), persistent:()=>!!db};
+  /* a record as bytes: its details as JSON, then the image itself if it is one */
+  async function seal(rec){
+    const {blob, ...meta}=rec, m=new TextEncoder().encode(JSON.stringify(meta)), bytes=blob ? new Uint8Array(await blob.arrayBuffer()) : new Uint8Array(0);
+    const plain=new Uint8Array(4+m.length+bytes.length); new DataView(plain.buffer).setUint32(0, m.length); plain.set(m, 4); plain.set(bytes, 4+m.length);
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    return {enc:1, iv, data:await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, plain)};
+  }
+  async function unseal(x){
+    const plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM', iv:x.iv}, key, x.data)), n=new DataView(plain.buffer).getUint32(0);
+    const meta=JSON.parse(new TextDecoder().decode(plain.subarray(4, 4+n)));
+    if(meta.kind==='image') meta.blob=new Blob([plain.subarray(4+n)], {type:meta.type});
+    return meta;
+  }
+  /* resolves once the browser has really written it */
+  function store(id, rec){
+    if(!db) return Promise.resolve();
+    return (key ? seal(rec) : Promise.resolve(rec)).then(v=>new Promise(res=>{ try{ const tx=db.transaction('f','readwrite'); tx.objectStore('f').put(v, id); tx.oncomplete=()=>res(); tx.onerror=tx.onabort=()=>res(); }catch(e){ res(); } })).catch(()=>{});
+  }
+  async function init(){
+    const L=window.TREECHATS_LOCAL;
+    if(L && L.lock && L.lock.on){ try{ const r=await fetch('/api/vault/fileskey'); if(r.ok) await useKey((await r.json()).key); }catch(e){} }
+    await open(); if(!db) return;
+    const raw=[];
+    await new Promise(res=>{ try{ const rq=db.transaction('f').objectStore('f').openCursor(); rq.onsuccess=()=>{ const c=rq.result; if(c){ raw.push([c.key, c.value]); c.continue(); } else res(); }; rq.onerror=()=>res(); }catch(e){ res(); } });
+    const plainLeft=[];
+    for(const [id, v] of raw){
+      if(v && v.enc){ if(key) try{ cache.set(id, await unseal(v)); }catch(e){ /* sealed with another key: shown as missing */ } }
+      else { cache.set(id, v); if(key) plainLeft.push(id); }
+    }
+    /* files saved readable before the lock was on (another tab, say) are sealed now */
+    for(const id of plainLeft) store(id, cache.get(id));
+  }
+  function put(id, rec){ cache.set(id, rec); store(id, rec); }
+  /* the lock was turned on or off: every file is stored again, sealed with the new key or readable */
+  async function rekey(b64){ await useKey(b64); await Promise.all([...cache].map(([id, rec])=>store(id, rec))); }
+  return {init, put, rekey, get:id=>cache.get(id), persistent:()=>!!db, sealed:()=>!!key, keyNow:()=>keyB64};
 })();
 const fmtSize = b => b<1024 ? b+' B' : b<1048576 ? Math.round(b/1024)+' KB' : (b/1048576).toFixed(1)+' MB';
 async function readFiles(list, {textOnly=false}={}){
@@ -1932,7 +1975,9 @@ const SKIP_DIR_RE=/(^|\/)(\.git|node_modules|dist|build|out|\.next|\.nuxt|\.cach
 const textish = p => TEXT_EXT.test(p) || /(^|\/)(Dockerfile|Makefile|LICENSE|README|Procfile|\.gitignore|\.editorconfig|\.env\.[a-z]+)$/i.test(p);
 const folderDefault = f => textish(f.path) && !LOCK_RE.test(f.path) && !SECRET_RE.test(f.path) && f.size>0 && f.size<=MAX_TEXT_FILE;
 async function folderApi(path, body){
-  const r=await fetch(path, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+  /* writes need the folder linked, and the server checks that against what's saved, so save first */
+  if(path==='/api/folder/write') await flushState();
+  const r=await fetch(path, {method:'POST', headers:{'content-type':'application/json', 'x-treechats-tab':window.TREECHATS_TAB||''}, body:JSON.stringify(body)});
   const d=await r.json().catch(()=>({}));
   if(!r.ok) throw Object.assign(new Error(d.message || 'Treechats couldn’t reach the folder.'), {code:d.code});
   return d;
@@ -4321,6 +4366,10 @@ const Agent=(()=>{
   function connect(){
     if(!window.TREECHATS_LOCAL || window.TREECHATS_LOCAL.offline || typeof EventSource==='undefined') return;
     const es=new EventSource('/api/agent/events');
+    /* Treechats locked (Lock now, or the auto-lock): reloading clears the page and shows the unlock screen */
+    es.addEventListener('lock', ()=>location.reload());
+    /* the lock was turned on or off, or the token reset, in another tab: reload to match */
+    es.addEventListener('vault', e=>{ if(e.data!==window.TREECHATS_TAB) location.reload(); });
     es.onmessage=e=>{
       let cmd; try{ cmd=JSON.parse(e.data); }catch(err){ return; }
       handle(cmd).then(result=>({id:cmd.id, ok:true, result}), err=>({id:cmd.id, ok:false, error:String(err && err.message || err)}))
@@ -4432,6 +4481,8 @@ function paletteCommands(q){
   add('App', opts.map===false ? 'Show the branch map in the panel' : 'Hide the branch map in the panel', ()=>{ opts.map = opts.map===false; save(); drawMap(); });
   add('App', 'Search prompts and replies', ()=>{ if(narrow()) openDrawer('convs'); else if(opts.collapsed.convs){ opts.collapsed.convs=false; applyLayout(); save(); } setTimeout(()=>{ convFilterEl.focus(); convFilterEl.select(); }, 60); }, '/');
   add('Settings', 'Open settings', ()=>openSettings());
+  if(lockInfo().on) add('App', 'Lock Treechats now', ()=>lockNow());
+  if(hasServer()) add('Settings', 'Privacy & security', ()=>openSettings('privacy'));
   add('Settings', 'Keyboard shortcuts', ()=>openSettings('keys'));
   for(const [m,l] of [['system','System'],['light','Light'],['dark','Dark']]) add('Settings', `Theme mode: ${l}`, ()=>{ opts.theme=m; afterSetting('theme'); });
   for(const id of [...Object.keys(PALETTES), ...Object.keys(customThemes())]) add('Settings', `Palette: ${PALETTES[id]?PALETTES[id].name:customThemes()[id].name}`, ()=>{ opts.palette=id; afterSetting('palette'); });
@@ -6276,7 +6327,7 @@ function applyAppearance(){
 if(darkMQ.addEventListener) darkMQ.addEventListener('change', ()=>{ if(set('theme')==='system'){ applyAppearance(); if(!setEl.hidden) renderSettings(); } });
 
 const setEl=document.getElementById('settings'), setBodyEl=document.getElementById('setBody'), setTabsEl=document.getElementById('setTabs');
-const SET_TABS=[['look','Personalization'],['system','System'],['saved','Saved prompts'],['prompts','Prompts'],['ops','Operations'],['bar','Quick access'],['keys','Keyboard']];
+const SET_TABS=[['look','Personalization'],['system','System'],['privacy','Privacy & security'],['saved','Saved prompts'],['prompts','Prompts'],['ops','Operations'],['bar','Quick access'],['keys','Keyboard']];
 const PROMPT_GROUPS=[['every','Sent with every request',''], ['ops','Operations','Used by Merge, Reroot and Squash.'], ['tools',AI+'Tools','What Claude is asked when you use a '+AI+'tool.'], ['naming',AI+'Naming','Used when Claude names branches, chats and projects (turn these on under System).']];
 let setReturn=null;
 const segs=(key, choices, label)=>`<div class="segs" role="group" aria-label="${esc(label)}">${choices.map(([v,l])=>`<button class="seg" data-set="${key}" data-val="${v}" aria-pressed="${String(set(key))===String(v)}">${esc(l)}</button>`).join('')}</div>`;
@@ -6306,6 +6357,96 @@ function themeEditorHTML(){
     <div><h3 class="th3">Readability</h3><ul class="contrast" data-tcontrast>${contrastHTML()}</ul></div>
     <div class="tbar"><button class="btn primary" data-tdone>Done editing</button><button class="btn" data-tcopy>Copy theme code</button><button class="btn" data-tdup>Duplicate</button><button class="btn danger" data-tdel>Delete theme</button></div>
   </section>`;
+}
+/* ---- Privacy & security ----
+   Where your data is, the password lock (server/vault.ts), the API key in the system keychain (server/secrets.ts),
+   and the token that signs browsers and coding tools in. */
+const lockInfo = () => (window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.lock) || {on:false};
+const AUTO_LOCKS=[[5,'5 min'],[15,'15 min'],[60,'1 hour'],[240,'4 hours'],[1440,'1 day'],[0,'Never']];
+let priv={form:null, recovery:null, busy:false, err:''};
+function autoLockText(n){ const x=AUTO_LOCKS.find(a=>a[0]===n); return n ? `after ${x?x[1]:n+' min'} without use` : 'only when you lock it or Treechats stops'; }
+function privacyHTML(){
+  if(!hasServer()) return `<section class="setsec"><p class="note">This page isn’t connected to the Treechats server, so everything is kept in this browser’s storage.</p></section>`;
+  const L=window.TREECHATS_LOCAL, lk=lockInfo(), key=L.key||{}, err=priv.err?`<p class="perr" role="alert">${esc(priv.err)}</p>`:'', busy=priv.busy?'disabled':'';
+  const pw=(name, label, auto)=>`<label class="pfield">${label}<input type="password" data-pw="${name}" autocomplete="${auto}" ${busy}></label>`;
+  let h=`<section class="setsec"><h3>Your data</h3>
+    <p class="note">Your chats, projects and settings are saved in <code>${esc(L.dataDir||'the data folder')}</code>, which only your account on this computer can open${lk.on?', and they are encrypted with your password':''}. Attachments are kept in this browser’s storage${lk.on?', also encrypted':''}. Files from linked folders stay where they are. Nothing is sent anywhere except the requests to Claude you make.</p>
+    <p class="note">The best protection for a lost or stolen computer is disk encryption: FileVault on a Mac, BitLocker or Device encryption on Windows, or full-disk encryption on Linux. It covers Treechats and everything else.</p></section>`;
+  /* the lock */
+  h+=`<section class="setsec"><h3>Password lock</h3>`;
+  if(priv.recovery){
+    h+=`<div class="recbox"><b>Your recovery key</b><code class="reccode">${esc(priv.recovery)}</code>
+      <p class="note">If you forget your password, this is the only way back in. Nobody else can recover your chats: not Treechats, not anyone. Save it somewhere safe that isn’t this computer, like a password manager or on paper. It won’t be shown again.</p>
+      <div class="tbar"><button class="btn" data-reccopy>Copy</button><button class="btn" data-recsave>Save as a file</button><button class="btn primary" data-recdone>I’ve saved it</button></div></div>`;
+  } else if(!lk.on){
+    h+=`<p class="note">Encrypts your chats, settings and attachments with a password, and asks for it whenever Treechats starts or locks. Useful if other people use this computer or your account, or if your data folder is backed up or synced somewhere. Coding tools can’t read your chats while it’s locked.</p>
+      <form class="pform" data-privform="on">${pw('p1','Password','new-password')}${pw('p2','Password again','new-password')}
+        <label class="pfield">Lock by itself<select data-lauto ${busy}>${AUTO_LOCKS.map(([v,l])=>`<option value="${v}" ${v===15?'selected':''}>${v?'After '+l+' without use':'Never'}</option>`).join('')}</select></label>
+        ${err}<p class="note">Choose something you’ll remember. If you lose both the password and the recovery key you get next, your chats can’t be recovered.</p>
+        <div class="tbar"><button class="btn primary" ${busy}>${priv.busy?'Encrypting…':'Turn on the lock'}</button></div></form>`;
+  } else {
+    h+=`<p class="note">On. Your data is encrypted, and Treechats locks ${autoLockText(lk.autoLock)}.</p>
+      ${setRow('Lock by itself','', `<div class="segs" role="group" aria-label="Lock by itself">${AUTO_LOCKS.map(([v,l])=>`<button class="seg" data-lautoset="${v}" aria-pressed="${lk.autoLock===v}">${l}</button>`).join('')}</div>`)}
+      <div class="tbar"><button class="btn" data-locknow>Lock now</button><button class="btn" data-lockform="password" aria-pressed="${priv.form==='password'}">Change password</button><button class="btn" data-lockform="recovery" aria-pressed="${priv.form==='recovery'}">New recovery key</button><button class="btn danger" data-lockform="off" aria-pressed="${priv.form==='off'}">Turn off</button></div>`;
+    if(priv.form==='password') h+=`<form class="pform" data-privform="password">${pw('cur','Current password','current-password')}${pw('p1','New password','new-password')}${pw('p2','New password again','new-password')}${err}<div class="tbar"><button class="btn primary" ${busy}>Change password</button></div></form>`;
+    if(priv.form==='recovery') h+=`<form class="pform" data-privform="recovery"><p class="note">Makes a new recovery key. The old one stops working.</p>${pw('cur','Password','current-password')}${err}<div class="tbar"><button class="btn primary" ${busy}>Make a new recovery key</button></div></form>`;
+    if(priv.form==='off') h+=`<form class="pform" data-privform="off"><p class="note">Your data is decrypted and saved readable again, protected by your account’s file permissions only.</p>${pw('cur','Password','current-password')}${err}<div class="tbar"><button class="btn danger" ${busy}>${priv.busy?'Decrypting…':'Turn off the lock'}</button></div></form>`;
+  }
+  h+=`</section>`;
+  /* the API key */
+  const src=key.source==='env' ? 'From the .env file, readable only by your account.' : key.source==='keychain' ? `Kept in ${esc(key.keychain)}.` : 'None. Replies come from Claude Code and whatever it is signed in with.';
+  h+=`<section class="setsec"><h3>API key</h3><p class="note">${src}${key.keychain?` Keeping it in ${esc(key.keychain)} keeps it out of plain files, backups and synced folders.`:''}</p>`;
+  if(key.keychain){
+    if(key.source==='env') h+=`<div class="tbar"><button class="btn" data-keymove ${busy}>Move it to ${esc(key.keychain)}</button></div><p class="note">The key is taken out of .env; the rest of the file is left as it was.</p>`;
+    h+=`<form class="pform" data-privform="key"><label class="pfield">${key.source?'Replace it with':'Add a key'}<input type="password" data-keyval autocomplete="off" spellcheck="false" placeholder="sk-ant-…" ${busy}></label>${priv.form==='key'?err:''}<div class="tbar"><button class="btn" ${busy}>Save to ${esc(key.keychain)}</button>${key.source==='keychain'?`<button type="button" class="btn danger" data-keyremove ${busy}>Remove it</button>`:''}</div></form>`;
+  } else h+=`<p class="note">There’s no system keychain Treechats can use here${navigator.platform.startsWith('Linux')?' (it needs secret-tool from libsecret and a running keyring)':''}${key.source==='env'?', so the key stays in .env':', so an API key goes in .env'}.</p>`;
+  h+=`</section>`;
+  /* the token */
+  const M=L.mcp||{}, link=`${location.origin}/?token=${M.token||''}`;
+  h+=`<section class="setsec"><h3>Signing in</h3><p class="note">Treechats only answers this computer, and only browsers and tools that have its token, so other accounts and programs here, and websites you visit, can’t use it. This browser is signed in. To sign in another browser, open this link in it. Coding tools get the token in the commands under System.</p>
+    <div class="tbar"><button class="btn" data-copylink="${esc(link)}">Copy sign-in link</button><button class="btn" data-tokenreset>Reset the token</button></div>
+    <p class="note">Reset it if the token or the link may have been seen by someone else. Other browsers are signed out, and coding tools need the new commands from System.</p></section>`;
+  return h;
+}
+async function privCall(path, body){ return folderApi(path, body||{}); }
+function privVal(sel){ const e=setEl.querySelector(sel); return e ? e.value : ''; }
+async function privSubmit(kind){
+  const p1=privVal('[data-pw="p1"]'), p2=privVal('[data-pw="p2"]'), cur=privVal('[data-pw="cur"]');
+  const L=window.TREECHATS_LOCAL;
+  priv.err='';
+  if((kind==='on' || kind==='password') && p1!==p2){ priv.err='The two passwords don’t match.'; renderSettings(); return; }
+  if((kind==='on' || kind==='password') && [...p1].length<8){ priv.err='Use a password of at least 8 characters. A few unrelated words make a strong one.'; renderSettings(); return; }
+  priv.busy=true; renderSettings();
+  try{
+    if(kind==='on'){
+      await flushState();
+      const d=await privCall('/api/vault/enable', {password:p1, autoLock:+privVal('[data-lauto]')});
+      await Files.rekey(d.filesKey);
+      L.lock={on:true, unlocked:true, autoLock:+privVal('[data-lauto]')||0};
+      priv.recovery=d.recovery;
+    } else if(kind==='password'){ await privCall('/api/vault/password', {password:cur, next:p1}); priv.form=null; toast('Password changed.'); }
+    else if(kind==='recovery'){ const d=await privCall('/api/vault/recovery', {password:cur}); priv.form=null; priv.recovery=d.recovery; }
+    else if(kind==='off'){
+      /* attachments are made readable first, while their key still exists; if the password turns out wrong they are sealed again */
+      await flushState(); const was=Files.keyNow(); await Files.rekey(null);
+      try{ await privCall('/api/vault/disable', {password:cur}); }catch(e){ await Files.rekey(was); throw e; }
+      L.lock={on:false, unlocked:false, autoLock:15}; priv.form=null; toast('The lock is off. Your data is saved readable again.');
+    }
+    else if(kind==='key'){ priv.form='key'; L.key=await privCall('/api/key/save', {key:privVal('[data-keyval]')}); priv.form=null; toast(`Saved to ${L.key.keychain}. Reloading to use it…`); setTimeout(()=>location.reload(), 900); }
+  }catch(e){ priv.err=e.message; if(kind==='key') priv.form='key'; }
+  priv.busy=false;
+  if(L.lock && L.lock.on) L.lock.autoLock = L.lock.autoLock ?? 15;
+  renderSettings();
+  const f=setEl.querySelector('.perr'); if(f){ const i=f.closest('form')?.querySelector('input'); if(i) i.focus(); }
+}
+async function lockNow(){
+  try{ await flushState(); }catch(e){}
+  try{ await fetch('/api/vault/lock', {method:'POST', headers:{'content-type':'application/json'}, body:'{}'}); }catch(e){}
+  location.reload();
+}
+function recoveryFile(){
+  const text=`Treechats recovery key\n\n${priv.recovery}\n\nIf you forget your Treechats password, choose “Use your recovery key” on the unlock screen and enter this code.\nAnyone with this code and your data folder can read your chats, so keep it somewhere safe.\n`;
+  const url=URL.createObjectURL(new Blob([text], {type:'text/plain'})); const a=document.createElement('a'); a.href=url; a.download='treechats-recovery-key.txt'; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 function settingsTab(){ return SET_TABS.some(t=>t[0]===opts.setTab) ? opts.setTab : 'look'; }
 function renderSettings(){
@@ -6356,13 +6497,13 @@ function renderSettings(){
       ${setRow('Send with', set('sendKey')==='mod'?'Enter adds a new line.':'Shift+Enter adds a new line.', segs('sendKey',[['enter','Enter'],['mod',IS_MAC?'⌘ Enter':'Ctrl+Enter']],'Send with'))}
       ${setRow('Operation shortcuts',`${mod}letter runs an operation on the selected prompt.`, segs('opKeys',[['true','On'],['false','Off']],'Operation shortcuts'))}</section>`;
     if(hasServer()){
-      const url=`${location.protocol}//localhost:${location.port||80}/mcp`;
+      const M=window.TREECHATS_LOCAL.mcp||{}, url=M.url||`${location.protocol}//localhost:${location.port||80}/mcp`, bearer=`Bearer ${M.token||'<token>'}`;
       const snip=(t, code, where)=>`<div class="mcpsnip"><div class="mcphead"><b>${t}</b><span class="note">${where}</span><button class="btn xs" data-copysnip="${esc(code)}">Copy</button></div><pre>${esc(code)}</pre></div>`;
-      h+=`<section class="setsec"><h3>Use from coding tools (MCP)</h3><p class="note">Coding tools can read your chats, pull the exact context of a prompt (including files from linked folders, read from disk), ask side questions, and run subagents here. Treechats must be running.</p>
-        ${snip('Claude Code', `claude mcp add --transport http --scope user treechats ${url}`, 'run once in a terminal')}
-        ${snip('Cursor', JSON.stringify({mcpServers:{treechats:{url}}}, null, 2), '~/.cursor/mcp.json, or .cursor/mcp.json in a project')}
-        ${snip('VS Code', JSON.stringify({servers:{treechats:{type:'http', url}}}, null, 2), '.vscode/mcp.json in a workspace, or MCP: Add Server')}
-        ${snip('Codex', `codex mcp add treechats --url ${url}`, 'run once in a terminal (or add [mcp_servers.treechats] with url = "…" to ~/.codex/config.toml)')}
+      h+=`<section class="setsec"><h3>Use from coding tools (MCP)</h3><p class="note">Coding tools can read your chats, pull the exact context of a prompt (including files from linked folders, read from disk), ask side questions, and run subagents here. Treechats must be running. Each command includes Treechats’ token, which is what lets the tool in: keep it to yourself, like a password.</p>
+        ${snip('Claude Code', `claude mcp add --transport http --scope user treechats ${url} --header "Authorization: ${bearer}"`, 'run once in a terminal')}
+        ${snip('Cursor', JSON.stringify({mcpServers:{treechats:{url, headers:{Authorization:bearer}}}}, null, 2), '~/.cursor/mcp.json, or .cursor/mcp.json in a project')}
+        ${snip('VS Code', JSON.stringify({servers:{treechats:{type:'http', url, headers:{Authorization:bearer}}}}, null, 2), '.vscode/mcp.json in a workspace, or MCP: Add Server')}
+        ${snip('Codex', `[mcp_servers.treechats]\nurl = "${url}"\nhttp_headers = { Authorization = "${bearer}" }`, 'add to ~/.codex/config.toml')}
         <p class="note">Only tested with Claude Code so far; the others follow their documented formats.</p></section>`;
     }
     const nb=numberedBranches().length, ready=sampleState==='ready';
@@ -6372,8 +6513,10 @@ function renderSettings(){
       ${setRow('Chats', set('nameConvs')?'After the first reply, Claude writes a short title.':'Titled with the first prompt. Rename any time.', segs('nameConvs',[['true','Claude titles them'],['false','First prompt']],'Chat titles'))}
       ${setRow('Projects', set('nameSpaces')?'A new project is named after its first chat.':'New projects are called New project. Rename any time.', segs('nameSpaces',[['true','Claude names them'],['false','New project']],'Project names'))}</section>`;
     const st=spaceIds().reduce((a,id)=>{ const x=spaceStats(DB.spaces[id].tree); a.c+=x.convs; a.p+=x.prompts; return a; },{c:0,p:0});
-    h+=`<section class="setsec"><h3>Storage</h3><p class="note">Everything is saved on this computer in data/treechats.db: ${spaceIds().length} project${spaceIds().length===1?'':'s'}, ${st.c} chat${st.c===1?'':'s'}, ${st.p} prompt${st.p===1?'':'s'}. Use Import / export to move it elsewhere.</p>
+    h+=`<section class="setsec"><h3>Storage</h3><p class="note">Everything is saved on this computer${hasServer()&&window.TREECHATS_LOCAL.dataDir?` in ${esc(window.TREECHATS_LOCAL.dataDir)}`:''}${lockInfo().on?', encrypted':''}: ${spaceIds().length} project${spaceIds().length===1?'':'s'}, ${st.c} chat${st.c===1?'':'s'}, ${st.p} prompt${st.p===1?'':'s'}. Use Import / export to move it elsewhere.</p>
       ${setRow('Reset settings','Puts Personalization and System back to their defaults. Your chats and prompts aren’t touched.','<button class="btn danger" data-setreset>Reset settings</button>')}</section>`;
+  } else if(tab==='privacy'){
+    h+=privacyHTML();
   } else if(tab==='prompts'){
     const custom=Object.keys(PROMPTS).filter(k=>promptText(k)!==PROMPTS[k].def).length;
     h+=`<section class="setsec"><p class="note">Every piece of text Treechats sends to Claude on your behalf. Words in {braces} are filled in when it\u2019s sent; if you remove one, that material is added at the end instead. Edits apply from the next request.</p></section>`;
@@ -6452,8 +6595,10 @@ document.getElementById('palInput').addEventListener('keydown', e=>{
   if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); closePalette(); return; }
   if(e.key==='Tab'){ e.preventDefault(); e.stopPropagation(); }
 });
+setEl.addEventListener('submit', e=>{ const f=e.target.closest('[data-privform]'); if(!f) return; e.preventDefault(); if(!priv.busy) privSubmit(f.dataset.privform); });
 setEl.addEventListener('click', e=>{
   if(!setEl.contains(e.target)) return;
+  const c2=q=>e.target.closest(q);
   if(e.target===setEl || e.target.closest('[data-setclose]')){ closeSettings(); return; }
   const t=e.target.closest('[data-settab]'); if(t){ opts.setTab=t.dataset.settab; save(); renderSettings(); setBodyEl.scrollTop=0; refocus(`[data-settab="${t.dataset.settab}"]`); return; }
   const b=e.target.closest('[data-set]');
@@ -6461,6 +6606,16 @@ setEl.addEventListener('click', e=>{
     if(key==='palette' && editingTheme && v!==editingTheme){ editingTheme=null; previewMode=null; }
     opts[key]=v;
     if(key==='theme'){ previewMode=null; if(editingTheme){ editMode=resolvedMode(); previewMode=editMode; } } afterSetting(key); renderSettings(); refocus(`[data-set="${key}"][data-val="${b.dataset.val}"]`); return; }
+  if(c2('[data-locknow]')){ lockNow(); return; }
+  const lf=c2('[data-lockform]'); if(lf){ priv.form = priv.form===lf.dataset.lockform ? null : lf.dataset.lockform; priv.err=''; renderSettings(); const i=setEl.querySelector('.pform input'); if(i) i.focus(); return; }
+  const la=c2('[data-lautoset]'); if(la){ privCall('/api/vault/settings', {autoLock:+la.dataset.lautoset}).then(d=>{ window.TREECHATS_LOCAL.lock=d.lock; renderSettings(); }).catch(err=>toast(err.message)); return; }
+  if(c2('[data-reccopy]')){ copyText(priv.recovery, true).then(ok=>{ if(ok) toast('Copied. Paste it somewhere safe, then clear your clipboard.'); }); return; }
+  if(c2('[data-recsave]')){ recoveryFile(); return; }
+  if(c2('[data-recdone]')){ priv.recovery=null; renderSettings(); return; }
+  if(c2('[data-keymove]')){ priv.busy=true; renderSettings(); privCall('/api/key/move').then(k=>{ window.TREECHATS_LOCAL.key=k; toast(`Moved to ${k.keychain}.`); }).catch(err=>toast(err.message)).finally(()=>{ priv.busy=false; renderSettings(); }); return; }
+  if(c2('[data-keyremove]')){ privCall('/api/key/remove').then(k=>{ window.TREECHATS_LOCAL.key=k; toast('Removed. Reloading…'); setTimeout(()=>location.reload(), 900); }).catch(err=>toast(err.message)); return; }
+  if(c2('[data-tokenreset]')){ privCall('/api/auth/reset').then(d=>{ window.TREECHATS_LOCAL.mcp=d.mcp; renderSettings(); toast('New token made. Add Treechats to your coding tools again with the commands under System.'); }).catch(err=>toast(err.message)); return; }
+  const cl=c2('[data-copylink]'); if(cl){ copyText(cl.dataset.copylink, true).then(ok=>{ if(ok) toast('Copied. Open it in the other browser on this computer.'); }); return; }
   const cs=e.target.closest('[data-copysnip]'); if(cs){ copyText(cs.dataset.copysnip, true).then(ok=>{ if(ok) toast('Copied.'); }); return; }
   if(e.target.closest('[data-namenow]')){ for(const rid of numberedBranches()) queueBranchName(rid, true); renderSettings(); toast('Claude is naming them. They update as each name arrives.'); return; }
   const qt=e.target.closest('[data-qtoggle]'); if(qt){ const k=qt.dataset.qtoggle, list=quickList().slice(); const i=list.indexOf(k); if(i>=0) list.splice(i,1); else list.push(k); opts.quick=list; afterQuick(); refocus(`[data-qtoggle="${k}"]`); return; }

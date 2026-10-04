@@ -22,8 +22,9 @@ export type SampleRequest = {
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const BUDGET: Record<string, number> = { low: 2048, medium: 6000, high: 12000, xhigh: 24000, max: 32000 };
 
-let client: Anthropic | null = null;
-const getClient = () => (client ??= new Anthropic({ apiKey: config.apiKey }));
+/* made again when the key changes (it can be saved to the keychain while Treechats runs) */
+let client: Anthropic | null = null, clientKey = '';
+const getClient = () => { if (!client || clientKey !== config.apiKey) { client = new Anthropic({ apiKey: config.apiKey }); clientKey = config.apiKey; } return client; };
 
 const TIERS: Tier[] = ['quick', 'default', 'complex'];
 

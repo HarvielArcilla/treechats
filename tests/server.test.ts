@@ -98,11 +98,17 @@ test('folders: listing skips ignored and dependency files, reads stay inside the
   assert.equal(r[0].text, 'export const a = 1;\n');
   assert.match(r[1].error!, /outside/);
   assert.match(r[2].error!, /binary/);
-  const w = await writeFolderFile(dir, 'src/a.ts', 'export const a = 2;\n', r[0].mtime!, false);
+  const { realpathSync } = await import('node:fs');
+  await assert.rejects(writeFolderFile(null, dir, 'src/a.ts', 'x', null, false), /isn’t linked/, 'writes need the folder linked to a project');
+  const st: any = { db: { spaces: { s1: { tree: { files: [{ src: { root: realpathSync(dir) } }] } } } } };
+  const w = await writeFolderFile(st, dir, 'src/a.ts', 'export const a = 2;\n', r[0].mtime!, false);
   assert.equal(readFileSync(join(dir, 'src', 'a.ts'), 'utf8'), 'export const a = 2;\n');
   utimesSync(join(dir, 'src', 'a.ts'), new Date(), new Date(Date.now() + 60_000));
-  await assert.rejects(writeFolderFile(dir, 'src/a.ts', 'stale', w.mtime, false), /changed on disk/);
-  await assert.rejects(writeFolderFile(dir, '../x.txt', 'no', null, false), /outside/);
+  await assert.rejects(writeFolderFile(st, dir, 'src/a.ts', 'stale', w.mtime, false), /changed on disk/);
+  await assert.rejects(writeFolderFile(st, dir, '../x.txt', 'no', null, false), /outside/);
+  await assert.rejects(writeFolderFile(st, dir, '.git/config', 'no', null, false), /\.git/);
+  await assert.rejects(writeFolderFile(st, dir, '.GIT/hooks/pre-commit', 'no', null, false), /\.git/, 'any case, as macOS and Windows treat it');
+  await assert.rejects(writeFolderFile(st, dir, 'sub/.git./x', 'no', null, false), /\.git/);
 });
 
 test('coding sessions: Claude Code logs become a tree of turns with tool steps; Codex rollouts become a line', async () => {
@@ -168,4 +174,60 @@ test('commands and git: off until allowed, only in linked folders', async () => 
   const d = await gitDiff(state(false), root, 'working');
   assert.match(d.text, /-one\n\+two/); assert.deepEqual(d.untracked, ['b.txt']);
   await assert.rejects(gitDiff(state(false), root, '--output=/tmp/x'), /Name a commit/);
+});
+
+test('secrets in command output and diffs are hidden; code that names them is not', async () => {
+  const { redact } = await import('../server/redact.ts');
+  const r = redact(['ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123',
+    'export DB_PASSWORD="hunter2hunter2"', '+const API_KEY = process.env.API_KEY;', 'postgres://admin:s3cretpass@db/x',
+    'ghp_abcdefghijklmnopqrstuvwxyz0123456789AB', 'max_tokens: 16000', 'const tokenizer = new Tokenizer(opts);'].join('\n'));
+  assert.equal(r.hidden, 4);
+  assert.ok(!/sk-ant|hunter2|s3cret|ghp_/.test(r.text), r.text);
+  assert.ok(r.text.includes('process.env.API_KEY') && r.text.includes('16000') && r.text.includes('new Tokenizer'));
+});
+
+test('password lock: data is encrypted at rest, opens with the password or the recovery key, and not otherwise', async () => {
+  const vault = await import('../server/vault.ts');
+  const { record, recovery } = await vault.create('correct horse battery', 15);
+  const sealed = vault.seal('{"secret":"chat"}');
+  assert.ok(sealed.startsWith(vault.SEALED) && !sealed.includes('chat'));
+  const files = vault.filesKey();
+  vault.forget();
+  assert.throws(() => vault.open(sealed), /locked/);
+  await assert.rejects(vault.unlock(record, { password: 'wrong password' }), /isn’t right/);
+  await vault.unlock(record, { password: 'correct horse battery' });
+  assert.equal(vault.open(sealed), '{"secret":"chat"}');
+  assert.equal(vault.filesKey(), files, 'the files key stays the same across unlocks');
+  const next = await vault.rewrap(record, 'a new password here');
+  vault.forget();
+  await assert.rejects(vault.unlock(next, { password: 'correct horse battery' }), /isn’t right/);
+  await vault.unlock(next, { recovery: recovery.toLowerCase().replace(/-/g, ' ') });
+  assert.equal(vault.open(sealed), '{"secret":"chat"}');
+  assert.throws(() => vault.checkPassword('short'), /at least 8/);
+  vault.forget();
+});
+
+test('API key in the keyring: saved through stdin, read back at start, removed (Linux, with a stand-in secret-tool)', { skip: process.platform !== 'linux' }, async () => {
+  const { mkdtempSync, writeFileSync, chmodSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const bin = mkdtempSync(join(tmpdir(), 'tc-bin-')), store = join(bin, 'secret');
+  /* stores what comes on stdin for `store`, prints it for `lookup`, deletes it for `clear`; logs its arguments */
+  writeFileSync(join(bin, 'secret-tool'), `#!/bin/sh\necho "$@" >> "${bin}/args"\ncase "$1" in store) cat > "${store}";; lookup) [ -f "${store}" ] && cat "${store}" || exit 1;; clear) rm -f "${store}";; esac\n`);
+  chmodSync(join(bin, 'secret-tool'), 0o755);
+  const path = process.env.PATH; process.env.PATH = `${bin}:${path}`;
+  try {
+    const s = await import('../server/secrets.ts'), { config } = await import('../server/config.ts');
+    const was = { key: config.apiKey, src: config.apiKeySource }; config.apiKey = ''; config.apiKeySource = null;
+    assert.equal(s.keyStatus().keychain, 'your system keyring');
+    assert.throws(() => s.saveKey('not a key'), /doesn’t look like/);
+    s.saveKey('sk-ant-test-0123456789abcdefghijklmnop');
+    assert.equal(readFileSync(store, 'utf8'), 'sk-ant-test-0123456789abcdefghijklmnop');
+    assert.ok(!readFileSync(join(bin, 'args'), 'utf8').includes('sk-ant'), 'the key never goes on a command line');
+    config.apiKey = ''; config.apiKeySource = null; s.loadKeyFromKeychain();
+    assert.equal(config.apiKeySource, 'keychain'); assert.equal(config.apiKey, 'sk-ant-test-0123456789abcdefghijklmnop');
+    s.removeKey();
+    assert.equal(config.apiKey, ''); s.loadKeyFromKeychain(); assert.equal(config.apiKeySource, null);
+    config.apiKey = was.key; config.apiKeySource = was.src;
+  } finally { process.env.PATH = path; }
 });

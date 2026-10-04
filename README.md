@@ -30,7 +30,8 @@ npm install
 npm start
 ```
 
-Treechats opens at <http://localhost:5178>. Stop it with Ctrl+C. To update: `git pull`, then `npm start` again.
+Treechats opens at <http://localhost:5178>, through a link that signs your browser in (see [Security](#security)).
+Stop it with Ctrl+C. To update: `git pull`, then `npm start` again.
 
 Getting it the first time: `git clone https://github.com/HarvielArcilla/treechats.git`. On Windows, if `git`
 isn't found, install it with `winget install --id Git.Git -e` and open a new terminal.
@@ -177,13 +178,16 @@ shows its token counts and cost, with a running total along the context path (`/
 
 ## Use it from coding tools (MCP)
 
-Treechats serves an MCP server at `/mcp`. For Claude Code, add it once:
+Treechats serves an MCP server at `/mcp`. For Claude Code, add it once with the command Treechats prints when it starts
+(it includes your token):
 
 ```
-claude mcp add --transport http --scope user treechats http://localhost:5178/mcp
+claude mcp add --transport http --scope user treechats http://localhost:5178/mcp --header "Authorization: Bearer <token>"
 ```
 
-Settings › System has the setup for Cursor, VS Code and Codex too (only Claude Code is tested so far).
+Settings › System has the same command with your token filled in, and the setup for Cursor, VS Code and Codex (only
+Claude Code is tested so far). If you added Treechats before it had a token, remove it (`claude mcp remove treechats`)
+and add it again.
 
 **Reading.** Ask for things like "get the context of the main branch of my rate limiter chat from treechats". It can
 list projects and chats, search them, show a chat's whole shape (`get_tree`), and pull the context of a branch or
@@ -226,32 +230,75 @@ Treechats must be running for any of this.
 
 ## Your data
 
-- Chats, projects and settings: `data/treechats.db` (SQLite). A snapshot is kept every 10 minutes
-  (the last 50), so a bad change can be recovered.
-- Attached and project files: stored by your browser (IndexedDB). Files from a linked folder stay in that folder;
-  Treechats keeps a copy and reads the folder again when you Sync.
-- Nothing in `data/` or `.env` is ever committed; both are in `.gitignore`.
+Everything stays on your computer, in the places apps normally keep their data, readable only by your account:
+
+| What | Where |
+|---|---|
+| Chats, projects, settings, snapshots (one every 10 minutes, the last 50) | `treechats.db` (SQLite) in the data folder: `~/Library/Application Support/Treechats` on a Mac, `%APPDATA%\Treechats` on Windows, `~/.local/share/treechats` on Linux. `TREECHATS_DATA_DIR` in `.env` picks another. |
+| Attached and project files | Your browser's storage for this page (IndexedDB). Files from a linked folder stay in that folder; Treechats keeps a copy and reads the folder again when you Sync. |
+| Your API key | `.env` next to the code, or the system keychain (Settings › Privacy & security), which keeps it out of plain files, backups and synced folders |
+
+Data from older versions, in the `data/` folder next to the code, moves to the data folder the first time this version
+starts. `.env` is in `.gitignore`, so it is never committed.
+
+The best protection for a lost or stolen computer is disk encryption: FileVault on a Mac, BitLocker or Device
+encryption on Windows, full-disk encryption on Linux. It covers Treechats and everything else.
 
 To bring spaces over from the claude.ai version (where projects were called spaces): in each space there, open
 **Import / export › Copy this space as JSON**, then here open a project's **⋯ › Import / export JSON…**, paste it
 and choose **Import pasted JSON as a new project**.
 
+### Password lock
+
+**Settings › Privacy & security › Password lock** encrypts your chats, settings, snapshots and attachments with a
+password, and Treechats asks for it whenever it starts or locks. It can lock by itself after a while without use, and
+**Lock Treechats now** is in the Ctrl/⌘-K palette. While it's locked, coding tools get "Treechats is locked" instead of
+your chats.
+
+Turn it on if other people use this computer or your account, or if your data folder is backed up or synced
+somewhere. On a computer only you use, with disk encryption on, it adds little.
+
+When you turn it on you get a **recovery key**. If you forget your password, the recovery key is the only way back
+in; with neither, your chats can't be recovered by anyone. Exports you make (Import / export) are not encrypted.
+
+How it works: a random key encrypts the data (AES-256-GCM). That key is stored twice, encrypted with a key made from
+your password (scrypt, deliberately slow to make guessing expensive) and with your recovery key. While Treechats is
+unlocked the key is kept in memory only; locking forgets it. Attachments are encrypted in the browser with a key
+derived from it (the browser may keep older unencrypted copies in its own files for a while after you turn the lock
+on). Wrong passwords slow down further tries.
+
 ## Security
 
-The server only listens on this computer (127.0.0.1), and only answers pages it served itself, so other
-websites can't use it to spend your key, read your chats or reach your folders. The API key stays on the server and
-is never sent to the browser.
+Who can use Treechats:
+- **Only this computer.** The server listens on 127.0.0.1 and refuses requests addressed to any other name, so a
+  website can't reach it through DNS rebinding.
+- **Only Treechats' own pages.** Requests from other websites are refused, so a page you visit can't spend your key,
+  read your chats or reach your folders.
+- **Only you.** Every request needs Treechats' token, so other accounts and programs on this computer can't use it
+  either. `npm start` opens your browser with a one-time sign-in link (a command line can be seen by other accounts,
+  so the token itself never goes on one), and the terminal prints a link with the token for other browsers. Signing
+  in sets a cookie; coding tools send the token in a header. The token is in the file `token` in the data folder.
+  **Copy sign-in link** and **Reset the token** are in Settings › Privacy & security. With the password lock on, the
+  password signs a browser in too, and wrong guesses are checked one at a time with a growing wait.
+- Browsers send cookies to every port on localhost, so another local server you open in the same browser could see
+  the token. If that may have happened, reset it.
 
-- Linked folders: reads and writes stay inside the folder you linked, and a write never replaces a disk copy that
-  changed since Treechats read it unless you say so.
+What it can reach:
+- The API key stays on the server and is never sent to the browser.
+- Linked folders: reads and writes stay inside the folder, writes only go to folders linked to a project, never into
+  `.git`, and never over a disk copy that changed since Treechats read it unless you say so.
 - `/run` is off until you turn it on in Settings › System, and only runs in linked folders; the server checks both
-  against the saved settings, not the request.
+  against the saved settings, not the request. Commands don't get your API key or the token in their environment.
+- Things that look like secrets (API keys and tokens with a known shape, private keys, passwords in URLs, the value in
+  lines like `API_KEY=…`) are hidden in command output and git diffs before they reach the page, so they aren't sent
+  on to Claude. Files are never changed this way, and a `.env` file starts unticked when you link a folder.
 - Coding session logs are only read, never written.
 
 ## Develop
 
 ```
-npm run dev     # server with auto-restart, page with live reload at http://localhost:5179
+npm run dev     # server with auto-restart, page with live reload at http://localhost:5179 (sign in once with the
+                # link the server prints; the cookie works for both ports)
 npm test        # tests
 npm run check   # type check
 ```

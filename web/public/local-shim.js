@@ -2,10 +2,14 @@
    - saving: the app's storage key is kept in memory and written to the server's database instead of
      the browser, so there is no 5 MB browser limit and your data lives in data/treechats.db
    - Claude: window.claude.use('sample') returns a client that sends requests through the server,
-     which holds your API key. */
+     which holds your API key.
+   - signing in and the password lock: when this browser hasn't signed in yet, or Treechats is locked, it shows the
+     sign-in or unlock screen instead of the app, and the app doesn't start until that is done. */
 (function () {
   'use strict';
   var KEY = 'treechats-v1';
+  /* this tab, so a notice about a change it made itself can be ignored */
+  window.TREECHATS_TAB = Math.random().toString(36).slice(2);
 
   function getSync(url) {
     try {
@@ -15,6 +19,11 @@
       return x.status === 200 ? x.responseText : x.status === 204 ? '' : null;
     } catch (e) { return null; }
   }
+
+  /* ---- signed in, and unlocked? ---- */
+  var auth = null;
+  try { auth = JSON.parse(getSync('/api/auth') || 'null'); } catch (e) { auth = null; }
+  if (auth && (!auth.authed || (auth.lock.on && !auth.lock.unlocked))) { gate(auth); return; }
 
   var cfgText = getSync('/api/config');
   var cfg = null;
@@ -28,15 +37,16 @@
   if (saved) mem[KEY] = saved;
   else {
     /* first run: carry over anything this browser saved before */
-    try { var old = window.localStorage.getItem(KEY); if (old) { mem[KEY] = old; put(old); } } catch (e) {}
+    try { var old = window.localStorage.getItem(KEY); if (old) { mem[KEY] = old; put(old, function () { try { oRemove.call(window.localStorage, KEY); } catch (e) {} }); } } catch (e) {}
   }
   var inflight = null, queued = null, idle = [];
   /* resolves once everything saved so far has reached the server */
   window.TREECHATS_FLUSH = function () { return inflight || queued != null ? new Promise(function (r) { idle.push(r); }) : Promise.resolve(); };
-  function put(body) {
+  /* done: called once the server has it (used to delete the copy an older version kept in this browser) */
+  function put(body, done) {
     if (inflight) { queued = body; return; }
-    inflight = fetch('/api/state', { method: 'PUT', headers: { 'content-type': 'text/plain' }, body: body, keepalive: body.length < 60000 })
-      .then(function (r) { if (!r.ok) throw new Error('save ' + r.status); window.TREECHATS_SAVE_ERROR = null; })
+    inflight = fetch('/api/state', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: body, keepalive: body.length < 60000 })
+      .then(function (r) { if (!r.ok) throw new Error('save ' + r.status); window.TREECHATS_SAVE_ERROR = null; if (done) done(); })
       .catch(function (e) { window.TREECHATS_SAVE_ERROR = e; console.warn('Treechats could not save to the server:', e); })
       .then(function () { inflight = null; if (queued != null) { var q = queued; queued = null; put(q); } else { var w = idle; idle = []; w.forEach(function (f) { f(); }); } });
   }
@@ -125,4 +135,96 @@
   window.claude = {
     use: function (name) { return Promise.resolve(name === 'sample' && cfg.hasKey ? sample : null); }
   };
+
+  /* ---- staying signed in and locking ----
+     If Treechats locks while the page is open (Lock now, the auto-lock, or a restart with the lock on), the next
+     request is refused, and the page reloads into the unlock screen, which also clears what it was showing. */
+  var reloading = false, rawFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    return rawFetch(input, init).then(function (r) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (!reloading && (r.status === 423 || r.status === 401) && /^(\/|https?:\/\/[^/]+\/)api\//.test(url)) { reloading = true; location.reload(); }
+      return r;
+    });
+  };
+  /* while you're using the page, the auto-lock waits (reading counts, not only saving) */
+  var lastPing = Date.now();
+  function alive() {
+    if (!cfg.lock || !cfg.lock.on || !cfg.lock.autoLock || Date.now() - lastPing < 60000) return;
+    lastPing = Date.now();
+    rawFetch('/api/vault/alive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(function (r) { if (r.status === 423 && !reloading) { reloading = true; location.reload(); } }).catch(function () {});
+  }
+  ['pointerdown', 'keydown', 'wheel'].forEach(function (t) { window.addEventListener(t, alive, { passive: true, capture: true }); });
+
+  /* ---- the sign-in and unlock screen ---- */
+  function gate(a) {
+    window.TREECHATS_GATE = a;
+    window.TREECHATS_LOCAL = { offline: true, gated: true };
+    var css = ':root{--g-bg:#f6f5f1;--g-card:#fff;--g-fg:#1d1d1b;--g-muted:#6b6a64;--g-line:#dcdad2;--g-acc:#2f5fd0;--g-err:#b3261e}' +
+      '@media (prefers-color-scheme:dark){:root{--g-bg:#151614;--g-card:#1f201d;--g-fg:#ecebe6;--g-muted:#a3a29b;--g-line:#3a3b36;--g-acc:#8fb0ff;--g-err:#ffb4ab}}' +
+      'html,body{margin:0;height:100%;overflow:hidden}body>*:not(#tcgate){display:none!important}' +
+      '#tcgate{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:var(--g-bg);color:var(--g-fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;z-index:2147483647;overflow:auto}' +
+      '#tcgate form{width:min(400px,100%);background:var(--g-card);border:1px solid var(--g-line);border-radius:14px;padding:26px 24px;display:grid;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,.08)}' +
+      '#tcgate h1{font-size:1.25rem;margin:0}#tcgate p{margin:0;color:var(--g-muted);font-size:.9rem}' +
+      '#tcgate label{display:grid;gap:4px;font-size:.85rem;font-weight:600}' +
+      '#tcgate input{font:inherit;padding:9px 11px;border-radius:8px;border:1px solid var(--g-line);background:var(--g-bg);color:var(--g-fg)}' +
+      '#tcgate input:focus{outline:2px solid var(--g-acc);outline-offset:1px}' +
+      '#tcgate button{font:inherit;cursor:pointer}#tcgate .go{padding:10px;border-radius:8px;border:0;background:var(--g-acc);color:var(--g-card);font-weight:600}' +
+      '#tcgate .go:disabled{opacity:.6;cursor:wait}#tcgate .alt{border:0;background:none;color:var(--g-acc);padding:0;justify-self:start;font-size:.85rem}' +
+      '#tcgate .err{color:var(--g-err);font-size:.85rem;min-height:1.2em}#tcgate code{font-size:.85em}';
+    var mode = a.lock.on ? 'password' : 'token';
+    function html() {
+      if (mode === 'password') return (a.lock.unlocked ? '<h1>Sign in to Treechats</h1><p>Enter your Treechats password to use it in this browser.</p>' : '<h1>Treechats is locked</h1><p>Enter your password to open your chats.</p>') +
+        '<label>Password<input type="password" name="password" autocomplete="current-password" required autofocus></label>' +
+        '<div class="err" role="alert"></div><button class="go">Unlock</button>' +
+        '<button type="button" class="alt" data-mode="recovery">Forgot it? Use your recovery key</button>' +
+        (a.authed ? '' : '<button type="button" class="alt" data-mode="token">Sign in with the token instead</button>');
+      if (mode === 'recovery') return '<h1>Use your recovery key</h1><p>The code you saved when you turned the lock on. Then choose a new password.</p>' +
+        '<label>Recovery key<input name="recovery" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required autofocus></label>' +
+        '<label>New password<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label>' +
+        '<label>New password again<input type="password" name="again" autocomplete="new-password" minlength="8" required></label>' +
+        '<div class="err" role="alert"></div><button class="go">Unlock and set password</button>' +
+        '<button type="button" class="alt" data-mode="password">Back</button>';
+      return '<h1>Sign in to Treechats</h1><p>Open Treechats from the link it printed in the terminal when it started (it ends in <code>?token=…</code>). Or paste the token here. It is also in the file named <code>token</code> in Treechats’ data folder.</p>' +
+        '<label>Token<input name="token" autocomplete="off" spellcheck="false" required autofocus></label>' +
+        '<div class="err" role="alert"></div><button class="go">Sign in</button>' +
+        (a.lock.on ? '<button type="button" class="alt" data-mode="password">Use the password instead</button>' : '');
+    }
+    function show() {
+      var root = document.getElementById('tcgate');
+      if (!root) {
+        var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+        root = document.createElement('div'); root.id = 'tcgate'; document.body.appendChild(root);
+        root.addEventListener('click', function (e) { var b = e.target.closest('[data-mode]'); if (b) { mode = b.dataset.mode; show(); } });
+        root.addEventListener('submit', submit);
+      }
+      root.innerHTML = '<form novalidate>' + html() + '</form>';
+      var f = root.querySelector('input'); if (f) f.focus();
+    }
+    function submit(e) {
+      e.preventDefault();
+      var f = e.target, err = f.querySelector('.err'), go = f.querySelector('.go'), v = function (n) { return f.elements[n] ? f.elements[n].value : ''; };
+      var url, body;
+      if (mode === 'token') { url = '/api/auth/login'; body = { token: v('token') }; }
+      else if (mode === 'password') { url = '/api/vault/unlock'; body = { password: v('password') }; }
+      else {
+        if (v('newPassword') !== v('again')) { err.textContent = 'The two passwords don’t match.'; return; }
+        url = '/api/vault/unlock'; body = { recovery: v('recovery'), newPassword: v('newPassword') };
+      }
+      go.disabled = true; err.textContent = '';
+      fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (x) {
+          if (x.ok) {
+            /* signed in with the token, but the lock is on and locked: the password is still needed */
+            if (mode === 'token' && a.lock.on && !a.lock.unlocked) { a.authed = true; mode = 'password'; show(); return; }
+            location.reload(); return;
+          }
+          go.disabled = false; err.textContent = x.d.message || 'That didn’t work.';
+          var i = f.querySelector('input'); if (i && x.d.code !== 'weak_password') { i.select(); i.focus(); }
+        })
+        .catch(function () { go.disabled = false; err.textContent = 'Treechats isn’t answering. Is it still running?'; });
+    }
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+  }
 })();

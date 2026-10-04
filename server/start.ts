@@ -10,5 +10,7 @@ if (major < 22 || (major === 22 && minor < 13)) {
   process.exit(1);
 }
 
+/* files Treechats creates (the database, its journal, the token) are readable only by your account */
+if (process.platform !== 'win32') process.umask(0o077);
 process.chdir(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 await import('./index.ts');

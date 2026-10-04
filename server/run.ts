@@ -5,24 +5,18 @@
    A command runs in a shell in that folder, with a time limit; its output (stdout and stderr together, in order)
    is kept up to a size limit, the end being what matters most for errors. Stopping the request stops the command.
 
-   Git reads (status and diffs) change nothing, so they only need the folder to be linked. */
+   Git reads (status and diffs) change nothing, so they only need the folder to be linked. Output and diffs go through
+   redact() first, so keys that show up in them aren't sent on to Claude. */
 import { spawn } from 'node:child_process';
-import { folderRoot, FolderError } from './folders.ts';
+import { checkLinked, FolderError, type St } from './folders.ts';
+import { redact } from './redact.ts';
+
+/* commands get your environment, minus Treechats' own secrets: a command Claude proposed has no need for them */
+const childEnv = (extra: Record<string, string>) => { const e: Record<string, string | undefined> = { ...process.env, ...extra }; delete e.ANTHROPIC_API_KEY; delete e.TREECHATS_TOKEN; return e; };
 
 const MAX_OUT = 400 * 1024;
-type St = { db: { spaces: Record<string, { tree: { files?: { src?: { root?: string } }[] } }> }; opts?: Record<string, unknown> } | null;
 
-function linked(state: St, root: string) {
-  if (!state) return false;
-  return Object.values(state.db.spaces).some((sp) => (sp.tree.files || []).some((f) => f.src && f.src.root === root));
-}
-function checkLinked(state: St, input: string) {
-  const root = folderRoot(input);
-  if (!linked(state, root)) throw new FolderError('not_linked', 'That folder isn’t linked to a project. Link it from Project files first.');
-  return root;
-}
-
-export async function runCommand(state: St, input: string, command: string, timeoutSec: number, signal: AbortSignal): Promise<{ command: string; code: number | null; signal: string | null; output: string; ms: number; truncated: boolean; timedOut: boolean }> {
+export async function runCommand(state: St, input: string, command: string, timeoutSec: number, signal: AbortSignal): Promise<{ command: string; code: number | null; signal: string | null; output: string; ms: number; truncated: boolean; timedOut: boolean; hidden: number }> {
   if (!state || state.opts?.allowCommands !== true) throw new FolderError('commands_off', 'Running commands is off. Turn it on in Settings › System.');
   const root = checkLinked(state, input);
   const cmd = String(command || '').trim();
@@ -30,7 +24,7 @@ export async function runCommand(state: St, input: string, command: string, time
   const limit = Math.min(600, Math.max(5, Number(timeoutSec) || 120)) * 1000;
   return new Promise((resolve) => {
     const started = Date.now(), win = process.platform === 'win32';
-    const child = spawn(win ? 'cmd.exe' : '/bin/sh', win ? ['/d', '/s', '/c', cmd] : ['-c', cmd], { cwd: root, env: { ...process.env, CI: process.env.CI || '1', FORCE_COLOR: '0' }, detached: !win, windowsHide: true });
+    const child = spawn(win ? 'cmd.exe' : '/bin/sh', win ? ['/d', '/s', '/c', cmd] : ['-c', cmd], { cwd: root, env: childEnv({ CI: process.env.CI || '1', FORCE_COLOR: '0' }), detached: !win, windowsHide: true });
     let out = '', dropped = 0, timedOut = false;
     const add = (b: Buffer) => { out += b.toString('utf8'); if (out.length > MAX_OUT * 2) { dropped += out.length - MAX_OUT; out = out.slice(out.length - MAX_OUT); } };
     child.stdout.on('data', add); child.stderr.on('data', add);
@@ -41,7 +35,8 @@ export async function runCommand(state: St, input: string, command: string, time
       clearTimeout(timer);
       if (out.length > MAX_OUT) { dropped += out.length - MAX_OUT; out = out.slice(out.length - MAX_OUT); }
       const head = dropped ? `… the first ${dropped.toLocaleString()} characters of output were cut\n` : '';
-      resolve({ command: cmd, code, signal: sig, output: head + out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''), ms: Date.now() - started, truncated: dropped > 0, timedOut });
+      const r = redact(head + out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''));
+      resolve({ command: cmd, code, signal: sig, output: r.text, hidden: r.hidden, ms: Date.now() - started, truncated: dropped > 0, timedOut });
     };
     child.on('close', done);
     child.on('error', (e) => { out += `\n${e.message}`; done(null, null); });
@@ -50,7 +45,7 @@ export async function runCommand(state: St, input: string, command: string, time
 
 function git(root: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd: root, env: { ...process.env, GIT_PAGER: 'cat', LC_ALL: 'C' } });
+    const child = spawn('git', args, { cwd: root, env: childEnv({ GIT_PAGER: 'cat', LC_ALL: 'C' }) });
     let out = '', err = '';
     child.stdout.on('data', (b) => { if (out.length < MAX_OUT * 2) out += b; });
     child.stderr.on('data', (b) => { err += b; });
@@ -82,5 +77,6 @@ export async function gitDiff(state: St, input: string, what: string) {
   if (what === 'working' || !what) untracked = (await git(root, ['ls-files', '--others', '--exclude-standard'])).split('\n').filter(Boolean);
   const truncated = text.length > MAX_OUT;
   if (truncated) text = text.slice(0, MAX_OUT) + '\n… the rest of the diff was cut';
-  return { root, label, text, untracked, truncated };
+  const r = redact(text);
+  return { root, label, text: r.text, hidden: r.hidden, untracked, truncated };
 }
