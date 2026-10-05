@@ -3327,7 +3327,7 @@ function switchVersion(id, dir){
   const was=treeEl.querySelector(`.ver [data-ver="${id}"]`), y0=was ? was.getBoundingClientRect().top : null;
   select(t);
   const now=treeEl.querySelector(`.ver [data-ver="${t}"]`);
-  if(now && y0!=null){ const dy=now.getBoundingClientRect().top-y0; if(Math.abs(dy)>1) window.scrollBy(0, dy); }
+  if(now && y0!=null){ const dy=now.getBoundingClientRect().top-y0; if(Math.abs(dy)>1) scrollByY(dy); }
 }
 
 /* model replies via the artifact's sample capability */
@@ -4811,7 +4811,7 @@ const Motion = (()=>{
     for(const a of anchors){
       if(a==null || !marks.has(String(a))) continue;
       const el=root.querySelector(`.row[data-id="${a}"]`); if(!el) continue;
-      const dy=el.getBoundingClientRect().top-marks.get(String(a)); if(Math.abs(dy)>1) window.scrollBy(0, dy);
+      const dy=el.getBoundingClientRect().top-marks.get(String(a)); if(Math.abs(dy)>1) scrollByY(dy);
       break;
     }
     const els=[...root.querySelectorAll('[data-key]')], delta=new Map(), seen=new Set(); secNear.clear();
@@ -6490,20 +6490,11 @@ function holdScroll(ms){
 /* the browser's own keeping-the-page-still is off while a switch places the page itself: it would otherwise pick
    something on the old page to hold still, and move the new one to match */
 function anchorsOff(on){ document.documentElement.style.overflowAnchor = on ? 'none' : ''; }
-/* TEMPORARY: records what moves the page during a view switch and sends it to the server's output */
-const SwapLog={rec:null,
-  wrap(){ if(this.wrapped) return; this.wrapped=true; const self=this;
-    for(const [obj,name] of [[window,'scrollTo'],[window,'scrollBy'],[Element.prototype,'scrollIntoView'],[HTMLElement.prototype,'focus']]){ const orig=obj[name]; obj[name]=function(...a){ if(self.rec) self.rec.calls.push([Math.round(performance.now()-self.rec.t0), name, JSON.stringify(a).slice(0,60), (new Error().stack||'').split('\n').slice(1,4).map(x=>x.trim().slice(0,50)).join(' < ')]); return orig.apply(this,a); }; }
-    addEventListener('scroll', ()=>{ if(self.rec) self.rec.ev.push([Math.round(performance.now()-self.rec.t0), Math.round(scrollY)]); }, {passive:true});
-  },
-  start(info){ this.wrap(); const rec=this.rec={t0:performance.now(), info:{...info, ua:navigator.userAgent.slice(-40), lazy:document.documentElement.classList.contains('lazy'), anchorSupport:CSS.supports('overflow-anchor','auto'), inner:innerWidth+'x'+innerHeight, dpr:devicePixelRatio, bar:Math.round(barBottom()), y0:Math.round(scrollY), h0:document.documentElement.scrollHeight}, calls:[], ev:[], frames:[]};
-    const tick=()=>{ if(this.rec!==rec) return; const t=Math.round(performance.now()-rec.t0); const b=rec.el && rec.el.isConnected ? Math.round(rec.el.getBoundingClientRect().top) : null; rec.frames.push([t, Math.round(scrollY), b, document.documentElement.scrollHeight]); if(t<1500) requestAnimationFrame(tick); else this.send(); }; requestAnimationFrame(tick); },
-  note(k,v){ if(this.rec) this.rec.info[k]=v; },
-  send(){ const r=this.rec; this.rec=null; if(!r) return; const fr=r.frames.filter((x,i,a)=>i===0||x[1]!==a[i-1][1]||x[2]!==a[i-1][2]||x[3]!==a[i-1][3]); fetch('/api/debug/log',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({info:r.info, calls:r.calls, scrolls:r.ev.slice(0,40), frames:fr.slice(0,60)})}).catch(()=>{}); }
-};
+/* Moves the page by dy, as an absolute scroll: in Safari, a relative scroll (scrollBy) on a zoomed-out page moves it
+   further than asked (twice as far at 50%), though the page reports the distance it asked for. */
+function scrollByY(dy){ window.scrollTo(scrollX, scrollY+dy); }
 function swapView(update, anchor=viewAnchor()){
   const id=anchor ? anchor.id : null, r0=anchor ? anchor.el.getBoundingClientRect() : null;
-  SwapLog.start({to:opts.simple?'chat':'editor', anchor:anchor?(anchor.reply?'reply ':'row ')+anchor.id:null, sel, r0:r0&&Math.round(r0.top), active:document.activeElement&&document.activeElement.tagName});
   anchorsOff(true);
   update();
   /* the same reply if it's shown in full, else its prompt */
@@ -6517,9 +6508,7 @@ function swapView(update, anchor=viewAnchor()){
      anchor moves once the browser gets to them */
   const sec0=b && b.closest('section.conv');
   for(let sec=sec0; sec; sec=sec.previousElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
-  SwapLog.note('found', b?b.className.slice(0,30):null); if(b){ SwapLog.rec && (SwapLog.rec.el=b); SwapLog.note('bTopBefore', Math.round(b.getBoundingClientRect().top)); SwapLog.note('want', Math.round(want())); SwapLog.note('hAfterUpdate', document.documentElement.scrollHeight); }
-  if(b) window.scrollBy(0, b.getBoundingClientRect().top-want());
-  if(b){ SwapLog.note('yAfterScrollBy', Math.round(scrollY)); SwapLog.note('bTopAfter', Math.round(b.getBoundingClientRect().top)); }
+  if(b) scrollByY(b.getBoundingClientRect().top-want());
   if(b) holdScroll(500); else setTimeout(()=>anchorsOff(false), 500);
   /* and the chats below it that are on screen now, so they're there at once instead of a frame or two later */
   for(let sec=sec0 && sec0.nextElementSibling; sec && sec.getBoundingClientRect().top<innerHeight; sec=sec.nextElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
