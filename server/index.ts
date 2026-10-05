@@ -179,6 +179,8 @@ app.post('/api/vault/lock', (c) => {
   lockNow(); return c.json({ ok: true });
 });
 app.post('/api/vault/alive', (c) => c.json({ ok: true }));
+/* TEMPORARY: the page's record of a view switch, printed here while a Safari scrolling bug is tracked down */
+app.post('/api/debug/log', async (c) => { const b = await c.req.json().catch(() => null); console.log('\n[switch] ' + JSON.stringify(b).slice(0, 6000)); return c.json({ ok: true }); });
 /* Turns encryption on, with a password (the password lock) or with the key in the keychain. With a password while
    already encrypted in keychain mode, it adds the password lock: nothing is re-encrypted and the recovery key stays. */
 app.post('/api/vault/enable', async (c) => {

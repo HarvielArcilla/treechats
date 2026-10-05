@@ -6478,8 +6478,20 @@ function holdScroll(ms){
   for(const t of ['wheel','touchstart','keydown','pointerdown']) addEventListener(t, stop, {capture:true, passive:true, once:true});
   setTimeout(stop, ms+20);
 }
+/* TEMPORARY: records what moves the page during a view switch and sends it to the server's output */
+const SwapLog={rec:null,
+  wrap(){ if(this.wrapped) return; this.wrapped=true; const self=this;
+    for(const [obj,name] of [[window,'scrollTo'],[window,'scrollBy'],[Element.prototype,'scrollIntoView'],[HTMLElement.prototype,'focus']]){ const orig=obj[name]; obj[name]=function(...a){ if(self.rec) self.rec.calls.push([Math.round(performance.now()-self.rec.t0), name, JSON.stringify(a).slice(0,60), (new Error().stack||'').split('\n').slice(1,4).map(x=>x.trim().slice(0,50)).join(' < ')]); return orig.apply(this,a); }; }
+    addEventListener('scroll', ()=>{ if(self.rec) self.rec.ev.push([Math.round(performance.now()-self.rec.t0), Math.round(scrollY)]); }, {passive:true});
+  },
+  start(info){ this.wrap(); const rec=this.rec={t0:performance.now(), info:{...info, ua:navigator.userAgent.slice(-40), anchorSupport:CSS.supports('overflow-anchor','auto'), cv:getComputedStyle(document.querySelector('section.conv')||document.body).contentVisibility, y0:Math.round(scrollY), h0:document.documentElement.scrollHeight}, calls:[], ev:[], frames:[]};
+    const tick=()=>{ if(this.rec!==rec) return; const t=Math.round(performance.now()-rec.t0); const b=rec.el && rec.el.isConnected ? Math.round(rec.el.getBoundingClientRect().top) : null; rec.frames.push([t, Math.round(scrollY), b, document.documentElement.scrollHeight]); if(t<1500) requestAnimationFrame(tick); else this.send(); }; requestAnimationFrame(tick); },
+  note(k,v){ if(this.rec) this.rec.info[k]=v; },
+  send(){ const r=this.rec; this.rec=null; if(!r) return; const fr=r.frames.filter((x,i,a)=>i===0||x[1]!==a[i-1][1]||x[2]!==a[i-1][2]||x[3]!==a[i-1][3]); fetch('/api/debug/log',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({info:r.info, calls:r.calls, scrolls:r.ev.slice(0,40), frames:fr.slice(0,60)})}).catch(()=>{}); }
+};
 function swapView(update, anchor=viewAnchor()){
   const id=anchor ? anchor.id : null, r0=anchor ? anchor.el.getBoundingClientRect() : null;
+  SwapLog.start({to:opts.simple?'chat':'editor', anchor:anchor?(anchor.reply?'reply ':'row ')+anchor.id:null, sel, r0:r0&&Math.round(r0.top), active:document.activeElement&&document.activeElement.tagName});
   update();
   /* the same reply if it's shown in full, else its prompt */
   let b=null, want=null;
@@ -6492,7 +6504,9 @@ function swapView(update, anchor=viewAnchor()){
      anchor moves once the browser gets to them */
   const sec0=b && b.closest('section.conv');
   for(let sec=sec0; sec; sec=sec.previousElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
+  SwapLog.note('found', b?b.className.slice(0,30):null); if(b){ SwapLog.rec && (SwapLog.rec.el=b); SwapLog.note('bTopBefore', Math.round(b.getBoundingClientRect().top)); SwapLog.note('want', Math.round(want())); SwapLog.note('hAfterUpdate', document.documentElement.scrollHeight); }
   if(b) window.scrollBy(0, b.getBoundingClientRect().top-want());
+  if(b){ SwapLog.note('yAfterScrollBy', Math.round(scrollY)); SwapLog.note('bTopAfter', Math.round(b.getBoundingClientRect().top)); }
   if(b) holdScroll(500);
   /* and the chats below it that are on screen now, so they're there at once instead of a frame or two later */
   for(let sec=sec0 && sec0.nextElementSibling; sec && sec.getBoundingClientRect().top<innerHeight; sec=sec.nextElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
