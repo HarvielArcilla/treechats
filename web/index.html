@@ -5822,9 +5822,11 @@ function restoreFocus(k){
   if(!k) return;
   const el=treeEl.querySelector(k.q); if(!el) return;
   if(k.q==='#resendText' || k.q==='#replyEditText' || k.q==='#distillText' || k.q==='#promptEditText') el.value=k.v;
-  el.focus({preventScroll:true});
+  /* the caret goes back before focus does: Safari scrolls the page to a focused field whose selection is set, a moment
+     later, which would undo wherever the redraw left the page */
   const n=el.value.length;
   try{ el.setSelectionRange(Math.min(k.s,n), Math.min(k.e,n)); }catch(e){}
+  el.focus({preventScroll:true});
   el.scrollTop=k.top;
 }
 /* keep what's typed in the input box across a redraw */
@@ -6465,6 +6467,17 @@ function viewAnchor(){
   }
   return first;
 }
+/* For a moment after a switch, the page stays where the switch put it unless you scroll it yourself: a browser can
+   still scroll on its own a frame or two later (Safari revealing a focused field, say), which lands you somewhere else
+   with the glide happening off screen. */
+function holdScroll(ms){
+  const y=scrollY, until=performance.now()+ms;
+  const stop=()=>{ removeEventListener('scroll', onS); for(const t of ['wheel','touchstart','keydown','pointerdown']) removeEventListener(t, stop, true); };
+  const onS=()=>{ if(performance.now()>until){ stop(); return; } if(Math.abs(scrollY-y)>1) window.scrollTo(scrollX, y); };
+  addEventListener('scroll', onS, {passive:true});
+  for(const t of ['wheel','touchstart','keydown','pointerdown']) addEventListener(t, stop, {capture:true, passive:true, once:true});
+  setTimeout(stop, ms+20);
+}
 function swapView(update, anchor=viewAnchor()){
   const id=anchor ? anchor.id : null, r0=anchor ? anchor.el.getBoundingClientRect() : null;
   update();
@@ -6480,6 +6493,7 @@ function swapView(update, anchor=viewAnchor()){
   const sec0=b && b.closest('section.conv');
   for(let sec=sec0; sec; sec=sec.previousElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
   if(b) window.scrollBy(0, b.getBoundingClientRect().top-want());
+  if(b) holdScroll(500);
   /* and the chats below it that are on screen now, so they're there at once instead of a frame or two later */
   for(let sec=sec0 && sec0.nextElementSibling; sec && sec.getBoundingClientRect().top<innerHeight; sec=sec.nextElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
   if(!b) for(const sec of treeEl.querySelectorAll('section.conv')){ const r=sec.getBoundingClientRect(); if(r.bottom>0 && r.top<innerHeight) sec.style.contentVisibility='visible'; }
@@ -6511,6 +6525,10 @@ function openInEditor(id){
 }
 function setView(chat){
   if(!!opts.simple===chat) return;
+  /* a field in one view isn't the same field in the other (Chat's input box and Editor's share an id), so focus doesn't
+     carry over. Safari leaves focus in the field when you click the switch, and putting it back in the other view's
+     box scrolled the page to that box. */
+  const fa=document.activeElement; if(fa && fa!==document.body && treeEl.contains(fa)) fa.blur();
   const anchor=viewAnchor();
   /* Chat view → Editor: the message you were reading is the one selected there, on the line you were reading */
   if(!chat && anchor && anchor.id!==sel && composeFor!=='root'){
