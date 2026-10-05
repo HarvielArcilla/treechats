@@ -6444,24 +6444,52 @@ function showPanel(which){ if(narrow()){ openDrawer(which); return; } opts.colla
 function hidePanel(which){ if(narrow()){ closeDrawers(); return; } opts.collapsed[which]=true; applyLayout(); save(); }
 document.getElementById('spacesBtn').onclick=()=>showPanel('spaces');
 /* Switching layouts (Chat and Editor, Selection and Focus) changes nearly everything on the page. Flying every element
-   between two unrelated layouts would be noise, so the prompt you were looking at stays at the same height on screen
-   and glides sideways into its new place, while everything around it (its reply included) fades in. */
-function swapView(update){
-  const top=66, vis=r=>r.bottom>top && r.top<innerHeight;
-  let a=sel!=null ? treeEl.querySelector(`.row[data-id="${sel}"]`) : null;
-  if(!a || !vis(a.getBoundingClientRect())) a=[...treeEl.querySelectorAll('.row[data-id]')].find(r=>vis(r.getBoundingClientRect())) || null;
-  const id=a ? a.dataset.id : null, r0=a ? a.getBoundingClientRect() : null;
+   between two unrelated layouts would be noise, so what you were reading stays at the same height on screen and glides
+   into its new place, while everything around it fades in. What you were reading is the selected prompt if it's on
+   screen, else the prompt or reply at the reading line, a third of the way down the window: in Chat view that's
+   usually the middle of a long reply, with no prompt on screen at all. */
+const SWAP_TOP=66, readLine=()=>SWAP_TOP+(innerHeight-SWAP_TOP)*0.3;
+function viewAnchor(){
+  const vis=r=>r.bottom>SWAP_TOP && r.top<innerHeight;
+  const s=sel!=null && treeEl.querySelector(`.row[data-id="${sel}"]`);
+  if(s && vis(s.getBoundingClientRect())) return {el:s, id:sel, reply:false};
+  const all=[...treeEl.querySelectorAll('.row[data-id], .reply[data-key^="r"]')].filter(el=>!el.closest('.mergebox'));
+  const y=readLine(); let first=null;
+  for(const el of all){
+    const r=el.getBoundingClientRect(); if(!vis(r)) continue;
+    const reply=el.classList.contains('reply'), id=+(reply ? el.dataset.key.slice(1) : el.dataset.id);
+    if(!S.nodes[id]) continue;
+    const a={el, id, reply};
+    if(r.top<=y && r.bottom>=y) return a;
+    if(!first) first=a;
+  }
+  return first;
+}
+function swapView(update, anchor=viewAnchor()){
+  const id=anchor ? anchor.id : null, r0=anchor ? anchor.el.getBoundingClientRect() : null;
   update();
-  const b=id!=null ? treeEl.querySelector(`.row[data-id="${id}"]`) : null;
+  /* the same reply if it's shown in full, else its prompt */
+  let b=null, want=null;
+  if(id!=null && anchor.reply){
+    const rep=treeEl.querySelector(`.reply[data-key="r${id}"]`);
+    if(rep && !rep.classList.contains('clamp')){ b=rep; const y=readLine(), frac=r0.height ? Math.min(1, Math.max(0, (y-r0.top)/r0.height)) : 0; want=()=>y-frac*b.getBoundingClientRect().height; }
+  }
+  if(id!=null && !b){ b=treeEl.querySelector(`.row[data-id="${id}"]`); want=()=>anchor.reply ? Math.max(SWAP_TOP+12, Math.min(r0.top, readLine())) : r0.top; }
   /* chats render lazily with an estimated height; lay out the anchor's chat and the ones above it for real, or the
      anchor moves once the browser gets to them */
-  for(let sec=b && b.closest('section.conv'); sec; sec=sec.previousElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
-  if(b) window.scrollBy(0, b.getBoundingClientRect().top-r0.top);
+  const sec0=b && b.closest('section.conv');
+  for(let sec=sec0; sec; sec=sec.previousElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
+  if(b) window.scrollBy(0, b.getBoundingClientRect().top-want());
+  /* and the chats below it that are on screen now, so they're there at once instead of a frame or two later */
+  for(let sec=sec0 && sec0.nextElementSibling; sec && sec.getBoundingClientRect().top<innerHeight; sec=sec.nextElementSibling) if(sec.matches('section.conv')) sec.style.contentVisibility='visible';
+  if(!b) for(const sec of treeEl.querySelectorAll('section.conv')){ const r=sec.getBoundingClientRect(); if(r.bottom>0 && r.top<innerHeight) sec.style.contentVisibility='visible'; }
+  /* a prompt glides from where it was; from a reply, only sideways, so the line you were reading stays put */
+  const glideFrom=!b ? null : anchor.reply ? {left:r0.left, top:b.getBoundingClientRect().top} : r0;
   if(Motion.reduced()) return !!b;
   const ease='cubic-bezier(.2,.75,.2,1)', moving=new Set();
   const glide=(el, was)=>{ if(!el || !was) return; const r=el.getBoundingClientRect(), dx=was.left-r.left, dy=was.top-r.top;
     moving.add(el); if(Math.abs(dx)>.5 || Math.abs(dy)>.5) el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}], {duration:300, easing:ease}); };
-  glide(b, r0);
+  glide(b, glideFrom);
   /* the column clips while it glides, so it never slides across the inspector */
   if(moving.size){ treeEl.style.overflowX='clip'; clearTimeout(swapView.t); swapView.t=setTimeout(()=>{ treeEl.style.overflowX=''; }, 320); }
   /* everything else on screen fades in; only blocks near the viewport, so a long chat stays cheap */
@@ -6483,6 +6511,12 @@ function openInEditor(id){
 }
 function setView(chat){
   if(!!opts.simple===chat) return;
+  const anchor=viewAnchor();
+  /* Chat view → Editor: the message you were reading is the one selected there, on the line you were reading */
+  if(!chat && anchor && anchor.id!==sel && composeFor!=='root'){
+    if(simpleTip!=null && S.nodes[simpleTip] && path(simpleTip).includes(anchor.id)) setActivePath(simpleTip);
+    sel=anchor.id; composeFor=null; syncHead();
+  }
   opts.simple=chat; simpleTip=null; pick=null;
   applyAppearance();
   if(chat) pickingRows=false;
@@ -6497,7 +6531,7 @@ function setView(chat){
     }
   }
   save();
-  const kept=swapView(()=>{ applySimple(); render(true); });
+  const kept=swapView(()=>{ applySimple(); render(true); }, anchor);
   if(opts.simple && !kept) scrollThreadEnd();
 }
 document.getElementById('viewSw').addEventListener('click', e=>{ const b=e.target.closest('[data-viewsw]'); if(b) setView(b.dataset.viewsw==='chat'); });
