@@ -1158,8 +1158,10 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .pes textarea{width:100%;min-height:5.5em;resize:vertical;font:.84rem/1.45 var(--mono)}
 .pefmt code{font:.76rem var(--mono);background:var(--code-bg);padding:1px 4px;border-radius:3px;overflow-wrap:anywhere}
 .maplegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.76rem;color:var(--muted);padding:0 18px 12px}
-/* conversations off screen skip layout and painting until you scroll to them */
-section.conv{content-visibility:auto;contain-intrinsic-size:auto 900px}
+/* conversations off screen skip layout and painting until you scroll to them. Only in browsers with scroll
+   anchoring: a chat drawn at its real height when it comes on screen is a different height from its estimate, and
+   without anchoring (Safari) the page moves under you each time, which shows as jitter while scrolling. */
+@supports (overflow-anchor:auto){ section.conv{content-visibility:auto;contain-intrinsic-size:auto 900px} }
 
 .qlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .qrow{display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr) auto auto;gap:4px 12px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
@@ -3594,7 +3596,17 @@ function refreshWaiting(){
   if(sel==null || !S.nodes[sel] || liveGen(sel) || S.nodes[sel].reply) return;
   const slot=treeEl.querySelector(`[data-key="r${sel}"]`); if(slot) slot.outerHTML=replyHTML(sel);
 }
-const atPageEnd = () => opts.simple && innerHeight+scrollY >= document.documentElement.scrollHeight-140;
+/* In Chat view a reply coming in keeps the page at the bottom, as chat apps do, but only until you scroll up: from
+   then on it stays where you put it, until you scroll back down to the end. Without this, scrolling up a little
+   while a reply streams in (with a trackpad's glide, say) gets pulled back down every frame, which jitters. */
+let followEnd=true, lastSY=0;
+const maxScroll=()=>Math.max(0, document.documentElement.scrollHeight-innerHeight);
+addEventListener('scroll', ()=>{
+  const max=maxScroll(), y=Math.min(Math.max(scrollY,0), max); /* the bounce past either end isn't scrolling */
+  if(y<lastSY-1) followEnd=false; else if(y>=max-24) followEnd=true;
+  lastSY=y;
+}, {passive:true});
+const atPageEnd = () => opts.simple && followEnd && innerHeight+scrollY >= document.documentElement.scrollHeight-140;
 /* streamed text is painted at most once a frame, however many replies are coming in */
 const paintDue=new Set(); let paintRaf=0;
 function paintGen(g){
@@ -5467,7 +5479,7 @@ function mergeBoxHTML(m, pathSet){
     <ul class="tree thread">${inn.map(x=>`<li class="g" data-key="n${S.nodes[x].alt ?? x}">${rowHTML(x, pathSet)}</li>`).join('')}</ul></div></details>`;
 }
 treeEl.addEventListener('toggle', e=>{ const d=e.target; if(d.dataset && d.dataset.mergebox!=null){ const m=+d.dataset.mergebox; d.open ? openMerges.add(m) : openMerges.delete(m); } }, true);
-function scrollThreadEnd(){ requestAnimationFrame(()=>{ if(treeEl.querySelector('.simpleops')) window.scrollTo(0, document.documentElement.scrollHeight); }); }
+function scrollThreadEnd(){ followEnd=true; requestAnimationFrame(()=>{ if(treeEl.querySelector('.simpleops')) window.scrollTo(0, document.documentElement.scrollHeight); }); }
 function renderTree(){
   if(slash) queueMicrotask(()=>{ if(slash && !document.contains(slash.box)) closeSlash(); });
   const pathSet=new Set(sel!=null&&S.nodes[sel]?path(sel):[]);
@@ -6957,8 +6969,9 @@ document.getElementById('settings').addEventListener('click', e=>{
 const asideEl=document.querySelector('aside');
 asideEl.addEventListener('toggle', e=>{ const d=e.target, k=d.dataset && d.dataset.openkey; if(k && (opts.open[k] ?? null)!==d.open){ opts.open[k]=d.open; save(); } }, true);
 /* The right column sticks under the top bar and scrolls on its own. Its height has to fit between where it
-   starts and the bottom of the window, which changes only until it reaches the top bar, so this does almost
-   no work while scrolling. */
+   starts and the bottom of the window. It is worked out when the window or the page changes size, never while
+   scrolling: changing its height on every scroll frame (and on macOS, during the bounce past the top or end of
+   the page) makes the page lay out again mid-scroll, which shows as jitter. */
 let asideFrame=0, asideMax=-1, composerH=0;
 function placeAside(){
   if(asideFrame) return;
@@ -6968,11 +6981,13 @@ function placeAside(){
     if(c){ const h=c.offsetHeight; if(h!==composerH){ composerH=h; document.documentElement.style.setProperty('--composerH', h+'px'); } }
     const a=document.querySelector('aside'); if(!a) return;
     if(getComputedStyle(a).position!=='sticky'){ if(asideMax!==-1){ a.style.maxHeight=''; asideMax=-1; } return; }
-    const top=Math.max(a.getBoundingClientRect().top, 66), mh=Math.max(200, Math.floor(innerHeight-top-12));
+    /* where it would be with the page at the top, less however far the page is scrolled (the bounce past either
+       end counts as no scroll) */
+    const de=document.documentElement, sy=Math.min(Math.max(scrollY,0), Math.max(0, de.scrollHeight-innerHeight));
+    const top=Math.max(a.getBoundingClientRect().top+scrollY-sy, 66), mh=Math.max(200, Math.floor(innerHeight-top-12));
     if(mh!==asideMax){ asideMax=mh; a.style.maxHeight=mh+'px'; }
   });
 }
-window.addEventListener('scroll', placeAside, {passive:true});
 window.addEventListener('resize', placeAside);
 if(typeof ResizeObserver!=='undefined') new ResizeObserver(placeAside).observe(document.querySelector('.app') || document.body);
 /* ---- panels: Space files, Import / export ---- */
