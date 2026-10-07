@@ -1057,16 +1057,18 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 /* quick access */
 .ops .bar .btn.more{color:var(--muted);border-style:dashed}
 /* the operations bar in groups: a small label, then its buttons; groups wrap as a unit */
-.ops .bar{display:grid;gap:6px}
+.ops > .bar{display:grid;gap:6px}
 .ops .opgrp{display:grid;grid-template-columns:92px minmax(0,1fr);align-items:center;gap:8px}
 .ops .opbtns{display:flex;flex-wrap:wrap;gap:6px}
 .ops .oglab{font:500 .62rem var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
-.ops .bar > .btn.more{justify-self:start;margin-left:100px}
-@media (max-width:560px){ .ops .opgrp{grid-template-columns:minmax(0,1fr);gap:3px} .ops .bar > .btn.more{margin-left:0} }
+.ops > .bar > .btn.more{justify-self:start;margin-left:100px}
+@media (max-width:560px){ .ops .opgrp{grid-template-columns:minmax(0,1fr);gap:3px} .ops > .bar > .btn.more{margin-left:0} }
 .qlist .qgrp{font:500 .66rem var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:8px 2px 0;list-style:none}
 .oplist .opgh{margin:14px 0 2px;font-size:.9rem}.oplist .opgh:first-child{margin-top:0}
 .oplist .opgn{margin:0 0 6px}
 .act.incl{color:var(--accent)}
+/* Chat view shows how a turn is included, but changing it is in Editor */
+.shell.simple .sendnote .snacts{display:none}
 .exside.handed .extext{opacity:.45}
 .exincs{display:grid;gap:10px}
 .exincs h3{margin:0;font-size:.95rem}
@@ -5379,7 +5381,7 @@ function rowHTML(id, pathSet){
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${promptTime(n)}${includeBtn(n, id)}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button><button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${promptTime(n)}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button><button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
     else if(id===sel){
       const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
       const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
@@ -5669,7 +5671,10 @@ function sendTagHTML(n, chat){
   const m=SM.modeOf(n); if(m==='full' || m==='out') return '';
   const stale=SM.stale(n,h5).length, pending=m==='summary' && n.sum && n.sum.pending;
   const tip = `${SM.HINTS[m]}${stale?' The text changed since it was made.':''} Click to change.`;
-  return `<button class="${chat?'edtag':'tag'} sendtag${stale?' warn':''}" data-sendmenu="${n.id}" aria-haspopup="menu" title="${esc(tip)}">${esc(modeName(m).toLowerCase())}${pending?'…':''}${stale?' · out of date':''}</button>`;
+  const label=`${esc(modeName(m).toLowerCase())}${pending?'…':''}${stale?' · out of date':''}`;
+  /* Chat view shows how a turn is included; changing it is in Editor */
+  if(chat) return `<span class="edtag sendtag${stale?' warn':''}" title="${esc(SM.HINTS[m]+(stale?' The text changed since it was made.':'')+' Change it in Editor.')}">${label}</span>`;
+  return `<button class="tag sendtag${stale?' warn':''}" data-sendmenu="${n.id}" aria-haspopup="menu" title="${esc(tip)}">${label}</button>`;
 }
 /* above a reply that isn't sent as it is: what goes instead, and how to change it */
 function sendNoteHTML(id){
