@@ -57,6 +57,38 @@ test('context fingerprint: a reply notices edits, left-out turns and new instruc
   assert.equal(ctxChanges(state, tree, 3), null, 'undoing the changes clears the marker');
 });
 
+test('send modes: what a turn sends as a summary, an excerpt, its prompt or its reply only, and the marker notices', async () => {
+  const { turnsFor, ctxSig, ctxChanges, Send } = await import('../server/context.ts');
+  const tree: any = { nodes: {
+    1: { id: 1, parents: [], text: 'Compare A and B', reply: 'A is fast. B is exact. Pick A for most cases.' },
+    2: { id: 2, parents: [1], text: 'And for 4k req/s?', reply: 'A.' },
+  }, refs: {} };
+  const state: any = { db: { spaces: {}, order: [], current: '' }, opts: { prompts: {} } };
+  const sent = () => turnsFor(state, tree, 2).map((t: any) => `${t.role}: ${t.content}`);
+  tree.nodes[2].ctx = ctxSig(state, tree, 2);
+  const n = tree.nodes[1];
+  n.send = 'summary';
+  assert.equal(sent()[1], 'assistant: A is fast. B is exact. Pick A for most cases.', 'no summary yet: the full reply is still sent');
+  assert.equal(ctxChanges(state, tree, 2), null);
+  n.sum = { text: 'I recommended A.', of: 'x' };
+  assert.equal(sent()[1], 'assistant: ' + Send.DEFAULTS.sendSummary.replace('{summary}', 'I recommended A.'));
+  assert.deepEqual(ctxChanges(state, tree, 2), ['#1 now sent as summary']);
+  n.send = 'excerpt'; n.ex = { p: [], r: [{ s: 0, e: 10, t: 'A is fast.' }, { s: 22, e: 46, t: 'Pick A for most cases.' }] };
+  assert.equal(sent()[0], 'user: Compare A and B', 'a side with nothing highlighted goes whole');
+  assert.ok(sent()[1].endsWith('A is fast.' + Send.JOIN + 'Pick A for most cases.'));
+  n.send = 'prompt';
+  assert.equal(sent()[1], 'assistant: ' + Send.DEFAULTS.sendNoReply);
+  state.opts.prompts.sendNoReply = '';
+  assert.deepEqual(sent(), ['user: Compare A and B\n\nAnd for 4k req/s?', 'assistant: A.'], 'empty wording sends nothing, and the turns join');
+  n.send = 'reply';
+  assert.equal(sent()[0], 'user: ' + Send.DEFAULTS.sendNoPrompt);
+  delete n.send;
+  assert.equal(ctxChanges(state, tree, 2), null, 'back to full: nothing changed');
+  assert.deepEqual(Send.piecesFromText(n.reply, ['B is exact.', 'nope']).missing, ['nope']);
+  n.send = 'excerpt'; n.reply = 'Rewritten.';
+  assert.deepEqual(Send.stale(n, (s: string) => s), ['reply'], 'an excerpt notices the reply changed');
+});
+
 test('branch settings: each model gets only the parameters it accepts', async () => {
   const { caps, prices, costOf } = await import('../server/models.ts');
   assert.deepEqual(caps('claude-haiku-4-5-20251001'), { temperature: true, effort: false, thinking: 'budget' });

@@ -7,8 +7,19 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve as resolvePath, sep as pathSep } from 'node:path';
 import { getValue } from './store.ts';
+/* how each turn is sent (full, summary, excerpt, prompt only, reply only): the page's own file, so both build the same
+   request */
+import '../web/public/sendmodes.js';
 
-type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string }; set?: Record<string, unknown>; usage?: { input: number; output: number; cost?: number }; thinking?: string; replyEdited?: boolean; combined?: { from: number[] }; reviewOf?: { id: number }; by?: string };
+type Send = {
+  MODES: string[]; LABELS: Record<string, string>; DEFAULTS: Record<string, string>; JOIN: string;
+  modeOf(n: Node): string; apply(n: Node, user: string, reply: string, tpl: (k: string) => string): { user: string; reply: string };
+  mark(n: Node, tpl: (k: string) => string): string; stale(n: Node, h: (s: string) => string): string[];
+  texts(list: unknown): string[]; piecesFromText(text: string, list: string[]): { pieces: { s: number; e: number; t: string }[]; missing: string[] };
+};
+export const Send = (globalThis as unknown as { TreechatsSend: Send }).TreechatsSend;
+
+type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; send?: string; sum?: { text?: string; of?: string; pending?: boolean; by?: string }; ex?: { p?: unknown[]; r?: unknown[] }; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string }; set?: Record<string, unknown>; usage?: { input: number; output: number; cost?: number }; thinking?: string; replyEdited?: boolean; combined?: { from: number[] }; reviewOf?: { id: number }; by?: string };
 export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number }>; files?: { id: string; name: string }[] };
 type State = { db: { spaces: Record<string, { id: string; name: string; tree: Tree; sel?: number | null }>; order: string[]; current: string }; opts?: { prompts?: Record<string, string> } };
 
@@ -106,6 +117,9 @@ export function settingsFor(tree: Tree, id: number) {
 }
 const systemOf = (tree: Tree, id: number) => String(settingsFor(tree, id).system ?? '').trim();
 
+/* the wording of a send mode: the person's own from Settings › Prompts, else the default */
+export const tplOf = (state: State) => (k: string) => state.opts?.prompts?.[k] ?? Send.DEFAULTS[k];
+
 /* The turns a request from this prompt sends, including its own reply, as the page's turnsFor(id, true) does */
 export function turnsFor(state: State, tree: Tree, id: number) {
   const v = new TreeView(tree), prompts = state.opts?.prompts || {};
@@ -118,8 +132,10 @@ export function turnsFor(state: State, tree: Tree, id: number) {
     const n = tree.nodes[e.id];
     if (n.skip && e.id !== id) continue;
     const fl = (n.files || []).map(fileStub).join('\n\n');
-    if (n.text || fl) raw.push({ role: 'user', content: fl ? fl + (n.text ? '\n\n' + n.text : '') : n.text });
-    if (n.reply) raw.push({ role: 'assistant', content: n.reply });
+    let user = fl ? fl + (n.text ? '\n\n' + n.text : '') : (n.text || ''), reply = n.reply || '';
+    if (n.send) ({ user, reply } = Send.apply(n, user, reply, tplOf(state)));
+    if (user) raw.push({ role: 'user', content: user });
+    if (reply) raw.push({ role: 'assistant', content: reply });
   }
   const out: typeof raw = [];
   for (const t of raw) { const last = out[out.length - 1]; if (last && last.role === t.role) last.content += '\n\n' + t.content; else out.push({ ...t }); }
@@ -173,8 +189,8 @@ export function ctxSig(state: State, tree: Tree, id: number) {
     const n = tree.nodes[e.id];
     if (n.kind === 'merge' || (n.skip && e.id !== id)) continue;
     const files = (n.files || []).map((f) => f.id + '/' + f.name).join('|');
-    const q = h5((n.text || '') + '\u0000' + files), r = n.reply ? h5(n.reply) : '';
-    at.push(e.id + ':' + q + (e.id !== id && r ? '.' + r : ''));
+    const q = h5((n.text || '') + '\u0000' + files), r = n.reply ? h5(n.reply) : '', m = e.id !== id && n.send ? Send.mark(n, tplOf(state)) : '';
+    at.push(e.id + ':' + q + (e.id !== id && r ? '.' + r : '') + (m ? '~' + h5(m) : ''));
   }
   let h = ''; for (const x of at) h = hash53(h + '|' + x);
   return { h: h.slice(-8), at: at.join(',') };
@@ -199,7 +215,9 @@ export function ctxChanges(state: State, tree: Tree, id: number): string[] | nul
   for (const [k, val] of is) {
     if (!was.has(k)) { out.push(`${name(k)} ${num(k) ? 'back in' : 'added'}`); continue; }
     const w = was.get(k)!; if (w === val) continue;
-    const [q0, r0 = ''] = w.split('.'), [q1, r1 = ''] = val.split('.');
+    const [wp, m0 = ''] = w.split('~'), [vp, m1 = ''] = val.split('~');
+    if (wp === vp && num(k)) { const md = Send.LABELS[tree.nodes[k as unknown as number] ? Send.modeOf(tree.nodes[k as unknown as number]) : 'full'].toLowerCase(); out.push(`${name(k)} ${m1 ? (m0 ? `${md} changed` : `now sent as ${md}`) : 'sent in full again'}`); continue; }
+    const [q0, r0 = ''] = wp.split('.'), [q1, r1 = ''] = vp.split('.');
     out.push(`${name(k)} ${!num(k) ? 'changed' : +k === id || (q0 !== q1 && r0 !== r1) ? 'edited' : q0 !== q1 ? 'prompt edited' : r0 && r1 ? 'reply edited' : r1 ? 'reply added' : 'reply removed'}`);
   }
   for (const k of was.keys()) if (!is.has(k)) out.push(`${name(k)} ${num(k) && tree.nodes[k as unknown as number]?.skip ? 'left out' : 'removed'}`);

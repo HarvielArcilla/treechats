@@ -59,9 +59,11 @@ The model behind each tier (Quick, Default, Complex) is set in `.env` too.
 
 - **See the exact context.** The inspector lists everything the selected prompt sends; `/context` breaks it down part by part with sizes against the request limit; **Copy as a prompt** copies it as one block to paste anywhere.
 - **Leave out** a turn and it stops being sent from the prompts below (nothing is deleted). **Edit** one of Claude's replies and later prompts see your version, marked as edited.
+- **Send as…** chooses how much of a turn the prompts below send, without deleting anything: **Full**, a **Summary** in place of the reply (✦ Claude writes it; you can edit it or write your own), an **Excerpt**, **Prompt only**, **Reply only**, or **Left out**. It's in the Editor's operations bar, under each prompt in Chat view, on each row of the Context panel, and on a selected stretch. The wording Claude gets in place of what's left out (such as "My reply to this message is left out") is under Settings › Prompts › Send modes. A summary or excerpt made before its reply was edited is marked out of date.
+- **Excerpt** opens a highlighter over the prompt and the reply as their Markdown source, so what you highlight is exactly what's sent. Drag over any text (it snaps to whole words), or click a paragraph, list item or code block to add or remove all of it; click a highlight to remove it. Keep as many separate pieces as you like; Claude gets them with […] between them. A side with nothing highlighted goes whole, so to keep part of a reply you only highlight the reply.
 - **Context changed.** Each reply remembers what it was sent, so after you change something above it, it shows a small note such as **Context changed: #3 reply edited** or **src/api.ts changed**. Only you see it; Claude never does, and you can turn it off in Settings.
 - **Replay** re-sends from there, one prompt at a time, as new versions (the old ones stay one ‹ › away). Before each prompt a quick ✦ check asks whether it still makes sense after the new replies; if not, Replay stops with a suggested rewrite, or, if you choose, sends the rewrite and keeps going (marked as rewritten). After you send an edited prompt, **✦ Replay N below** carries over what followed the original.
-- **Select a stretch** with Shift-click to copy just those turns, leave them all out, replay only them, replay them under another prompt, squash them into one, or splice them out. **Ctrl/⌘-click** picks prompts anywhere, to send the same follow-up to each (**Reply to several**) or compare them.
+- **Select a stretch** with Shift-click to copy just those turns, leave them all out, send them as summaries or one side only, replay only them, replay them under another prompt, squash them into one, or splice them out. **Ctrl/⌘-click** picks prompts anywhere, to send the same follow-up to each (**Reply to several**) or compare them.
 
 ## Explore and decide
 
@@ -141,7 +143,7 @@ Settings › System has the same command with your token filled in, and the setu
 
 **Subagents.** Coding agents can also run subagents in Treechats, chats whose context you can see and steer, with the same tools you have:
 - **Talk:** `spawn` (start one with exactly the context it should have), `ask`, `fork`, `edit_prompt`, `regenerate`, `loop` (the same prompt after each reply until a condition is met)
-- **Shape context:** `leave_out`, `edit_reply`, `replay` (re-send after a change; stops at a prompt that no longer fits)
+- **Shape context:** `leave_out`, `send_mode` (full, summary, excerpt, prompt or reply only; nothing is deleted), `edit_reply`, `replay` (re-send after a change; stops at a prompt that no longer fits)
 - **Explore and decide:** `fan_out`, `review` (a fresh-eyes second opinion), `judge` and `combine` (best-of-n across forks or any prompts), `distill` (bring back only a brief)
 - **Everything else:** `operate` runs star, note, branch, rename, make mainline, merge, reroot, squash, splice, delete, rebase, cherry-pick, rename chat and model settings; `describe` lists their arguments.
 
