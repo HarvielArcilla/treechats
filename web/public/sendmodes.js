@@ -40,6 +40,13 @@
   /* an excerpt's pieces are {s, e, t}: where they were and the text itself; the text is what's sent */
   const texts = list => (Array.isArray(list) ? list : []).map(p => typeof p === 'string' ? p : p && p.t).filter(t => typeof t === 'string' && t.trim());
   const fill = (tpl, vars) => { let t = String(tpl == null ? '' : tpl); for(const [k, v] of Object.entries(vars)) t = t.split('{' + k + '}').join(v); return t; };
+  /* what an excerpt sends from one side ('p' the prompt, 'r' the reply): your own wording if you typed it in the
+     highlighter's preview (n.ex.ed), else the highlighted pieces; null when that side goes whole */
+  function exSide(n, side){
+    const ex = n.ex || {}, ed = ex.ed || {};
+    if(typeof ed[side] === 'string') return { text:ed[side], edited:true };
+    const t = texts(ex[side]); return t.length ? { text:t.join(JOIN), edited:false } : null;
+  }
   const hasSummary = n => !!(n.sum && typeof n.sum.text === 'string' && n.sum.text.trim() && !n.sum.pending);
 
   /* What a turn sends under its mode. user is the prompt as it would go out in full (attached files and text), reply the
@@ -48,9 +55,9 @@
     const m = modeOf(n);
     if(m === 'summary'){ if(reply && hasSummary(n)) reply = fill(tpl('sendSummary'), { summary:n.sum.text.trim() }).trim(); }
     else if(m === 'excerpt'){
-      const ex = n.ex || {}, p = texts(ex.p), r = texts(ex.r);
-      if(user && p.length) user = fill(tpl('sendExcerptPrompt'), { excerpt:p.join(JOIN) }).trim();
-      if(reply && r.length) reply = fill(tpl('sendExcerptReply'), { excerpt:r.join(JOIN) }).trim();
+      const p = exSide(n, 'p'), r = exSide(n, 'r');
+      if(user && p) user = fill(tpl('sendExcerptPrompt'), { excerpt:p.text }).trim();
+      if(reply && r) reply = fill(tpl('sendExcerptReply'), { excerpt:r.text }).trim();
     }
     else if(m === 'prompt'){ if(reply) reply = String(tpl('sendNoReply') || '').trim(); }
     else if(m === 'reply'){ if(user && reply) user = String(tpl('sendNoPrompt') || '').trim(); }
@@ -62,7 +69,7 @@
     const m = modeOf(n);
     if(m === 'full' || m === 'out') return '';
     if(m === 'summary') return hasSummary(n) ? 'summary|' + n.sum.text.trim() + '|' + tpl('sendSummary') : '';
-    if(m === 'excerpt'){ const ex = n.ex || {}, p = texts(ex.p), r = texts(ex.r); return p.length || r.length ? 'excerpt|' + p.join(JOIN) + '|' + r.join(JOIN) + '|' + tpl('sendExcerptPrompt') + '|' + tpl('sendExcerptReply') : ''; }
+    if(m === 'excerpt'){ const p = exSide(n, 'p'), r = exSide(n, 'r'); return p || r ? 'excerpt|' + (p ? p.text : '') + '|' + (r ? r.text : '') + '|' + tpl('sendExcerptPrompt') + '|' + tpl('sendExcerptReply') : ''; }
     if(m === 'prompt') return n.reply ? 'prompt|' + tpl('sendNoReply') : '';
     if(m === 'reply') return n.reply ? 'reply|' + tpl('sendNoPrompt') : '';
     return '';
@@ -72,8 +79,12 @@
     const m = modeOf(n), out = [];
     if(m === 'summary' && hasSummary(n) && n.sum.of && n.sum.of !== h(n.reply || '')) out.push('reply');
     if(m === 'excerpt' && n.ex){
-      if(texts(n.ex.p).some(t => !(n.text || '').includes(t))) out.push('prompt');
-      if(texts(n.ex.r).some(t => !(n.reply || '').includes(t))) out.push('reply');
+      /* hand-written wording: the text it was written from changed; highlighted pieces: one is no longer there */
+      const ed = n.ex.ed || {}, of = n.ex.edOf || {};
+      for(const [side, src, name] of [['p', n.text || '', 'prompt'], ['r', n.reply || '', 'reply']]){
+        if(typeof ed[side] === 'string'){ if(of[side] && of[side] !== h(src)) out.push(name); }
+        else if(texts(n.ex[side]).some(t => !src.includes(t))) out.push(name);
+      }
     }
     return out;
   }
@@ -96,5 +107,5 @@
     return { pieces:piecesFrom(text, ranges), missing };
   }
 
-  globalThis.TreechatsSend = { MODES, LABELS, HINTS, DEFAULTS, JOIN, modeOf, apply, mark, stale, texts, fill, hasSummary, piecesFrom, piecesFromText, locate };
+  globalThis.TreechatsSend = { MODES, LABELS, HINTS, DEFAULTS, JOIN, modeOf, apply, mark, stale, texts, fill, hasSummary, exSide, piecesFrom, piecesFromText, locate };
 })();

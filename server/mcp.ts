@@ -327,6 +327,8 @@ export function buildMcpServer(read: () => State | null) {
       excerpt: z.object({
         prompt: z.array(z.string()).optional().describe('Exact pieces of the prompt text to keep, as they appear in it.'),
         reply: z.array(z.string()).optional().describe('Exact pieces of the reply to keep, as they appear in it.'),
+        prompt_text: z.string().optional().describe('Or your own wording of what to include from the prompt, in place of pieces. Marked as edited.'),
+        reply_text: z.string().optional().describe('Or your own wording of what to include from the reply, in place of pieces (like a summary you write). Marked as edited.'),
       }).optional().describe('For excerpt: what to keep. Pieces must be copied exactly from the text (get_prompt shows it).'),
     },
   }, async (a) => {

@@ -1067,6 +1067,17 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .oplist .opgh{margin:14px 0 2px;font-size:.9rem}.oplist .opgh:first-child{margin-top:0}
 .oplist .opgn{margin:0 0 6px}
 .act.incl{color:var(--accent)}
+.exside.handed .extext{opacity:.45}
+.exincs{display:grid;gap:10px}
+.exincs h3{margin:0;font-size:.95rem}
+.exinc{display:grid;gap:4px}
+.exinc textarea{width:100%;font:.86rem/1.5 var(--mono);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);resize:vertical}
+.exinc.handed textarea{border-color:var(--accent)}
+.exinc .exst{margin-right:auto}
+#requestView .cmpbox{width:min(760px,100%);height:auto;max-height:calc(100vh - 32px);grid-template-rows:auto minmax(0,1fr)}
+#requestView textarea{width:100%;font:.86rem/1.5 var(--mono);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);resize:vertical}
+#requestView .reqfull pre{white-space:pre-wrap;overflow-wrap:anywhere;font:.78rem/1.5 var(--mono);max-height:34vh;overflow:auto;background:var(--code-bg);padding:8px 10px;border-radius:6px;margin:6px 0 0}
+#requestView .reqfull summary{cursor:pointer;color:var(--muted);font-size:.86rem}
 .opctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:8px}
 .opctl label.chk{font-size:.8rem}
 .tag.pin{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
@@ -1309,6 +1320,7 @@ html.motion-off *, html.motion-off *::before, html.motion-off *::after{transitio
   <div class="sethead"><div class="cmptitle"><h2 id="ioTitle">Import / export</h2><p class="note">A project as JSON, to back it up or move it to another Treechats.</p></div><div class="bar"><button class="btn" data-modalclose>Done <kbd class="inv">Esc</kbd></button></div></div>
   <div class="sfbody"><textarea id="ioText" spellcheck="false" aria-label="Project as JSON"></textarea>
     <div class="bar"><button class="btn" id="copyJson">Copy this project as JSON</button><button class="btn" id="loadJson">Import pasted JSON as a new project</button><button class="btn" data-openimport>Import chats from Claude, ChatGPT or text…</button></div></div></div></div>
+<div class="setwrap" id="requestView" hidden><div class="cmpbox smallbox" role="dialog" aria-modal="true" aria-labelledby="reqTitle"></div></div>
 <div class="setwrap" id="excerptView" hidden><div class="cmpbox exbox" role="dialog" aria-modal="true" aria-labelledby="exTitle"></div></div>
 <div class="setwrap" id="mapView" hidden><div class="cmpbox mapbox" role="dialog" aria-modal="true" aria-labelledby="mapTitle"></div></div>
 <div class="setwrap" id="compare" hidden><div class="cmpbox" role="dialog" aria-modal="true" aria-labelledby="cmpTitle"></div></div>
@@ -1821,8 +1833,8 @@ function acceptSlash(run){
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
 /* A prompt with its {placeholders} filled. A value whose placeholder was edited out is added at the end, so Claude
    always gets the material. Tools that need a set answer shape get it appended, since Treechats reads the answer. */
-function fillPrompt(k, vars){
-  let t=promptText(k); const rest=[];
+function fillPrompt(k, vars, tpl){
+  let t=tpl ?? promptText(k); const rest=[];
   for(const [name, val] of Object.entries(vars)){ const tag='{'+name+'}'; if(t.includes(tag)) t=t.split(tag).join(val); else if(val) rest.push(val); }
   if(rest.length) t+='\n\n'+rest.join('\n\n');
   return PROMPTS[k].fmt ? t+'\n\n'+PROMPTS[k].fmt : t;
@@ -3719,7 +3731,9 @@ function paintSummary(id){
   const ed=document.getElementById('edit'); if(ed && editorFor===id && document.activeElement!==ed) ed.value=n.text;
 }
 async function summarizeInto(id, conversation, fallback){
-  const input=fillPrompt('summarize', {conversation});
+  const tpl=await askTemplate('summarize', {conversation}, 'Summary');
+  if(tpl==null){ const n=S.nodes[id]; if(n){ n.text=fallback.text; if(fallback.reply) n.reply=fallback.reply; delete n.pending; } save(); render(editorFor===id); toast('No summary was written; the plain version was kept.'); return; }
+  const input=fillPrompt('summarize', {conversation}, tpl);
   const ctl=new AbortController(); sumGen={id, ctl};
   paintSummary(id);
   let failed=null;
@@ -4019,6 +4033,8 @@ function listOptions(reply){
 const FAN_ASK = (text, reply) => fillPrompt('fan', {message:clip(text||'',4000), reply:clip(reply,24000)});
 async function openFan(id){
   const n=S.nodes[id]; if(!n || !n.reply) return;
+  let tpl=null;
+  if(sampleState==='ready'){ tpl=await askTemplate('fan', {message:clip(n.text||'',4000), reply:clip(n.reply,24000)}, `Fan out #${id}`); if(tpl==null) return; }
   resendFor=null;
   if(fan && fan.ctl) fan.ctl.abort();
   const ctl=new AbortController();
@@ -4027,7 +4043,7 @@ async function openFan(id){
   let res=null, note='';
   if(sampleState==='ready' && sampleFn && sampleFn.json){
     try{
-      const d=await sampleFn.json(FAN_ASK(n.text, n.reply), {modelTier:'quick', cache:false, signal:ctl.signal});
+      const d=await sampleFn.json(fillPrompt('fan', {message:clip(n.text||'',4000), reply:clip(n.reply,24000)}, tpl), {modelTier:'quick', cache:false, signal:ctl.signal});
       const list=Array.isArray(d && d.options) ? d.options.filter(o=>o && typeof o.title==='string' && typeof o.prompt==='string' && o.prompt.trim()).slice(0,10) : null;
       if(list) res={options:list.map(o=>({title:clip(o.title.trim(),48), prompt:o.prompt.trim()})), recommended: Number.isInteger(d.recommended) && d.recommended>=0 && d.recommended<list.length ? d.recommended : null};
     }catch(e){ note='Claude couldn’t read the options, so they come from the lists in the reply.'; }
@@ -4306,6 +4322,8 @@ let distill=null;
 async function openDistill(id){
   if(id==null || !S.nodes[id]){ toast('Select a prompt first. The brief covers its chat up to it.'); return; }
   if(sampleState!=='ready'){ toast('Distill needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
+  const convo0=turnsFor(id, true).map(t=>`${t.role==='user'?'User':'Claude'}: ${t.content}`).join('\n\n');
+  const tpl=await askTemplate('distill', {conversation:convo0}, `Distill up to #${id}`); if(tpl==null) return;
   if(distill && distill.ctl) distill.ctl.abort();
   closeCompare && cmpFor!=null && closeCompare();
   const ctl=new AbortController(), d={id, status:'loading', text:'', ctl};
@@ -4313,7 +4331,7 @@ async function openDistill(id){
   if(sel!==id) select(id); else animRender([id]);
   const el=treeEl.querySelector('.distill'); if(el) el.scrollIntoView({block:'nearest', behavior: Motion.reduced()?'auto':'smooth'});
   const convo=turnsFor(id, true).map(t=>`${t.role==='user'?'User':'Claude'}: ${t.content}`).join('\n\n');
-  const input=fillPrompt('distill', {conversation:convo});
+  const input=fillPrompt('distill', {conversation:convo}, tpl);
   try{
     const r=await sampleFn(input, {modelTier:opts.model, cache:false, signal:ctl.signal, onText:({text})=>{ if(distill===d){ d.text=text; const b=treeEl.querySelector('.distill .rbody'); if(b) b.innerHTML=md(text); } }});
     if(distill!==d) return;
@@ -4539,10 +4557,11 @@ const Agent=(()=>{
       let ex=null;
       if(mode==='excerpt'){
         const n=t.nodes[a.prompt], e=a.excerpt||{}, p=SM.piecesFromText(n.text||'', e.prompt||[]), r=SM.piecesFromText(n.reply||'', e.reply||[]);
+        const ed={}, edOf={}; if(typeof e.prompt_text==='string'){ ed.p=e.prompt_text; edOf.p=h5(n.text||''); } if(typeof e.reply_text==='string'){ ed.r=e.reply_text; edOf.r=h5(n.reply||''); }
         const miss=[...p.missing.map(x=>'prompt: "'+clip(x,60)+'"'), ...r.missing.map(x=>'reply: "'+clip(x,60)+'"')];
         if(miss.length) throw new Error(`These pieces aren’t in #${a.prompt} exactly as given, so nothing changed: ${miss.join('; ')}. Copy them from get_prompt.`);
-        if(!p.pieces.length && !r.pieces.length) throw new Error('Pass the pieces to keep in excerpt.prompt and/or excerpt.reply.');
-        ex={p:p.pieces, r:r.pieces};
+        if(!p.pieces.length && !r.pieces.length && !Object.keys(ed).length) throw new Error('Pass the pieces to keep in excerpt.prompt and/or excerpt.reply, or your own wording in excerpt.prompt_text or excerpt.reply_text.');
+        ex={p:p.pieces, r:r.pieces, ...(Object.keys(ed).length?{ed, edOf}:{})};
       }
       const by=a.agent||'agent';
       change(sid, ()=>{ for(const x of ids){ const n=S.nodes[x];
@@ -5360,11 +5379,11 @@ function rowHTML(id, pathSet){
   /* actions sit in a row under the prompt: in Chat view under every message (shown on hover, like a chat app),
      in the full view under the selected prompt */
   if(!pick && !isM && !editingHere){
-    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${promptTime(n)}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button>${includeBtn(n, id)}<button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
+    if(opts.simple) h+=`<div class="uacts" data-key="ua${n.alt ?? id}">${promptTime(n)}${includeBtn(n, id)}<button class="act" data-copyprompt="${id}">Copy</button><button class="act" data-promptedit="${id}">Edit</button><button class="act" data-openeditor="${id}" title="Switch to Editor with this prompt selected: its context in the inspector, and every operation">Open in Editor</button>${forkHTML(id)}</div>`;
     else if(id===sel){
       const nRp = sampleState==='ready' && !liveGen(id) && !(replayAsk && replayAsk.at===id) ? replayCount(lineFrom(id)) : 0;
       const rp = nRp>1 ? `<button class="act" data-replayask="${id}" title="Re-send this prompt and the ${nRp-1} below it with the context as it is now, as new versions">${AI}Replay from here</button>` : '';
-      h+=`<div class="pacts" data-key="pa${id}"><button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${includeBtn(n, id)}${tog}${fold}${rp}${promptTime(n)}</div>`;
+      h+=`<div class="pacts" data-key="pa${id}">${includeBtn(n, id)}<button class="act" data-promptedit="${id}" title="Edit this prompt">Edit</button>${rp}${tog}${fold}${promptTime(n)}</div>`;
     }
   }
   if(n.note) h+=`<p class="pnote" data-key="nt${id}"><span>Note</span>${esc(n.note)}</p>`;
@@ -5490,6 +5509,62 @@ function resendHTML(id){
     <div class="bar"><button class="btn primary" data-resend="go">Send on a new branch <kbd class="inv">${sendKbd()}</kbd></button><button class="btn" data-resend="cancel">Cancel</button></div>
     <p class="note">The original prompt and its reply stay on their branch. Switch between them with ‹ ›.</p></div>`;
 }
+/* ---- Reviewing a ✦ request before it goes ----
+   ✦ tools you start yourself (a summary for Include as, Squash or Reroot, Distill, Fan out) send an instruction from
+   Settings › Prompts. With "Show me first" (Settings › Prompts), or a Shift-click on any ✦ button, a card shows that
+   instruction before it's sent: change it for this one use, or keep the change as your default. Review asks every
+   time anyway. Checks that run on their own (naming, Replay and loop checks) never stop to ask. */
+let reviewNext=0;
+document.addEventListener('click', e=>{ if(!e.shiftKey) return; const b=e.target.closest('button'); if(b && (b.textContent||'').includes('✦')) reviewNext=Date.now(); }, true);
+const reqEl=()=>document.getElementById('requestView');
+let reqUI=null;
+/* the instruction to use for this request: your default, or what you write in the card (null if you cancel) */
+function askTemplate(k, vars, label){
+  const want = set('aiReview')==='review' || Date.now()-reviewNext<2500;
+  reviewNext=0;
+  if(!want) return Promise.resolve(promptText(k));
+  return new Promise(res=>{
+    if(reqUI) reqUI.res(null);
+    reqUI={k, vars, label, res};
+    paintRequest(); openPanel(reqEl());
+    const t=document.getElementById('reqText'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(0,0); }
+  });
+}
+function paintRequest(){
+  const box=reqEl().querySelector('.cmpbox'); if(!reqUI){ box.innerHTML=''; return; }
+  const {k, label}=reqUI, P=PROMPTS[k];
+  box.innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="reqTitle">${AI}${esc(label)}</h2><p class="note">The instruction Claude gets. Change it for this one use, or keep the change as your default.</p></div>
+      <div class="bar"><button class="btn" data-reqcancel>Cancel</button><button class="btn primary" data-reqsend>Send <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button></div></div>
+    <div class="sfbody">
+      <textarea id="reqText" rows="9" aria-label="The instruction for ${esc(label)}">${esc(promptText(k))}</textarea>
+      <p class="note">${P.help}${P.fmt?' Treechats adds a line asking for its answer as JSON, so it can read it.':''}</p>
+      <label class="chk"><input type="checkbox" id="reqSave"> <span>Make this my default (Settings › Prompts › ${esc(P.label)})</span></label>
+      <details class="reqfull"><summary>The whole request, filled in</summary><pre id="reqFull"></pre></details>
+      ${setRow('Before a ✦ tool sends its request', 'Shift-click a ✦ button to see this once either way.', segs('aiReview',[['send','Send it right away'],['review','Show me first']],'Before a ✦ tool sends its request'))}
+    </div>`;
+  fillReqFull();
+}
+function fillReqFull(){ const t=document.getElementById('reqText'), p=document.getElementById('reqFull'); if(t && p && reqUI) p.textContent=clip(fillPrompt(reqUI.k, reqUI.vars, t.value), 20000); }
+function finishRequest(send){
+  if(!reqUI) return; const {k, res}=reqUI, t=document.getElementById('reqText'), keep=document.getElementById('reqSave');
+  const v = send && t ? t.value : null;
+  if(v!=null && keep && keep.checked){ opts.prompts[k] = v===PROMPTS[k].def ? null : v; save(); toast(`Saved as your default for ${PROMPTS[k].label}`); }
+  reqUI=null; closePanel(reqEl()); res(v!=null && v.trim() ? v : (send ? promptText(k) : null));
+}
+function initRequest(){
+  const el=reqEl();
+  el.addEventListener('click', e=>{
+    if(e.target===el || e.target.closest('[data-reqcancel]')){ finishRequest(false); return; }
+    if(e.target.closest('[data-reqsend]')){ finishRequest(true); return; }
+    const b=e.target.closest('[data-set="aiReview"]'); if(b){ opts.aiReview=b.dataset.val; save(); for(const x of el.querySelectorAll('[data-set="aiReview"]')) x.setAttribute('aria-pressed', String(x===b)); }
+  });
+  el.addEventListener('input', e=>{ if(e.target.id==='reqText') fillReqFull(); });
+  el.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); finishRequest(false); }
+    else if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); finishRequest(true); }
+  });
+}
+
 /* ---- Include as (send modes) ----
    How much of a turn the prompts below it send: full, a summary in place of the reply, an excerpt (only highlighted
    parts), the prompt only, the reply only, or nothing (Leave out, n.skip). The rules live in sendmodes.js, shared with
@@ -5526,7 +5601,8 @@ function sendMenu(anchor, ids, o={}){
       disabled:(needsReply && !anyReply) || (m==='excerpt' && ids.length>1) || (m==='out' && lockOut),
       run:()=> m==='excerpt' ? openExcerpt(ids[0]) : setSendMode(ids, m)});
   }
-  if(one && cur==='summary') items.push({sep:true}, {label:'Edit the summary', run:()=>{ sumEditFor=one.id; showSendNote(one.id); }}, ...(sampleState==='ready'?[{label:`${AI}Write a new summary`, run:()=>summarizeTurn(DB.current, one.id)}]:[]));
+  if(one && cur==='summary') items.push({sep:true}, {label:'Edit the summary', run:()=>{ sumEditFor=one.id; showSendNote(one.id); }}, ...(sampleState==='ready'?[{label:`${AI}Write a new summary`, run:()=>rewriteSummary([one.id])}]:[]));
+  if(sampleState==='ready' && anyReply) items.push({sep:true}, {label:`${AI}Summary with my own instructions…`, note:'See and change what Claude is asked, this once', run:()=>{ reviewNext=Date.now(); rewriteSummary(ids.filter(x=>S.nodes[x].reply)); }});
   openMenu(anchor, items);
 }
 /* sets the mode of these turns, with Undo; a summary that's missing or out of date gets written */
@@ -5541,15 +5617,28 @@ function setSendMode(ids, mode){
   } });
   if(mode==='summary'){
     const need=ids.filter(x=>S.nodes[x].reply && (!SM.hasSummary(S.nodes[x]) || SM.stale(S.nodes[x],h5).length));
-    if(need.length && sampleState==='ready') (async()=>{ const sid=DB.current; for(const x of need) await summarizeTurn(sid, x); })();
+    if(need.length && sampleState==='ready') (async()=>{ const sid=DB.current, n0=S.nodes[need[0]];
+      const tpl=await askTemplate('summarizeReply', {prompt:n0.text||'', reply:n0.reply}, need.length>1 ? `Summaries of ${need.length} turns` : `Summary of #${need[0]}`);
+      if(tpl==null){ toast('No summary was written, so the full reply is still sent.'); return; }
+      for(const x of need) await summarizeTurn(sid, x, tpl); })();
     else if(need.length===1){ sumEditFor=need[0]; showSendNote(need[0]); }
   }
+}
+/* writes new summaries for these turns (and includes them as summaries), asking for the instruction once if you've
+   chosen to see it */
+async function rewriteSummary(ids){
+  ids=ids.filter(x=>S.nodes[x] && S.nodes[x].reply); if(!ids.length) return;
+  const sid=DB.current, n0=S.nodes[ids[0]];
+  const tpl=await askTemplate('summarizeReply', {prompt:n0.text||'', reply:n0.reply}, ids.length>1 ? `Summaries of ${ids.length} turns` : `Summary of #${ids[0]}`);
+  if(tpl==null) return;
+  if(ids.some(x=>SM.modeOf(S.nodes[x])!=='summary')) commit(`${ids.length>1?ids.length+' turns':'#'+ids[0]} included as summary`, ()=>{ for(const x of ids){ delete S.nodes[x].skip; S.nodes[x].send='summary'; } });
+  for(const x of ids) await summarizeTurn(sid, x, tpl);
 }
 /* Claude writes a turn's summary. It goes on the turn (n.sum) with a hash of the reply it summarizes; until it's
    written the full reply is still sent. */
 const sumJobs=new Map();
 let sumEditFor=null;
-async function summarizeTurn(sid, id){
+async function summarizeTurn(sid, id, tpl){
   const t=treeOf(sid), n=t && t.nodes[id]; if(!n || !n.reply) return {error:'That prompt has no reply to summarize.'};
   if(sampleState!=='ready') return {error:'Claude isn’t connected, so it can’t write the summary.'};
   const key=sid+':'+id; if(sumJobs.has(key)) return sumJobs.get(key);
@@ -5557,7 +5646,7 @@ async function summarizeTurn(sid, id){
   n.sum={...(keep||{}), pending:true}; if(sid===DB.current) showSendNote(id);
   const job=(async()=>{
     try{
-      const r=await sampleFn(fillPrompt('summarizeReply', {prompt:n.text||'', reply:n.reply}), {modelTier:opts.model, cache:false});
+      const r=await sampleFn(fillPrompt('summarizeReply', {prompt:n.text||'', reply:n.reply}, tpl), {modelTier:opts.model, cache:false});
       const text=(r.text||'').trim(); if(!text) throw new Error('empty');
       n.sum={text, of, by:'claude'};
       return {summary:text};
@@ -5600,11 +5689,11 @@ function sendNoteHTML(id){
     return `<div class="sendnote" data-key="sn${id}"><div class="snhead"><b>Included as a summary</b>${stale.length?'<span class="edtag warn" title="The reply was edited after this summary was written">reply changed since</span>':''}<span class="snacts">${acts}</span></div>${body}</div>`;
   }
   if(m==='excerpt'){
-    const ex=n.ex||{}, p=SM.texts(ex.p), r=SM.texts(ex.r), len=a=>a.reduce((x,t)=>x+t.length,0);
-    const side=(a,total,what)=>a.length ? `${a.length} part${a.length===1?'':'s'} of the ${what} (${len(a).toLocaleString()} of ${total.toLocaleString()} characters)` : `the whole ${what}`;
-    const what = `${side(p,(n.text||'').length,'prompt')} and ${side(r,n.reply.length,'reply')}`;
+    const ex=n.ex||{}, pe=SM.exSide(n,'p'), re=SM.exSide(n,'r'), p=SM.texts(ex.p), r=SM.texts(ex.r), len=a=>a.reduce((x,t)=>x+t.length,0);
+    const side=(e,a,total,what)=>e && e.edited ? `your own wording of the ${what}` : a.length ? `${a.length} part${a.length===1?'':'s'} of the ${what} (${len(a).toLocaleString()} of ${total.toLocaleString()} characters)` : `the whole ${what}`;
+    const what = `${side(pe,p,(n.text||'').length,'prompt')} and ${side(re,r,n.reply.length,'reply')}`, hand=(pe&&pe.edited)||(re&&re.edited);
     return `<div class="sendnote" data-key="sn${id}"><div class="snhead"><b>Included as an excerpt</b>${stale.length?`<span class="edtag warn" title="Some highlighted text is no longer in the ${stale.join(' or ')}">${esc(stale.join(' and '))} changed since</span>`:''}<span class="snacts"><button class="linkbtn" data-excerpt="${id}">Change highlights</button>${full}${menu}</span></div>
-      <p class="note">Only ${esc(what)}.</p>${r.length?`<details class="snmore"><summary>What’s included from the reply</summary><div class="sntext">${md(r.join(SM.JOIN))}</div></details>`:''}</div>`;
+      <p class="note">Only ${esc(what)}.${hand?' <span class="edtag" title="You wrote some of what\u2019s included, so it may say what the original didn\u2019t">edited by you</span>':''}</p>${re?`<details class="snmore"><summary>What\u2019s included from the reply</summary><div class="sntext">${md(re.text)}</div></details>`:''}</div>`;
   }
   const t = m==='prompt' ? 'This reply isn’t included: the prompts below get only the prompt above it.' : 'Only this reply is included: the prompts below don’t get the prompt above it.';
   return `<div class="sendnote" data-key="sn${id}"><div class="snhead"><b>${esc(modeName(m))}</b><span class="snacts">${full}${menu}</span></div><p class="note">${t}</p></div>`;
@@ -5612,7 +5701,7 @@ function sendNoteHTML(id){
 /* the reply's own text is shown dimmer when something else goes in its place */
 /* under the prompt: how it's included, and the menu to change it */
 const includeBtn = (n, id) => n.kind==='merge' ? '' : `<button class="act incl" data-sendmenu="${id}" aria-haspopup="menu" title="${esc(OPS.send.hint)}">Include as: ${esc(modeName(SM.modeOf(n)))} ▾</button>`;
-const replyUnsent = n => { const m=SM.modeOf(n); return !!n.reply && (m==='prompt' || (m==='summary' && SM.hasSummary(n)) || (m==='excerpt' && SM.texts((n.ex||{}).r).length>0)); };
+const replyUnsent = n => { const m=SM.modeOf(n); return !!n.reply && (m==='prompt' || (m==='summary' && SM.hasSummary(n)) || (m==='excerpt' && !!SM.exSide(n,'r'))); };
 
 /* clicks on the send-mode controls, in the tree and in Chat view; true when one was handled */
 function sendClick(e){
@@ -5621,7 +5710,7 @@ function sendClick(e){
   const se=e.target.closest('[data-sumedit]'); if(se){ sumEditFor=+se.dataset.sumedit; showSendNote(sumEditFor); setTimeout(()=>{ const t=document.getElementById('sumEditText'); if(t) t.focus({preventScroll:true}); }, 30); return true; }
   const ss=e.target.closest('[data-sumsave]'); if(ss){ saveSummary(+ss.dataset.sumsave); return true; }
   if(e.target.closest('[data-sumcancel]')){ const id=sumEditFor; sumEditFor=null; showSendNote(id); return true; }
-  const sr=e.target.closest('[data-sumregen]'); if(sr){ summarizeTurn(DB.current, +sr.dataset.sumregen); return true; }
+  const sr=e.target.closest('[data-sumregen]'); if(sr){ rewriteSummary([+sr.dataset.sumregen]); return true; }
   const ex=e.target.closest('[data-excerpt]'); if(ex){ openExcerpt(+ex.dataset.excerpt); return true; }
   return !!e.target.closest('.sendnote');
 }
@@ -5648,7 +5737,8 @@ function openExcerpt(id){
   const n=S.nodes[id]; if(!n || n.kind==='merge') return;
   const ranges=(text, list)=>{ let lost=0; const out=[]; for(const pc of Array.isArray(list)?list:[]){ const p=typeof pc==='string'?{s:-1,e:-1,t:pc}:pc; const at=p&&p.t?SM.locate(text, p):null; if(at) out.push(at); else lost++; } return {out, lost}; };
   const ex=n.ex||{}, p=ranges(n.text||'', ex.p), r=ranges(n.reply||'', ex.r);
-  exUI={id, sid:DB.current, p:p.out, r:r.out, lost:p.lost+r.lost};
+  const ed=(n.ex && n.send==='excerpt' && n.ex.ed) || {};
+  exUI={id, sid:DB.current, p:p.out, r:r.out, lost:p.lost+r.lost, ed:{p:typeof ed.p==='string'?ed.p:null, r:typeof ed.r==='string'?ed.r:null}};
   paintExcerpt(); openPanel(exEl());
   const first=exEl().querySelector('[data-extext]'); if(first) first.focus({preventScroll:true});
 }
@@ -5676,24 +5766,28 @@ function exSideHTML(side){
   h+=esc(text.slice(at));
   const kept=rs.reduce((x,[s,e])=>x+e-s,0), what=side==='p'?'Your prompt':'Claude’s reply';
   const state = !text ? 'empty' : rs.length ? `${rs.length} part${rs.length===1?'':'s'} · ${kept.toLocaleString()} of ${text.length.toLocaleString()} characters` : `sent whole · ${text.length.toLocaleString()} characters`;
-  return `<section class="exside"><div class="exsidehead"><h3>${what}</h3><span class="note">${state}</span><span class="bar">${text?`<button class="btn xs" data-exall="${side}">All</button><button class="btn xs" data-exclear="${side}" ${rs.length?'':'disabled'}>Clear</button>`:''}</span></div>
+  const hand=exUI.ed[side]!=null;
+  return `<section class="exside ${hand?'handed':''}"><div class="exsidehead"><h3>${what}</h3><span class="note">${hand?'you edited what\u2019s included, below':state}</span><span class="bar">${text?`<button class="btn xs" data-exall="${side}">All</button><button class="btn xs" data-exclear="${side}" ${rs.length?'':'disabled'}>Clear</button>`:''}</span></div>
     ${text?`<div class="extext" data-extext="${side}" tabindex="0" aria-label="${what}: select text, then press Enter or the Highlight button to add it">${h}</div>`:'<p class="note">Nothing here.</p>'}</section>`;
 }
-function exPreview(){
-  const n=S.nodes[exUI.id], t={...n, send:'excerpt', skip:false, ex:{p:SM.piecesFrom(n.text||'', exUI.p), r:SM.piecesFrom(n.reply||'', exUI.r)}};
-  const {full}=sentOf(n), o=SM.apply(t, full.user, full.reply, promptText);
-  return `<div class="expv"><b>The person</b><pre>${esc(o.user)}</pre>${n.reply?`<b>Claude</b><pre>${esc(o.reply)}</pre>`:''}</div>`;
+/* what a side would include from its highlights alone: the pieces, or the whole text when there are none */
+function exComputed(side){ const t=exText(side), ps=SM.piecesFrom(t, exUI[side]); return ps.length ? ps.map(p=>p.t).join(SM.JOIN) : t; }
+/* the preview: what each side includes, editable. Typing makes it your own wording for that side. */
+function exIncludedHTML(side){
+  const n=S.nodes[exUI.id]; if(side==='r' && !n.reply) return '';
+  const hand=exUI.ed[side]!=null, v=hand ? exUI.ed[side] : exComputed(side), what=side==='p'?'From your prompt':'From Claude\u2019s reply';
+  return `<div class="exinc ${hand?'handed':''}" data-exinc="${side}"><div class="exsidehead"><b>${what}</b><span class="note exst">${hand?'edited by you':exUI[side].length?'from your highlights':'the whole text'}</span>${hand?`<button class="linkbtn" data-exback="${side}">Back to highlights</button>`:''}</div>
+    <textarea data-exed="${side}" rows="${Math.min(10, Math.max(3, v.split('\n').length+1))}" aria-label="${what}, as it will be included">${esc(v)}</textarea></div>`;
 }
 function paintExcerpt(){
   const box=exEl().querySelector('.cmpbox'); if(!exUI){ box.innerHTML=''; return; }
   const n=S.nodes[exUI.id];
-  const open=box.querySelector('details.expvwrap')?.open;
   box.innerHTML=`<div class="sethead"><div class="cmptitle"><h2 id="exTitle">Excerpt of #${exUI.id}</h2><p class="note">Highlight what the prompts below should get. Drag over any text, or click a paragraph, list item or code block; click a highlight to remove it. A side with nothing highlighted is sent whole.</p></div>
       <div class="bar"><button class="btn" data-excancel>Cancel</button><button class="btn primary" data-exsave>Save excerpt <kbd class="inv">${IS_MAC?'⌘↵':'Ctrl ↵'}</kbd></button></div></div>
     <div class="exbody">${exUI.lost?`<p class="note warn">${exUI.lost} highlighted part${exUI.lost===1?' is':'s are'} no longer in the text and ${exUI.lost===1?'was':'were'} dropped.</p>`:''}
       ${exSideHTML('p')}${n.reply?exSideHTML('r'):''}
-      <div class="exfoot"><button class="btn sm" data-exadd title="Adds the text you've selected (for keyboard and touch: select, then press this)">Highlight selection</button>
-      <details class="expvwrap" ${open?'open':''}><summary>Preview what’s sent</summary>${exPreview()}</details></div></div>`;
+      <div class="exfoot"><button class="btn sm" data-exadd title="Adds the text you've selected (for keyboard and touch: select, then press this)">Highlight selection</button></div>
+      <section class="exincs"><h3>What\u2019s included</h3><p class="note">This is what the prompts below get. Type here to word it yourself: it\u2019s then marked as edited by you, since it may say what the original didn\u2019t.</p>${exIncludedHTML('p')}${exIncludedHTML('r')}</section></div>`;
 }
 /* where a point or a selection boundary is, as an offset into a side's text */
 function exOffset(box, node, off){ const r=document.createRange(); r.setStart(box,0); r.setEnd(node,off); return r.toString().length; }
@@ -5701,7 +5795,9 @@ function exAddSelection(){
   const s=getSelection(); if(!s || s.isCollapsed || !s.rangeCount) return false;
   const r=s.getRangeAt(0), a=r.startContainer.nodeType===1?r.startContainer:r.startContainer.parentElement, b=r.endContainer.nodeType===1?r.endContainer:r.endContainer.parentElement;
   const box=a && a.closest('[data-extext]'); if(!box || !b || b.closest('[data-extext]')!==box) return false;
-  const side=box.dataset.extext, s0=exOffset(box, r.startContainer, r.startOffset), e0=exOffset(box, r.endContainer, r.endOffset);
+  const side=box.dataset.extext;
+  if(exUI.ed[side]!=null){ s.removeAllRanges(); toast('You\u2019ve worded this side yourself. Choose Back to highlights to use highlights again.'); return true; }
+  const s0=exOffset(box, r.startContainer, r.startOffset), e0=exOffset(box, r.endContainer, r.endOffset);
   if(e0<=s0) return false;
   /* a selection that starts or ends inside a word takes the whole word */
   const t=exText(side), w=c=>/[\p{L}\p{N}_]/u.test(c||''); let a0=s0, b0=e0;
@@ -5712,6 +5808,7 @@ function exAddSelection(){
 function exClick(e){
   const box=e.target.closest('[data-extext]'); if(!box) return;
   const side=box.dataset.extext, hl=e.target.closest('mark.exhl');
+  if(exUI.ed[side]!=null){ toast('You\u2019ve worded this side yourself. Choose Back to highlights to use highlights again.'); return; }
   if(hl){ const rs=exMerge(exUI[side]); rs.splice(+hl.dataset.exi,1); exUI[side]=rs; paintExcerpt(); refocusSide(side); return; }
   let node=null, off=0;
   if(document.caretRangeFromPoint){ const cr=document.caretRangeFromPoint(e.clientX, e.clientY); if(cr){ node=cr.startContainer; off=cr.startOffset; } }
@@ -5727,9 +5824,12 @@ function saveExcerpt(){
   if(!exUI) return; const {id, sid}=exUI;
   if(sid!==DB.current || !S.nodes[id]){ closeExcerpt(); return; }
   const n=S.nodes[id], p=SM.piecesFrom(n.text||'', exUI.p), r=SM.piecesFrom(n.reply||'', exUI.r);
+  /* a side typed back to exactly what its highlights give isn't really edited */
+  const ed={}, edOf={};
+  for(const [side, src] of [['p', n.text||''], ['r', n.reply||'']]){ const v=exUI.ed[side]; if(v!=null && v!==exComputed(side)){ ed[side]=v; edOf[side]=h5(src); } }
   closeExcerpt();
-  if(!p.length && !r.length){ if(n.send==='excerpt') setSendMode([id], 'full'); toast(`Nothing was highlighted, so #${id} is included in full.`); return; }
-  commit(`#${id} included as an excerpt`, ()=>{ delete n.skip; n.send='excerpt'; n.ex={p, r}; });
+  if(!p.length && !r.length && !Object.keys(ed).length){ if(n.send==='excerpt') setSendMode([id], 'full'); toast(`Nothing was highlighted, so #${id} is included in full.`); return; }
+  commit(`#${id} included as an excerpt${Object.keys(ed).length?', worded by you':''}`, ()=>{ delete n.skip; n.send='excerpt'; n.ex={p, r, ...(Object.keys(ed).length?{ed, edOf}:{})}; });
 }
 function initExcerpt(){
   const el=exEl();
@@ -5739,6 +5839,14 @@ function initExcerpt(){
     if(e.target.closest('[data-exadd]')){ if(!exAddSelection()) toast('Select some text in the prompt or the reply first.'); return; }
     const all=e.target.closest('[data-exall]'); if(all){ const sd=all.dataset.exall; exUI[sd]=[[0, exText(sd).length]]; paintExcerpt(); return; }
     const cl=e.target.closest('[data-exclear]'); if(cl){ exUI[cl.dataset.exclear]=[]; paintExcerpt(); return; }
+    const bk=e.target.closest('[data-exback]'); if(bk){ exUI.ed[bk.dataset.exback]=null; paintExcerpt(); return; }
+  });
+  /* typing in what's included makes it your own wording for that side */
+  el.addEventListener('input', e=>{
+    const t=e.target.closest('[data-exed]'); if(!t || !exUI) return;
+    const side=t.dataset.exed, was=exUI.ed[side]!=null;
+    exUI.ed[side]=t.value;
+    if(!was){ const pos=t.selectionStart; paintExcerpt(); const t2=exEl().querySelector(`[data-exed="${side}"]`); if(t2){ t2.focus({preventScroll:true}); t2.setSelectionRange(pos,pos); } }
   });
   /* a drag adds what it covered; a click with no drag toggles the block under it (or removes a highlight) */
   let down=null;
@@ -6164,8 +6272,9 @@ function renderCtx(){
       const out = m.skip && e.id!==sel;
       /* what this turn sends now, under its mode (the selected prompt is always sent, even if left out) */
       const md0 = out ? 'out' : (m.send && SM.MODES.includes(m.send) ? m.send : 'full'), {full, sent} = sentOf(m), go = md0==='full' ? full : sent;
-      const pTxt = md0==='reply' && m.reply ? '<em>prompt not sent</em>' : esc(plainText(md0==='excerpt' && SM.texts((m.ex||{}).p).length ? SM.texts(m.ex.p).join(' […] ') : m.text)||'');
-      const rTxt = !m.reply ? '' : md0==='prompt' ? '<em>reply not sent</em>' : md0==='summary' && SM.hasSummary(m) ? '<b>summary:</b> '+esc(plainText(m.sum.text)) : md0==='excerpt' && SM.texts((m.ex||{}).r).length ? esc(plainText(SM.texts(m.ex.r).join(' […] '))) : esc(plainText(m.reply));
+      const pEx = md0==='excerpt' ? SM.exSide(m,'p') : null, rEx = md0==='excerpt' ? SM.exSide(m,'r') : null;
+      const pTxt = md0==='reply' && m.reply ? '<em>prompt not sent</em>' : esc(plainText(pEx ? pEx.text : m.text)||'');
+      const rTxt = !m.reply ? '' : md0==='prompt' ? '<em>reply not sent</em>' : md0==='summary' && SM.hasSummary(m) ? '<b>summary:</b> '+esc(plainText(m.sum.text)) : rEx ? esc(plainText(rEx.text)) : esc(plainText(m.reply));
       const marks=[m.by?`⚙ ${esc(m.by)}`:'', m.replyEdited?'edited':'', `${out?0:(tokOf(go.user)+tokOf(go.reply)).toLocaleString()} tok`].filter(Boolean).join(' · ');
       const toggle = `<button class="ctog" data-ctxmode="${e.id}" aria-haspopup="menu" title="How this turn is included in the prompts below: ${esc(SM.HINTS[md0])} Click to change.">${esc(modeName(md0).toLowerCase())} ▾</button>`;
       return `<li data-sel="${e.id}" class="${e.id===sel?'cur':''} ${out?'skipped':''} ${md0!=='full'&&!out?'moded':''}" ${out?'title="Left out: not sent"':''}><span class="cid">#${e.id}</span><span class="ct">${pTxt}${m.reply?`<span class="cr">${rTxt}</span>`:''}<span class="cmk">${marks}</span></span>${toggle}</li>`;
@@ -7464,7 +7573,7 @@ function closePanel(el){ el.hidden=true; document.body.style.overflow=''; if(pan
 function openSpaceFiles(){ renderSpaceFiles(); openPanel(sfEl()); }
 function openIo(text){ const t=document.getElementById('ioText'); t.value = text ?? JSON.stringify(S,null,2); openPanel(ioEl()); t.focus({preventScroll:true}); if(text!=null) t.select(); }
 for(const el of [sfEl(), ioEl()]) el.addEventListener('click', e=>{ if(e.target===el || e.target.closest('[data-modalclose]')) closePanel(el); });
-initExcerpt();
+initExcerpt(); initRequest();
 document.getElementById('copyJson').onclick=()=>copyText(JSON.stringify(S,null,2));
 document.getElementById('loadJson').onclick=()=>{
   let d; try{ d=JSON.parse(document.getElementById('ioText').value); }catch(e){ toast('That isn’t valid JSON. Paste a tree exported from this page.'); return; }
@@ -7544,7 +7653,7 @@ const ACCENTS={
 };
 const TEXT_SIZES={small:['Small',15], default:['Default',16], large:['Large',17.5], xl:['Larger',19]};
 const FONTS={plex:['Treechats', null], system:['System', '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif']};
-const SET_DEFAULTS={replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, branchSettings:false, allowCommands:false, replyBox:'theme', replyBoxChat:'theme', font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
+const SET_DEFAULTS={aiReview:'send', replyLen:'short', nameBranches:true, nameConvs:false, nameSpaces:false, map:true, theme:'system', palette:'sage', accent:'blue', textSize:'default', ctxMarks:true, branchSettings:false, allowCommands:false, replyBox:'theme', replyBoxChat:'theme', font:'plex', density:'comfortable', motion:'system', sendKey:'enter', opKeys:true};
 /* Palette, accent and reply colors are chosen for light and dark mode separately, stored as "palette@dark" and so on;
    a mode with no choice of its own uses the plain setting (all there was before), then the default */
 const PER_MODE=['palette','accent','replyBox','replyBoxChat'];
@@ -7882,7 +7991,8 @@ function renderSettings(){
     h+=privacyHTML();
   } else if(tab==='prompts'){
     const custom=Object.keys(PROMPTS).filter(k=>promptText(k)!==PROMPTS[k].def).length;
-    h+=`<section class="setsec"><p class="note">Every piece of text Treechats sends to Claude on your behalf. Words in {braces} are filled in when it\u2019s sent; if you remove one, that material is added at the end instead. Edits apply from the next request.</p></section>`;
+    h+=`<section class="setsec"><p class="note">Every piece of text Treechats sends to Claude on your behalf. Words in {braces} are filled in when it\u2019s sent; if you remove one, that material is added at the end instead. Edits apply from the next request.</p>
+      ${setRow('Before a ✦ tool sends its request', 'For summaries (Include as, Squash, Reroot), Distill and Fan out. Show me first opens the instruction so you can change it for that one use. Shift-click a ✦ button to see it once either way. Review always asks; naming and checks never stop to ask.', segs('aiReview',[['send','Send it right away'],['review','Show me first']],'Before a ✦ tool sends its request'))}</section>`;
     for(const [g, title, note] of PROMPT_GROUPS){
       const ks=Object.keys(PROMPTS).filter(k=>PROMPTS[k].group===g); if(!ks.length) continue;
       h+=`<section class="setsec"><h3>${title}</h3>${note?`<p class="note">${note}</p>`:''}<div class="pes">${ks.map(k=>promptEditor(k,'-set')).join('')}</div></section>`;
