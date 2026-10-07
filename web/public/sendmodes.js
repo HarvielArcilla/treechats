@@ -1,4 +1,4 @@
-/* Send modes: how much of one turn (a prompt and its reply) goes into the requests after it.
+/* Include as (send modes): how much of one turn (a prompt and its reply) goes into the requests after it.
 
    - full: the prompt and the reply, as they are
    - summary: the prompt, and a summary in place of the reply
@@ -28,12 +28,13 @@
   const DEFAULTS = {
     summarizeReply:'Summarize the reply below so the summary can stand in for it when the conversation continues. Keep what was decided or concluded, key facts, names, numbers and code identifiers, and anything the person may refer back to. If the reply was a dead end, say what was tried and why it didn’t work. Write it as the assistant who gave the reply, in plain prose under 120 words, with no preamble.\n\nThe message it answered:\n{prompt}\n\nThe reply:\n{reply}',
     sendSummary:'(Shortened: a summary of my original reply.)\n\n{summary}',
-    sendExcerptPrompt:'(Only parts of my original message are included; […] marks what was left out.)\n\n{excerpt}',
-    sendExcerptReply:'(Only parts of my original reply are included; […] marks what was left out.)\n\n{excerpt}',
+    sendExcerptPrompt:'{excerpt}',
+    sendExcerptReply:'{excerpt}',
     sendNoReply:'(My reply to this message is left out of the conversation.)',
     sendNoPrompt:'(The message this reply answered is left out of the conversation.)',
   };
-  const JOIN = '\n\n[…]\n\n';
+  /* pieces of an excerpt are separated by a blank line */
+  const JOIN = '\n\n';
 
   const modeOf = n => n.skip ? 'out' : (n.send && MODES.includes(n.send) ? n.send : 'full');
   /* an excerpt's pieces are {s, e, t}: where they were and the text itself; the text is what's sent */

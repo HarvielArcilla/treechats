@@ -201,7 +201,7 @@ test('MCP: Claude Code can list, search and read the context of a saved chat', a
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(await mcpTransport(base));
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_chats', 'list_projects', 'regenerate', 'replay', 'search', 'send_mode', 'spawn', 'combine', 'judge', 'list_saved_prompts', 'review', 'describe', 'edit_prompt', 'fan_out', 'get_tree', 'operate', 'btw', 'loop'].sort());
+  assert.deepEqual(names, ['ask', 'distill', 'edit_reply', 'fork', 'get_context', 'get_prompt', 'leave_out', 'list_chats', 'list_projects', 'regenerate', 'replay', 'include_as', 'search', 'spawn', 'combine', 'judge', 'list_saved_prompts', 'review', 'describe', 'edit_prompt', 'fan_out', 'get_tree', 'operate', 'btw', 'loop'].sort());
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
 
   const full = (await call('get_context', { branch: 'main' })).content[0].text, ctx = full.slice(full.indexOf('<conversation>'));

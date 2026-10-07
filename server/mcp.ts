@@ -90,8 +90,24 @@ function report(d: Done, left?: number) {
 export function buildMcpServer(read: () => State | null) {
   const server = new McpServer(
     { name: 'treechats', version: '0.1.0' },
-    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Reading: use list_chats or search to find a chat, then get_context to bring the context of a branch or prompt into this session. Prompts are numbered (#12) within a project. Subagents: spawn starts a chat in a run project whose context you control exactly; ask continues it, fork tries an alternative from any prompt, leave_out and edit_reply change what it sees from then on, send_mode sends a turn as a summary, an excerpt, or its prompt or reply only (nothing is deleted), regenerate asks again, replay re-sends a prompt and the ones after it once you have changed the context above them, edit_prompt and fan_out work as in the editor, operate runs every other operation (describe lists them), get_tree shows the shape of a chat, review gets a fresh-eyes second opinion on a reply, loop sends the same prompt again after each reply until a condition is met, btw asks a side question with a chat\'s exact context without changing it, judge picks the best of several forks against your criteria, combine merges them into one reply, distill returns a short brief so only the brief needs to enter your own context. Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
+    { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Prompts are numbered (#12) within a project. The tools come in groups, named at the start of each title, the way they are laid out in the app.\n'
+      + 'Read: list_projects, list_chats and search find chats; get_prompt and get_tree show a prompt and the shape of a chat; get_context brings the context of a branch or prompt into this session; list_saved_prompts lists the person\'s prompt library.\n'
+      + 'Ask (subagents: chats in a run project whose context you control exactly): spawn starts one, ask continues it, regenerate asks again, edit_prompt changes a prompt, loop sends the same prompt again after each reply until a condition is met, btw asks a side question with a chat\'s exact context without changing it.\n'
+      + 'Context (what later prompts get; nothing is deleted): include_as includes a turn in full, as a summary, an excerpt, its prompt or reply only, or not at all (leave_out does the last too), edit_reply corrects a reply, replay re-sends prompts once you have changed the context above them, distill returns a short brief so only the brief needs to enter your own context.\n'
+      + 'Branch & compare: fork tries an alternative from any prompt, fan_out turns the options in a reply into branches, review gets a fresh-eyes second opinion on a reply, judge picks the best of several forks against your criteria, combine merges them into one reply.\n'
+      + 'Tree: operate runs the editor\'s other operations (branch, merge, copy and move, remove, and marks); describe lists them by group.\n'
+      + 'Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
   );
+  /* every tool's title starts with its group, the way the app lays them out: Read, Ask, Context, Branch & compare, Tree */
+  const GROUP: Record<string, string> = {
+    list_projects: 'Read', list_chats: 'Read', search: 'Read', get_context: 'Read', get_prompt: 'Read', get_tree: 'Read', list_saved_prompts: 'Read',
+    spawn: 'Ask', ask: 'Ask', regenerate: 'Ask', edit_prompt: 'Ask', loop: 'Ask', btw: 'Ask',
+    include_as: 'Context', leave_out: 'Context', edit_reply: 'Context', replay: 'Context', distill: 'Context',
+    fork: 'Branch & compare', fan_out: 'Branch & compare', review: 'Branch & compare', judge: 'Branch & compare', combine: 'Branch & compare',
+    operate: 'Tree', describe: 'Tree',
+  };
+  const register = server.registerTool.bind(server) as unknown as (name: string, cfg: { title?: string }, cb: unknown) => unknown;
+  (server as unknown as { registerTool: typeof register }).registerTool = (name, cfg, cb) => register(name, { ...cfg, title: `${GROUP[name] ? GROUP[name] + ' · ' : ''}${cfg.title || name}` }, cb);
   const withState = <A,>(fn: (s: State, a: A) => ReturnType<typeof text>) => async (a: A) => {
     const s = read();
     return s ? fn(s, a) : fail('Treechats has nothing saved yet. Open it in the browser and start a chat first.');
@@ -173,7 +189,7 @@ export function buildMcpServer(read: () => State | null) {
       const kids = v.all().filter((k) => k.parents.includes(n.id) && v.visible(k)).map((k) => '#' + k.id);
       const bs = v.branches().filter((b) => v.chain(b.tip).includes(n.id)).map((b) => b.name);
       return text([
-        `#${n.id} in "${v.title(v.rootOf(n.id))}" (${sp.name})${n.skip ? ' · left out of context' : n.send && n.send !== 'full' ? ` · sent as ${Send.LABELS[Send.modeOf(n)].toLowerCase()}` : ''}${n.star ? ' · starred' : ''}`,
+        `#${n.id} in "${v.title(v.rootOf(n.id))}" (${sp.name})${n.skip ? ' · left out of context' : n.send && n.send !== 'full' ? ` · included as ${Send.LABELS[Send.modeOf(n)].toLowerCase()}` : ''}${n.star ? ' · starred' : ''}`,
         `Follows: ${n.parents.map((p) => '#' + p).join(', ') || 'nothing (starts the chat)'} · Followed by: ${kids.join(', ') || 'nothing'} · Branches: ${bs.join(', ') || 'none'}`,
         n.kind === 'merge' ? `Merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}` : `\nPrompt:\n${n.text}`,
         n.reply ? `\nClaude's reply:\n${n.reply}` : '',
@@ -198,7 +214,7 @@ export function buildMcpServer(read: () => State | null) {
         count++;
         if (n.kind === 'merge') { lines.push(`${ind}#${n.id} ⤵ merge of ${n.from || '#' + n.parents[1]} into ${n.into || '#' + n.parents[0]}`); return; }
         const vs = n.alt != null ? v.all().filter((m) => m.alt === n.alt) : [];
-        const marks = [n.reply ? '' : 'no reply', n.skip ? 'left out' : n.send && n.send !== 'full' ? `sent as ${Send.LABELS[Send.modeOf(n)].toLowerCase()}` : '', n.replyEdited ? 'reply edited' : '', n.star ? '★' : '', n.note ? 'note' : '',
+        const marks = [n.reply ? '' : 'no reply', n.skip ? 'left out' : n.send && n.send !== 'full' ? `included as ${Send.LABELS[Send.modeOf(n)].toLowerCase()}` : '', n.replyEdited ? 'reply edited' : '', n.star ? '★' : '', n.note ? 'note' : '',
           n.combined ? 'combined' : '', n.reviewOf ? `review of #${n.reviewOf.id}` : '',
           n.set && Object.keys(n.set).length ? 'settings' : '', n.by ? `by ${n.by}` : '',
           vs.length > 1 ? `version ${vs.findIndex((m) => m.id === n.id) + 1}/${vs.length} (others: ${vs.filter((m) => m.id !== n.id).map((m) => '#' + m.id).join(', ')})` : '',
@@ -300,9 +316,9 @@ export function buildMcpServer(read: () => State | null) {
   server.registerTool('ask', { title: 'Continue a subagent', description: 'Send a follow-up to a subagent, continuing after a prompt (or at the end of a branch), and get the reply.', inputSchema: { run, agent, model, after: promptNo.optional().describe('Continue after this prompt number.'), branch: z.string().optional().describe('Or continue at the end of this branch.'), prompt: z.string().min(1) } }, act('ask', true));
   server.registerTool('fork', { title: 'Fork a subagent', description: 'Try an alternative: start a new branch after any prompt of a subagent, with a different follow-up and optionally different settings (system prompt, thinking, effort, temperature, max_tokens), and get the reply. The original line is kept.', inputSchema: { run, agent, model, ...bset, at: promptNo.describe('Branch off after this prompt number.'), prompt: z.string().min(1), name: z.string().max(40).optional().describe('A name for the new branch.') } }, act('fork', true));
   server.registerTool('leave_out', { title: 'Leave a turn out', description: 'Stop sending a prompt and its reply to the subagent from the prompts after it (a dead end, a wrong assumption), or include it again. Nothing is deleted.', inputSchema: { run, agent, prompt: promptNo, until: promptNo.optional().describe('Also every prompt down to this one (a stretch of the line).'), left_out: z.boolean().optional().describe('true (default) leaves it out, false includes it again.') } }, act('leave_out', false));
-  server.registerTool('send_mode', {
-    title: 'Choose how a turn is sent',
-    description: 'Change how much of a subagent turn (a prompt and its reply) the prompts after it send, without deleting anything: full; summary (a summary in place of the reply: pass your own, or leave it out and Claude writes one, which is a request); excerpt (only the exact pieces of text you pass, from the prompt and/or the reply; a side you pass nothing for goes whole); prompt_only; reply_only; left_out. full sends it as it is again.',
+  server.registerTool('include_as', {
+    title: 'Include a turn as…',
+    description: 'Choose how a subagent turn (a prompt and its reply) is included in the context of the prompts after it, without deleting anything: full; summary (a summary in place of the reply: pass your own, or leave it out and Claude writes one, which is a request); excerpt (only the exact pieces of text you pass, from the prompt and/or the reply; a side you pass nothing for goes whole); prompt_only; reply_only; left_out. full sends it as it is again.',
     inputSchema: {
       run, agent, prompt: promptNo,
       until: promptNo.optional().describe('Also every prompt down to this one (a stretch of the line). Not for excerpt.'),
@@ -314,14 +330,14 @@ export function buildMcpServer(read: () => State | null) {
       }).optional().describe('For excerpt: what to keep. Pieces must be copied exactly from the text (get_prompt shows it).'),
     },
   }, async (a) => {
-    if (a.mode !== 'summary' || a.summary) return act('send_mode', false)(a);
+    if (a.mode !== 'summary' || a.summary) return act('include_as', false)(a);
     /* Claude writes a summary for each prompt that needs one: reserve one request per prompt, and give back what wasn't used */
     let left: number | undefined, n = 1;
     try {
       if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
       if (a.until != null) { const s = read(); const sp = s && Object.values(s.db.spaces).find((x) => x.tree.nodes[a.until!] && x.tree.nodes[a.prompt]); if (sp) { const ch = new TreeView(sp.tree).chain(a.until); const i = ch.indexOf(a.prompt); if (i >= 0) n = ch.length - i; } }
       left = spend(String(a.run), n);
-      const d = await relay('send_mode', a) as Done & { requests?: number };
+      const d = await relay('include_as', a) as Done & { requests?: number };
       if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
       return text(report(d, left));
     } catch (e) {
@@ -333,7 +349,7 @@ export function buildMcpServer(read: () => State | null) {
   server.registerTool('regenerate', { title: 'Ask again', description: 'Get a new reply to a subagent prompt, as a new version beside the old one (which is kept), optionally with another model.', inputSchema: { run, agent, model, prompt: promptNo } }, act('regenerate', true));
   server.registerTool('replay', {
     title: 'Replay',
-    description: 'After you change a subagent\'s context (leave_out, send_mode, edit_reply, or an edit above), re-send a prompt and every prompt after it on its branch, one at a time, so their replies are written against the context as it is now. Each becomes a new version (the old ones are kept). By default it stops at a prompt that no longer makes sense after the new replies and tells you why. Costs one request per prompt plus a quick check per prompt after the first. Returns the last reply.',
+    description: 'After you change a subagent\'s context (leave_out, include_as, edit_reply, or an edit above), re-send a prompt and every prompt after it on its branch, one at a time, so their replies are written against the context as it is now. Each becomes a new version (the old ones are kept). By default it stops at a prompt that no longer makes sense after the new replies and tells you why. Costs one request per prompt plus a quick check per prompt after the first. Returns the last reply.',
     inputSchema: {
       run, agent, prompt: promptNo.describe('The first prompt to re-send.'),
       branch: z.string().optional().describe('Follow this branch to its end. Defaults to the branch through the prompt.'),
@@ -421,15 +437,23 @@ export function buildMcpServer(read: () => State | null) {
     rename_chat: 'prompt (any prompt in the chat); name (the new title)',
     model_settings: 'prompt; system, thinking, effort, temperature, max_tokens (any of them); value: false clears. Applies from that prompt on',
   };
+  /* the operations in groups, as in the editor's operations bar (plus marks, which sit on the prompt there) */
+  const OP_GROUPS: [string, string[]][] = [
+    ['Branch', ['branch', 'rename_branch', 'make_mainline']],
+    ['Merge', ['merge', 'unmerge', 'squash']],
+    ['Copy & move', ['rebase', 'cherry_pick', 'reroot']],
+    ['Remove', ['splice', 'delete']],
+    ['Marks and settings', ['star', 'note', 'rename_chat', 'model_settings']],
+  ];
   /* what a turn's send mode puts in place of its prompt or reply, for get_prompt */
   function sentNote(s: NonNullable<ReturnType<typeof read>>, n: Parameters<typeof Send.modeOf>[0]) {
     const m = Send.modeOf(n); if (m === 'full' || m === 'out') return '';
     const o = Send.apply(n, n.text || '', n.reply || '', tplOf(s));
     const stale = Send.stale(n, (x: string) => hash53(x).slice(-5));
-    return `\nSent as ${Send.LABELS[m].toLowerCase()} by the prompts after it${stale.length ? ` (the ${stale.join(' and ')} changed since it was made)` : ''}. What they send:\n${o.user ? `Prompt: ${o.user}` : 'Prompt: (nothing)'}\n${n.reply ? (o.reply ? `Reply: ${o.reply}` : 'Reply: (nothing)') : ''}`;
+    return `\nIncluded as ${Send.LABELS[m].toLowerCase()} by the prompts after it${stale.length ? ` (the ${stale.join(' and ')} changed since it was made)` : ''}. What they send:\n${o.user ? `Prompt: ${o.user}` : 'Prompt: (nothing)'}\n${n.reply ? (o.reply ? `Reply: ${o.reply}` : 'Reply: (nothing)') : ''}`;
   }
   server.registerTool('describe', { title: 'Describe operations', description: 'The operations operate can run, with the arguments each takes.', inputSchema: { op: z.string().optional() } },
-    async (a) => text(a.op ? (OPS[a.op] ? `${a.op}: ${OPS[a.op]}` : `Unknown operation "${a.op}". Known: ${Object.keys(OPS).join(', ')}`) : 'Run these with operate. Every call needs run (and agent, for labels); none of them sends a request.\n\n' + Object.entries(OPS).map(([k, v]) => `- ${k}: ${v}`).join('\n')));
+    async (a) => text(a.op ? (OPS[a.op] ? `${a.op}: ${OPS[a.op]}` : `Unknown operation "${a.op}". Known: ${Object.keys(OPS).join(', ')}`) : 'Run these with operate. Every call needs run (and agent, for labels); none of them sends a request.\n' + OP_GROUPS.map(([g, ks]) => `\n${g}:\n` + ks.map((k) => `- ${k}: ${OPS[k]}`).join('\n')).join('\n')));
   server.registerTool('operate', {
     title: 'Run an operation',
     description: 'Restructure or mark a subagent chat in your run, the way people do in the editor: star, note, branch, rename_branch, make_mainline, merge, unmerge, reroot, squash, splice, delete, rebase, cherry_pick, model_settings, rename_chat. Call describe for the arguments. No requests are sent; changes stay out of the person’s Undo.',

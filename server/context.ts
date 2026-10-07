@@ -216,7 +216,7 @@ export function ctxChanges(state: State, tree: Tree, id: number): string[] | nul
     if (!was.has(k)) { out.push(`${name(k)} ${num(k) ? 'back in' : 'added'}`); continue; }
     const w = was.get(k)!; if (w === val) continue;
     const [wp, m0 = ''] = w.split('~'), [vp, m1 = ''] = val.split('~');
-    if (wp === vp && num(k)) { const md = Send.LABELS[tree.nodes[k as unknown as number] ? Send.modeOf(tree.nodes[k as unknown as number]) : 'full'].toLowerCase(); out.push(`${name(k)} ${m1 ? (m0 ? `${md} changed` : `now sent as ${md}`) : 'sent in full again'}`); continue; }
+    if (wp === vp && num(k)) { const md = Send.LABELS[tree.nodes[k as unknown as number] ? Send.modeOf(tree.nodes[k as unknown as number]) : 'full'].toLowerCase(); out.push(`${name(k)} ${m1 ? (m0 ? `${md} changed` : `now included as ${md}`) : 'included in full again'}`); continue; }
     const [q0, r0 = ''] = wp.split('.'), [q1, r1 = ''] = vp.split('.');
     out.push(`${name(k)} ${!num(k) ? 'changed' : +k === id || (q0 !== q1 && r0 !== r1) ? 'edited' : q0 !== q1 ? 'prompt edited' : r0 && r1 ? 'reply edited' : r1 ? 'reply added' : 'reply removed'}`);
   }

@@ -72,7 +72,7 @@ test('send modes: what a turn sends as a summary, an excerpt, its prompt or its 
   assert.equal(ctxChanges(state, tree, 2), null);
   n.sum = { text: 'I recommended A.', of: 'x' };
   assert.equal(sent()[1], 'assistant: ' + Send.DEFAULTS.sendSummary.replace('{summary}', 'I recommended A.'));
-  assert.deepEqual(ctxChanges(state, tree, 2), ['#1 now sent as summary']);
+  assert.deepEqual(ctxChanges(state, tree, 2), ['#1 now included as summary']);
   n.send = 'excerpt'; n.ex = { p: [], r: [{ s: 0, e: 10, t: 'A is fast.' }, { s: 22, e: 46, t: 'Pick A for most cases.' }] };
   assert.equal(sent()[0], 'user: Compare A and B', 'a side with nothing highlighted goes whole');
   assert.ok(sent()[1].endsWith('A is fast.' + Send.JOIN + 'Pick A for most cases.'));
