@@ -3800,6 +3800,35 @@ function rangeBarHTML(){
     ${ready?b('replayonto',AI+'Replay onto…','Re-send these prompts under another prompt, so they get replies in that context'):''}</span>
     <button class="btn" data-rangeclear>Clear <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
 }
+/* ---- Picking prompts anywhere ----
+   Ctrl/⌘-click adds prompts to the selection wherever they are (Shift-click takes a stretch of one line instead). A bar
+   above the tree offers what works on prompts that aren't next to each other: reply to all of them, compare them,
+   choose how they're included, leave them out, copy them. A plain click selects just the prompt you click, and Esc
+   clears the rest, as in a file list. */
+const pickedIds = () => [sel, ...alsoTargets].filter(x=>x!=null && S.nodes[x] && S.nodes[x].kind!=='merge').sort((a,b)=>a-b);
+function pickedBarHTML(){
+  const ids=pickedIds(), allOut=ids.every(x=>S.nodes[x].skip);
+  const b=(k,l,t,dis)=>`<button class="btn" data-pk="${k}" title="${esc(t)}" ${dis?'disabled':''}>${l}</button>`;
+  return `<div class="pickBanner rangebar" data-key="picked"><span><b>${ids.map(x=>'#'+x).join(', ')}</b> · ${ids.length} prompts selected</span>
+    <span class="rgacts">${b('reply',`Reply to all ${ids.length}`,'Type below: the message goes to each of them, each in its own branch')}
+    ${b('compare','Compare','Read them and their replies side by side')}
+    ${b('send','Include as…','Include them as summaries, as their prompts or replies only, left out, or in full again')}
+    ${b('skip', allOut?`Include ${ids.length}`:`Leave out ${ids.length}`, allOut?'Send them again from the prompts below':'Stop sending them from the prompts below. Nothing is deleted.')}
+    ${b('copy','Copy as a prompt','These turns only, oldest first, as one block to paste anywhere')}</span>
+    <button class="btn" data-pk="clear">Clear <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
+}
+function pickedAction(k, btn){
+  const ids=pickedIds();
+  if(k==='clear'){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
+  if(k==='reply'){ const t=document.getElementById('contText'); if(t){ t.focus(); t.scrollIntoView({block:'nearest', behavior: Motion.reduced()?'auto':'smooth'}); } return; }
+  if(k==='compare'){ openCompareIds(ids); return; }
+  if(k==='send'){ sendMenu(btn, ids); return; }
+  if(k==='skip'){ const out=!ids.every(x=>S.nodes[x].skip); commit(out?`Left ${ids.length} prompts out of the context. They stay in the tree.`:`${ids.length} prompts are back in the context`, ()=>{ for(const x of ids){ if(out) S.nodes[x].skip=true; else delete S.nodes[x].skip; } }); return; }
+  if(k==='copy'){
+    const body=ids.filter(x=>!S.nodes[x].skip).flatMap(x=>{ const {sent}=sentOf(S.nodes[x]); return [...(sent.user?[`<user>\n${sent.user}\n</user>`]:[]), ...(sent.reply?[`<assistant>\n${sent.reply}\n</assistant>`]:[])]; }).join('\n\n');
+    copyText(`Here are parts of an earlier conversation, for context. Read them, then help with what I ask after them.\n\n<conversation>\n${body}\n</conversation>\n\n`);
+  }
+}
 function rangeAction(k){
   const ids=range.ids.filter(x=>S.nodes[x]), asks=ids.filter(x=>S.nodes[x].kind!=='merge'), first=ids[0], last=ids[ids.length-1];
   if(k==='copy'){
@@ -5996,6 +6025,7 @@ function renderTree(){
   else if(pick && pick.op==='replayonto') h+=`<div class="pickBanner" data-key="pick"><span>${AI}Replay #${pick.line[0]}${pick.line.length>1?'–#'+pick.line[pick.line.length-1]:''} onto: choose the prompt to continue from</span><button class="btn" data-cancel>Cancel <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`;
   else if(pick){ const o=OPS[pick.op], who=refsAt(pick.src).map(refName)[0]; h+=`<div class="pickBanner" data-key="pick"><span>${o.label.replace('…','')} ${who?esc(who)+' (#'+pick.src+')':'#'+pick.src}: ${o.pick}</span><button class="btn" data-cancel>Cancel <kbd style="color:inherit;border-color:currentColor">Esc</kbd></button></div>`; }
   if(range && !pick && !opts.simple) h+=rangeBarHTML();
+  else if(alsoTargets.size && !pick && !opts.simple && sel!=null) h+=pickedBarHTML();
   const rs=orderedRoots(), shown=rs.filter(r=>!isHidden(r)), composing=composeFor==='root' || !rs.length;
   const simpleNow = opts.simple && !pick && composeFor!=='root' && rs.length;
   if(simpleNow ? rs.length : shown.length){ const rm=repliesMode(), rl=lenMode();
@@ -7375,6 +7405,7 @@ treeEl.addEventListener('click', e=>{
   const svm=e.target.closest('[data-savedmenu]'); if(svm){ savedMenu(svm, document.getElementById(svm.dataset.savedmenu)); return; }
   const rgb=e.target.closest('[data-rg]'); if(rgb && range){ rangeAction(rgb.dataset.rg); return; }
   if(e.target.closest('[data-rangeclear]')){ range=null; animRender([sel]); return; }
+  const pkb=e.target.closest('[data-pk]'); if(pkb){ pickedAction(pkb.dataset.pk, pkb); return; }
   if(e.target.closest('[data-alsocompare]')){ openCompareIds([sel, ...alsoTargets]); return; }
   const rg=e.target.closest('[data-regen]'); if(rg){ regenerate(+rg.dataset.regen); return; }
   const rpa=e.target.closest('[data-replayask]'); if(rpa){ askReplay(+rpa.dataset.replayask); return; }
@@ -7412,6 +7443,8 @@ treeEl.addEventListener('click', e=>{
   if(!pick && !opts.simple && sel!=null && id!==sel && e.shiftKey && !e.metaKey && !e.ctrlKey){ setRange(sel, id); return; }
   if(!pick && sel!=null && id!==sel && (e.metaKey || e.ctrlKey)){ if(S.nodes[id].kind==='merge'){ toast('A merge point has no prompt of its own to pick.'); return; } range=null; alsoTargets.has(id) ? alsoTargets.delete(id) : alsoTargets.add(id); keepDraft(()=>animRender([id])); return; }
   if(range && !pick){ range=null; }
+  /* a plain click after picking several selects just the one clicked */
+  if(!pick && alsoTargets.size){ alsoTargets.clear(); if(id===sel){ keepDraft(()=>animRender([sel])); return; } }
   if(!pick && id===sel){ if(!opts.simple) deselect(); return; }
   if(pick){ if(id===pick.src) return; if(validTarget(pick.op,pick.src,id)) finishPick(id); else toast(pick.op==='merge' ? 'That prompt is already on the same line as this branch, so there is nothing to merge.' : 'That prompt can’t be used here. It would create a loop or change nothing.'); return; }
   select(id);
@@ -7599,6 +7632,7 @@ document.addEventListener('keydown', e=>{
   /* Esc stops the reply you're looking at, unless you're typing or something else is open to close first */
   if(e.key==='Escape' && !typing && !pick && composeFor==null && !renaming && !variants && !fan && choosing==null && !pickingRows && !shellEl.matches('.open-spaces,.open-convs') && sel!=null && replyBusy(sel)){ stopReply(sel); return; }
   if(e.key==='Escape' && range && !typing){ range=null; animRender([sel]); return; }
+  if(e.key==='Escape' && alsoTargets.size && !pick && !typing){ alsoTargets.clear(); keepDraft(()=>animRender([sel])); return; }
   if(e.key==='Escape' && sumGen && !typing){ sumGen.ctl.abort(); return; }
   if(e.key==='Escape' && choosing!=null){ finishChoosing(false); return; }
   if(e.key==='Escape' && pickingRows){ setPickingRows(false); return; }
