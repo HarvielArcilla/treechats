@@ -93,7 +93,7 @@ export function buildMcpServer(read: () => State | null) {
     { instructions: 'Treechats keeps branching chats with Claude, organised into projects. Prompts are numbered (#12) within a project. The tools come in groups, named at the start of each title, the way they are laid out in the app.\n'
       + 'Read: list_projects, list_chats and search find chats; get_prompt and get_tree show a prompt and the shape of a chat; get_context brings the context of a branch or prompt into this session; list_saved_prompts lists the person\'s prompt library.\n'
       + 'Ask (subagents: chats in a run project whose context you control exactly): spawn starts one, ask continues it, regenerate asks again, edit_prompt changes a prompt, loop sends the same prompt again after each reply until a condition is met, btw asks a side question with a chat\'s exact context without changing it.\n'
-      + 'Context (what later prompts get; nothing is deleted): include_as includes a turn in full, as a summary, an excerpt, its prompt or reply only, or not at all (leave_out does the last too), edit_reply corrects a reply, replay re-sends prompts once you have changed the context above them, distill returns a short brief so only the brief needs to enter your own context.\n'
+      + 'Context (what later prompts get; nothing is deleted): include_as includes a turn in full, as a summary, an excerpt, its prompt or reply only, or not at all (leave_out does the last too), edit_reply corrects a reply, blame finds which part of the context made a reply say something (it asks again with parts left out), replay re-sends prompts once you have changed the context above them, distill returns a short brief so only the brief needs to enter your own context.\n'
       + 'Branch & compare: fork tries an alternative from any prompt, fan_out turns the options in a reply into branches, review gets a fresh-eyes second opinion on a reply, judge picks the best of several forks against your criteria, combine merges them into one reply.\n'
       + 'Tree: operate runs the editor\'s other operations (branch, merge, copy and move, remove, and marks); describe lists them by group.\n'
       + 'Subagents have no tools: give them the material they need as context. Each run has a request budget.' },
@@ -102,7 +102,7 @@ export function buildMcpServer(read: () => State | null) {
   const GROUP: Record<string, string> = {
     list_projects: 'Read', list_chats: 'Read', search: 'Read', get_context: 'Read', get_prompt: 'Read', get_tree: 'Read', list_saved_prompts: 'Read',
     spawn: 'Ask', ask: 'Ask', regenerate: 'Ask', edit_prompt: 'Ask', loop: 'Ask', btw: 'Ask',
-    include_as: 'Context', leave_out: 'Context', edit_reply: 'Context', replay: 'Context', distill: 'Context',
+    include_as: 'Context', leave_out: 'Context', blame: 'Context', edit_reply: 'Context', replay: 'Context', distill: 'Context',
     fork: 'Branch & compare', fan_out: 'Branch & compare', review: 'Branch & compare', judge: 'Branch & compare', combine: 'Branch & compare',
     operate: 'Tree', describe: 'Tree',
   };
@@ -340,6 +340,30 @@ export function buildMcpServer(read: () => State | null) {
       if (a.until != null) { const s = read(); const sp = s && Object.values(s.db.spaces).find((x) => x.tree.nodes[a.until!] && x.tree.nodes[a.prompt]); if (sp) { const ch = new TreeView(sp.tree).chain(a.until); const i = ch.indexOf(a.prompt); if (i >= 0) n = ch.length - i; } }
       left = spend(String(a.run), n);
       const d = await relay('include_as', a) as Done & { requests?: number };
+      if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
+      return text(report(d, left));
+    } catch (e) {
+      if (left != null) refund(String(a.run), n);
+      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+    }
+  });
+  server.registerTool('blame', {
+    title: 'Blame',
+    description: 'Find which part of a subagent prompt\'s context made its reply say something. You give a yes/no question about the reply ("Does it recommend Redis?"). Treechats asks the prompt again (same model and settings) with parts of its context left out (the system prompt, standing instructions, project files, earlier turns) and a quick check answers your question about each new reply; a part is to blame when leaving it out changes the answer. It checks the answer is steady with everything in, then with nothing above the prompt, then halves the rest. Nothing in the tree changes. Returns every test as counts and what is to blame. Costs up to max_replies replies plus one quick check per test; then use include_as or leave_out on what it finds.',
+    inputSchema: {
+      run, agent, prompt: promptNo.describe('The prompt whose reply you are tracing.'),
+      question: z.string().min(1).describe('A yes/no question about the reply, true of it now, like "Does the reply recommend Redis?"'),
+      samples: z.number().int().min(2).max(5).optional().describe('Replies per test (default 3). More gives surer answers and costs more.'),
+      max_replies: z.number().int().min(4).max(60).optional().describe('The most replies to ask for in all (default 30).'),
+    },
+  }, async (a) => {
+    const k = (a.samples as number | undefined) ?? 3, max = (a.max_replies as number | undefined) ?? 30;
+    const n = max + Math.floor(max / k) + 2;
+    let left: number | undefined;
+    try {
+      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
+      left = spend(String(a.run), n);
+      const d = await relay('blame', a) as Done & { requests?: number };
       if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
       return text(report(d, left));
     } catch (e) {
