@@ -244,9 +244,10 @@ What it can reach:
 npm run dev     # server with auto-restart, page with live reload at http://localhost:5179 (sign in once with the
                 # dev link the server prints)
 npm test        # tests
+npm run test:e2e  # end-to-end: real browser tabs, the server and agents together (first time: npx playwright install chromium)
 npm run check   # type check
 ```
 
-Set `TREECHATS_FAKE=1` to get canned replies without calling Claude (and `TREECHATS_FAKE_DELAY=60` to slow them down enough to watch them stream). Every push runs the type check, the build and the tests on Windows, macOS and Linux with Node 22 and 24 (`.github/workflows/ci.yml`); the tests start the real server and drive a stand-in `claude` CLI, including stopping a reply mid-way.
+Set `TREECHATS_FAKE=1` to get canned replies without calling Claude (and `TREECHATS_FAKE_DELAY=60` to slow them down enough to watch them stream). Every push runs the type check, the build and the tests on Windows, macOS and Linux with Node 22 and 24 (`.github/workflows/ci.yml`); the tests start the real server and drive a stand-in `claude` CLI, including stopping a reply mid-way. A separate Linux job runs the end-to-end tests (`tests/e2e`): every tree operation from the page and from agents, the context agents get, the reply queue and Stop, two tabs at once, a server restart, files, and the ✦ tools, checked against recorded results in `tests/e2e/fixtures`. After a change that's meant to alter those results, record them again with `UPDATE_FIXTURES=1 npm run test:e2e` and review the diff.
 
 See [docs/TOOLS.md](docs/TOOLS.md) for every tool and what it's for, [docs/VISION.md](docs/VISION.md) for where it's going, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
