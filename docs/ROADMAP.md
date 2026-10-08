@@ -32,6 +32,8 @@ foundation once the agent interface has been tried on a real task, then everythi
   and reply, or word it yourself), prompt only, reply only, left out; nothing is deleted; MCP `include_as`
 - See a ✦ request before it goes (always, or with Shift-click), with its wording editable for one use or as default
 - Range selection (Shift-click) and picking prompts anywhere (Ctrl/⌘-click), each with a bar of what works on them
+- One context builder: the tree and the request a prompt sends are defined once (treecore.js) for the page, MCP and
+  scheduled tasks
 
 ## Next
 - Recipes; running a prompt over many inputs
@@ -50,8 +52,8 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - Try it on a real task, then decide what the agent interface should be before building more of it
 
 ## Phase 2: foundation
-- Each operation defined once in TypeScript and run on the server; the page becomes a client (removes the
-  duplicate context building and the page-relay shortcut)
+- Each operation defined once in TypeScript and run on the server; the page becomes a client (context building
+  is already shared, in treecore.js; this removes the page-relay shortcut)
 - The tree stored as rows (projects, turns, branches) instead of one document; attachments in the database
 - Turns made of content blocks (text, tool calls and results, thinking, images), provider-neutral
 - Attribution and history for every change; permissions per project (read, suggest, write)

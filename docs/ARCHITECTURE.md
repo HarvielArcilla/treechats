@@ -3,6 +3,10 @@
 ```
 web/index.html          the app: tree model, operations and screens (ported from the claude.ai version)
 web/markdown.js         renders replies: Markdown, math (KaTeX), highlighted code
+web/public/sendmodes.js  Include as rules: what each turn sends in each mode (shared with the server)
+web/public/treecore.js  the tree and the context a prompt sends: path, merge notes, model settings, the request,
+                          Copy as a prompt, the context fingerprint. Shared: the page loads it as a script, the
+                          server imports it, so both build exactly the same request
 web/public/local-shim.js loads before the app; connects it to the server:
                           - saving: the app's storage goes to the server instead of the browser
                           - Claude: window.claude.use('sample') sends requests to /api/sample
@@ -13,7 +17,7 @@ server/claude.ts        turns → Messages API request; streaming; prompt cachin
 server/cli.ts           the same through `claude -p` (Claude Code, e.g. with a subscription)
 server/mcp.ts           MCP server for Claude Code: read (list, search, get context) and subagents (spawn, ask, fork…)
 server/relay.ts         passes subagent commands to the open page and waits for results; request budget per run
-server/context.ts       reads the saved tree on the server; builds context the same way the page does
+server/context.ts       reads the saved tree on the server; builds context with treecore.js (files read from disk)
 server/store.ts         SQLite in the app data folder: the state document, rolling snapshots, the token, the lock record
 server/vault.ts         Encryption at rest and the password lock: data key kept in the keychain or wrapped by
                         scrypt(password), AES-256-GCM, recovery key, auto-lock

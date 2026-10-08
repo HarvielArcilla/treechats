@@ -83,8 +83,9 @@ Rules that keep the person in control:
 
 ## Architecture this implies
 
-1. **One definition of each operation**, in TypeScript on the server, used by the UI, MCP and a CLI. Today context
-   building exists twice (page and server) with a parity test as a stopgap.
+1. **One definition of each operation**, in TypeScript on the server, used by the UI, MCP and a CLI. Context building
+   is already one definition (web/public/treecore.js), used by the page and the server; the other operations
+   still live in the page.
 2. **The server holds the tree** as rows (projects, turns, branches), with the page as one client. Needed for agent
    writes without the page open, and for a hosted version later.
 3. **Turns made of content blocks** (text, tool calls and results, thinking, images), so agent traces and other

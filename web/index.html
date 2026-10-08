@@ -9,6 +9,7 @@
 <script src="/local-shim.js"></script>
 <!-- how each turn is sent (full, summary, excerpt…), shared with the server -->
 <script src="/sendmodes.js"></script>
+<script src="/treecore.js"></script>
 <script type="module" src="./markdown.js"></script>
 <title>Treechats</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1415,7 +1416,9 @@ const TIERS = (window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.tiers) || [['qui
 const openReplies = new Set(), fullReplies = new Set();
 let editingNow = false;
 /* Sent ahead of the turns a merge brings in, so the model reads the join as a separate thread. */
-const SEAM = 'Separately, in a parallel thread that branched off earlier in this conversation, we discussed the following.';
+/* the tree and the context a prompt sends are built by treecore.js, shared with the server */
+const Core = TreechatsCore;
+const SEAM = Core.DEFAULTS.seam;
 /* Every piece of text the app sends on your behalf. Each can be edited and reset to its default. */
 const PROMPTS = {
   instructions:{label:'Standing instructions', group:'every', def:'', help:'Sent at the start of every request, ahead of the first prompt. Empty sends nothing.',
@@ -1442,7 +1445,7 @@ const PROMPTS = {
   loopCheck:{label:'Loop: is the condition met?', group:'tools', def:"Someone is sending the same message to Claude again after each reply, until a condition is met. Read the latest turns of the conversation and decide whether this condition is met now: {condition}\n\nThe conversation (most recent part):\n{conversation}",
     help:'Sent after each reply of a /loop that has an until: condition. {condition} becomes the condition, {conversation} the latest turns.',
     fmt:'Reply with only JSON: {"met":false,"why":"One short sentence."}\nmet is true only when the condition is clearly met by the latest reply.'},
-  fileEdits:{label:'How to show file changes', group:'every', def:"When you change one of these files, write the whole new file in a code block and put its path on the line just before the block (for example `src/app.ts`). Treechats shows it as a proposed change that the person can review and save.",
+  fileEdits:{label:'How to show file changes', group:'every', def:Core.DEFAULTS.fileEdits,
     help:'Sent with the project files, when a project has any, so Claude writes changes in a form Treechats can show as a diff. Empty sends nothing; code blocks are still recognized when Claude names the file.'},
   judge:{label:'Compare: judging the follow-ups', group:'tools', def:"You are judging alternative follow-ups in a branching conversation. Below is the conversation up to the point where it branched, then each alternative: the follow-up message and the reply to it, labelled with its number.\n\nJudge them only against these criteria: {criteria}\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
     help:'What Claude is asked by ✦ Judge in Compare. {criteria} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
@@ -1949,18 +1952,13 @@ function desc(id){
    recursion, so very long chats are fine) */
 function path(id){
   if(G && G.path.has(id)) return G.path.get(id);
-  const res=[], seen=new Set(), stack=[[id,0]];
-  while(stack.length){
-    const top=stack[stack.length-1], n=S.nodes[top[0]], ps=n ? n.parents : [];
-    if(top[1]<ps.length){ const p=ps[top[1]++]; if(!seen.has(p) && S.nodes[p]){ seen.add(p); stack.push([p,0]); } continue; }
-    stack.pop(); res.push(top[0]);
-  }
+  const res=Core.path(S, id);
   if(G) G.path.set(id, res);
   return res;
 }
 function chain(id){
   if(G && G.chain.has(id)) return G.chain.get(id).slice();
-  const c=[]; let n=S.nodes[id]; while(n){ c.push(n.id); n=S.nodes[n.parents[0]]; } c.reverse();
+  const c=Core.chain(S, id);
   if(G) G.chain.set(id, c.slice()); return c;
 }
 const convOf = id => chain(id)[0];
@@ -3418,127 +3416,34 @@ async function connectModel(){
   render();
 }
 /* The path to a node, in send order, with a seam note before the turns each merge brings in. */
-function contextEntries(id){
-  const p=path(id), seams=new Map();
-  for(const m of p){
-    const n=S.nodes[m]; if(n.parents.length<2) continue;
-    const seen=new Set(path(n.parents[0]));
-    for(const q of n.parents.slice(1)){
-      const idx=path(q).filter(x=>!seen.has(x)).map(x=>p.indexOf(x)).filter(i=>i>=0);
-      if(idx.length){ const at=Math.min(...idx); if(!seams.has(at)) seams.set(at, m); }
-      for(const x of path(q)) seen.add(x);
-    }
-  }
-  const out=[];
-  p.forEach((x,i)=>{ if(seams.has(i)){ const m=seams.get(i); out.push({seam:true, merge:m, text:S.nodes[m].seam || promptText('seam')}); } out.push({id:x}); });
-  return out;
-}
+function contextEntries(id){ return Core.entries(S, id, coreEnv()); }
+/* what the core needs from the page: your wording (Settings › Prompts), files with their contents, and the memoized
+   path and chain */
+function coreEnv(){ return {tpl:promptText, file:fileBlock, path, chain}; }
 /* Messages for the API: user/assistant turns, with back-to-back turns of one role joined so they alternate. */
 /* ---- Model settings ----
    A system prompt, thinking, effort, temperature and a reply length limit, set on a prompt and used by it and every
    prompt after it, unless a later prompt sets its own. Forking and changing one setting compares the same
    conversation under a different setup. Each field is inherited on its own; null means "back to the default". */
-const SET_FIELDS=['system','thinking','effort','temperature','maxTokens','tools'];
-function settingsFor(id){
-  const out={}, from={};
-  for(const x of chain(id).reverse()){ const st=S.nodes[x] && S.nodes[x].set; if(!st) continue; for(const f of SET_FIELDS) if(!(f in from) && f in st){ from[f]=x; if(st[f]!=null) out[f]=st[f]; } }
-  return {values:out, from};
-}
+const SET_FIELDS=Core.SET_FIELDS;
+function settingsFor(id){ return Core.settingsFor(S, id, coreEnv()); }
 const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
-function turnsFor(id, includeLastReply){
-  const raw=[], instr=promptText('instructions').trim();
-  if(instr) raw.push({role:'user', content:instr});
-  if(S.files && S.files.length){ const fe=promptText('fileEdits').trim(); raw.push({role:'user', content:'Files shared in this project:\n\n'+S.files.map(fileBlock).join('\n\n')+(fe?'\n\n'+fe:'')}); }
-  for(const e of contextEntries(id)){
-    if(e.seam){ raw.push({role:'user', content:e.text}); continue; }
-    const n=S.nodes[e.id];
-    if(n.skip && e.id!==id) continue;
-    const fl=(n.files||[]).map(fileBlock).join('\n\n');
-    let user = fl ? (fl+(n.text?'\n\n'+n.text:'')) : (n.text||''), reply = n.reply && (includeLastReply || e.id!==id) ? n.reply : '';
-    /* its send mode applies once it's history: always, except to the prompt being sent now */
-    if(n.send && (e.id!==id || includeLastReply)) ({user, reply} = TreechatsSend.apply(n, user, reply, promptText));
-    if(user) raw.push({role:'user', content:user});
-    if(reply) raw.push({role:'assistant', content:reply});
-  }
-  const out=[];
-  for(const t of raw){ const last=out[out.length-1]; if(last && last.role===t.role) last.content+='\n\n'+t.content; else out.push({...t}); }
-  return out;
-}
+function turnsFor(id, includeLastReply){ return Core.turnsFor(S, id, coreEnv(), includeLastReply); }
 /* ---- Context fingerprint ----
    Each reply remembers exactly what was sent to get it: a short hash per turn (instructions, project files, merge
    notes, each prompt and each reply) and a hash chained over all of them. It's recorded when the reply is written and
    never sent to Claude. Comparing it with what the same prompt would send now gives the small "context changed"
    marker: it says what changed above a reply, and Replay re-sends from there. It informs; it never blocks or
    regenerates anything on its own. */
-function hash53(str, seed=0){
-  let h1=0xdeadbeef^seed, h2=0x41c6ce57^seed;
-  for(let i=0; i<str.length; i++){ const c=str.charCodeAt(i); h1=Math.imul(h1^c, 2654435761); h2=Math.imul(h2^c, 1597334677); }
-  h1=Math.imul(h1^(h1>>>16), 2246822507)^Math.imul(h2^(h2>>>13), 3266489909);
-  h2=Math.imul(h2^(h2>>>16), 2246822507)^Math.imul(h1^(h1>>>13), 3266489909);
-  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36).padStart(11,'0');
-}
-const h5 = str => hash53(str).slice(-5);
-/* hashes of one turn's parts, cached until its text, files or reply change */
-const partCache=new Map();
-function turnParts(n){
-  const files=(n.files||[]).map(f=>f.id+'/'+f.name).join('|');
-  let c=partCache.get(n);
-  if(!c || c.text!==n.text || c.reply!==n.reply || c.files!==files){
-    c={text:n.text, reply:n.reply, files, q:h5((n.text||'')+'\u0000'+files), r:n.reply ? h5(n.reply) : ''};
-    partCache.set(n, c);
-  }
-  return c;
-}
+function hash53(str, seed=0){ return Core.hash53(str, seed); }
+const h5 = str => Core.h5(str);
 /* what a request from this prompt sends, as in turnsFor(id): one entry per part, in order */
-function ctxSig(id){
-  const at=[], instr=promptText('instructions').trim(), sys=(settingsFor(id).values.system||'').trim();
-  if(sys) at.push('y:'+h5(sys));
-  if(instr) at.push('i:'+h5(instr));
-  /* one entry per project file, so the marker can say which file changed (an edit gives a file a new id) */
-  for(const f of S.files||[]) at.push('f'+h5(f.name)+':'+h5(f.id));
-  if(S.files && S.files.length && promptText('fileEdits').trim()) at.push('e:'+h5(promptText('fileEdits').trim()));
-  for(const e of contextEntries(id)){
-    if(e.seam){ at.push('s'+e.merge+':'+h5(e.text)); continue; }
-    const n=S.nodes[e.id];
-    if(n.kind==='merge' || (n.skip && e.id!==id)) continue;
-    const p=turnParts(n), m = e.id!==id && n.send ? TreechatsSend.mark(n, promptText) : '';
-    at.push(e.id+':'+p.q+(e.id!==id && p.r ? '.'+p.r : '')+(m ? '~'+h5(m) : ''));
-  }
-  let h=''; for(const x of at) h=hash53(h+'|'+x);
-  return {h:h.slice(-8), at:at.join(',')};
-}
-const sigMap = sig => new Map(sig.at ? sig.at.split(',').map(x=>{ const i=x.indexOf(':'); return [x.slice(0,i), x.slice(i+1)]; }) : []);
+function ctxSig(id){ return Core.ctxSig(S, id, coreEnv()); }
 /* what changed above a reply since it was written, oldest first; null when nothing did (or nothing was recorded) */
 function ctxChanges(id){
   const n=S.nodes[id];
   if(!n || !n.ctx || !n.reply || liveGen(id) || set('ctxMarks')===false) return null;
-  const now=ctxSig(id); if(now.h===n.ctx.h) return null;
-  const was=sigMap(n.ctx), is=sigMap(now), out=[];
-  /* replies written before files had an entry each recorded one hash for all of them */
-  if(was.has('f')){
-    const same = was.get('f')===h5((S.files||[]).map(f=>f.id+'/'+f.name).join('|'));
-    was.delete('f'); for(const k of [...is.keys()]) if(/^f[0-9a-z]{5}$/.test(k)) is.delete(k);
-    if(!same) out.push({k:'f', what:'changed'});
-  }
-  if(!was.has('e')) is.delete('e'); /* replies written before this note existed */
-  /* files saved from this reply's own proposed changes */
-  if(n.applied) for(const f of S.files||[]){ const k='f'+h5(f.name); if(n.applied[f.name]===is.get(k)) { if(was.has(k)) is.set(k, was.get(k)); else is.delete(k); } }
-  const fileName = k => { const f=(S.files||[]).find(f=>'f'+h5(f.name)===k); return f ? f.name : 'a project file'; };
-  const name = k => k==='i' ? 'standing instructions' : k==='e' ? 'how to show file changes' : k==='f' ? 'project files' : /^f[0-9a-z]{5}$/.test(k) ? fileName(k) : k==='y' ? 'system prompt' : k[0]==='s' ? `merge note at #${k.slice(1)}` : +k===id ? 'this prompt' : '#'+k;
-  for(const [k,v] of is){
-    if(!was.has(k)){ out.push({k, what: /^\d+$/.test(k) ? 'back in' : 'added'}); continue; }
-    const w=was.get(k); if(w===v) continue;
-    const [wp, m0=''] = w.split('~'), [vp, m1=''] = v.split('~');
-    const [q0,r0]=wp.split('.'), [q1,r1]=vp.split('.');
-    /* only how the turn is sent changed */
-    if(wp===vp && /^\d+$/.test(k)){ const md=S.nodes[k] ? TreechatsSend.modeOf(S.nodes[k]) : 'full'; out.push({k, what: m1 ? (m0 ? `${TreechatsSend.LABELS[md].toLowerCase()} changed` : `now included as ${TreechatsSend.LABELS[md].toLowerCase()}`) : 'included in full again'}); continue; }
-    out.push({k, what: /^\d+$/.test(k) ? (+k===id ? 'edited' : q0!==q1 && (r0||'')!==(r1||'') ? 'edited' : q0!==q1 ? 'prompt edited' : (r1 && r0 ? 'reply edited' : r1 ? 'reply added' : 'reply removed')) : 'changed'});
-  }
-  for(const k of was.keys()) if(!is.has(k)) out.push({k, what: /^\d+$/.test(k) && S.nodes[k] && S.nodes[k].skip ? 'left out' : 'removed'});
-  if(!out.length) return null;
-  const order=[...is.keys(), ...was.keys()];
-  out.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
-  return out.map(c=>({...c, label:`${name(c.k)} ${c.what}`}));
+  return Core.ctxChanges(S, id, coreEnv());
 }
 function ctxMarkHTML(id){
   const ch=ctxChanges(id); if(!ch) return '';
@@ -4783,11 +4688,7 @@ const Agent=(()=>{
 /* ---- Copy context as a prompt ----
    Exactly what the next request from a prompt would send (standing instructions, space files, merge notes, every
    turn and reply, minus what's left out), as one block to paste into Claude anywhere and ask your question after. */
-function contextPrompt(id){
-  const turns=turnsFor(id, true), sys=(settingsFor(id).values.system||'').trim();
-  const body=(sys ? `<system>\n${sys}\n</system>\n\n` : '')+turns.map(t=>`<${t.role}>\n${t.content}\n</${t.role}>`).join('\n\n');
-  return `Here is an earlier conversation, for context. Read it, then help with what I ask after it.\n\n<conversation>\n${body}\n</conversation>\n\n`;
-}
+function contextPrompt(id){ return Core.contextPrompt(S, id, coreEnv()); }
 function copyContextPrompt(id){
   if(id==null || !S.nodes[id]){ toast('Select a prompt first. The context runs from the start of its chat to it.'); return; }
   copyText(contextPrompt(id), true).then(ok=>{ if(ok) toast(`Copied the context up to #${id} as a prompt, about ${tokens(turnsFor(id,true)).toLocaleString()} tokens. Paste it and add your question.`); });
