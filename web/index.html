@@ -2184,8 +2184,36 @@ const Files=(()=>{
     }
     /* files saved readable before the lock was on (another tab, say) are sealed now */
     for(const id of plainLeft) store(id, cache.get(id));
+    await sync();
   }
-  function put(id, rec){ cache.set(id, rec); store(id, rec); }
+  /* The server keeps every file; this browser's copy is a cache. On start: files the server has and this browser
+     doesn't come down (another browser added them), and files only this browser has go up (saved before the server
+     kept files, or while it was unreachable). */
+  const online = () => { const L=window.TREECHATS_LOCAL; return !!(L && !L.offline); };
+  async function sync(){
+    if(!online()) return;
+    let ids; try{ const r=await fetch('/api/files'); if(!r.ok) return; ids=new Set(await r.json()); }catch(e){ return; }
+    const missing=[...ids].filter(id=>!cache.has(id));
+    await Promise.all(missing.map(async id=>{ try{ const r=await fetch('/api/files/'+encodeURIComponent(id)); if(!r.ok) return; const rec=fromServer(await r.json()); cache.set(id, rec); store(id, rec); }catch(e){} }));
+    const up=[...cache.keys()].filter(id=>!ids.has(id));
+    (async()=>{ for(const id of up) await upload(id, cache.get(id)); })();
+  }
+  const b64 = async blob => { const u=new Uint8Array(await blob.arrayBuffer()); let s=''; for(let i=0; i<u.length; i+=0x8000) s+=String.fromCharCode.apply(null, u.subarray(i, i+0x8000)); return btoa(s); };
+  function fromServer(f){
+    const {data, ...rec}=f;
+    if(rec.kind==='image' && typeof data==='string') rec.blob=new Blob([Uint8Array.from(atob(data), c=>c.charCodeAt(0))], {type:rec.type||'image/png'});
+    return rec;
+  }
+  async function upload(id, rec){
+    if(!online() || !rec) return;
+    try{
+      const {blob, ...meta}=rec, body={...meta, ...(rec.kind==='image' && blob ? {data:await b64(blob)} : {})};
+      if(rec.kind==='image' && !blob) return;
+      const r=await fetch('/api/files/'+encodeURIComponent(id), {method:'PUT', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+      if(!r.ok) console.warn('Treechats could not save a file to the server:', r.status);
+    }catch(e){ console.warn('Treechats could not save a file to the server:', e); }
+  }
+  function put(id, rec){ cache.set(id, rec); store(id, rec); upload(id, rec); }
   /* the lock was turned on or off: every file is stored again, sealed with the new key or readable */
   async function rekey(b64){ await useKey(b64); await Promise.all([...cache].map(([id, rec])=>store(id, rec))); }
   return {init, put, rekey, get:id=>cache.get(id), persistent:()=>!!db, sealed:()=>!!key, keyNow:()=>keyB64};

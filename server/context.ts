@@ -2,11 +2,12 @@
    and the context a prompt would send. The context itself is built by web/public/treecore.js, the same code the page
    uses, so "get context" here gives the same text as "Copy as a prompt" there.
 
-   One difference, supplied here as the core's file hook: attached and project files are kept in the browser, not in
-   the saved state, so here they appear by name only, except files from a linked folder, which are read from disk. */
+   Files come from the server's file store (the page sends the same contents), so the request is the same as the
+   page's. A file the store doesn't have yet (one only an older browser held) is read from disk if it came from a
+   linked folder, and otherwise appears by name only. */
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve as resolvePath, sep as pathSep } from 'node:path';
-import { getValue } from './store.ts';
+import { getFile, getValue } from './store.ts';
 /* how each turn is sent (full, summary, excerpt, prompt only, reply only): the page's own file, so both build the same
    request */
 import '../web/public/sendmodes.js';
@@ -100,7 +101,10 @@ function linkedText(f: { src?: { root?: string; path?: string }; dirty?: boolean
     const buf = readFileSync(abs); return buf.includes(0) ? null : buf.toString('utf8');
   } catch { return null; }
 }
-const fileStub = (f: { name: string; kind?: string; src?: { root?: string; path?: string }; dirty?: boolean }) => {
+const fileStub = (f: FileMeta) => {
+  /* as the page's fileBlock: a text file with its contents, an image by name (images travel separately) */
+  const rec = getFile(f.id);
+  if (rec) return rec.kind === 'text' ? `<file name="${f.name}">\n${rec.text}\n</file>` : `[Attached image: ${f.name}]`;
   if (f.kind === 'image') return `[Attached image: ${f.name}]`;
   const t = linkedText(f);
   return t != null ? `<file name="${f.name}">\n${t}\n</file>` : `<file name="${f.name}">\n(The contents of this file are kept in the browser, so they aren't included here.)\n</file>`;

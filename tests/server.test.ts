@@ -239,6 +239,26 @@ test('password lock: data is encrypted at rest, opens with the password or the r
   vault.forget();
 });
 
+test('files are kept by the server, and encrypted with the rest when the lock is turned on', async () => {
+  const vault = await import('../server/vault.ts');
+  const store = await import('../server/store.ts');
+  const { DatabaseSync } = await import('node:sqlite');
+  const { join } = await import('node:path');
+  const { config } = await import('../server/config.ts');
+  store.putFile('t-file-1', { name: 'a.md', kind: 'text', text: 'secret notes' });
+  assert.equal(store.getFile('t-file-1')!.text, 'secret notes');
+  assert.ok(store.fileIds().includes('t-file-1'));
+  const raw = () => (new DatabaseSync(join(config.dataDir, 'treechats.db')).prepare('SELECT value FROM files WHERE id = ?').get('t-file-1') as { value: string }).value;
+  assert.match(raw(), /secret notes/);
+  const { record } = await vault.create('correct horse battery', 15);
+  store.encryptAll(record);
+  assert.ok(!raw().includes('secret notes') && raw().startsWith(vault.SEALED), 'sealed at rest');
+  assert.equal(store.getFile('t-file-1')!.text, 'secret notes', 'and readable while unlocked');
+  store.decryptAll();
+  assert.match(raw(), /secret notes/);
+  vault.forget();
+});
+
 test('API key in the keyring: saved through stdin, read back at start, removed (Linux, with a stand-in secret-tool)', { skip: process.platform !== 'linux' }, async () => {
   const { mkdtempSync, writeFileSync, chmodSync, readFileSync } = await import('node:fs');
   const { join } = await import('node:path');

@@ -11,7 +11,7 @@ import { config, modelLabel, root } from './config.ts';
 import { openBrowser } from './proc.ts';
 import { provider, streamReply, type SampleRequest } from './claude.ts';
 import { cliStatus } from './cli.ts';
-import { decryptAll, encryptAll, getValue, putValue, resetToken, saveVaultRecord, snapshot, snapshots, token, vaultRecord } from './store.ts';
+import { decryptAll, encryptAll, fileIds, getFile, getValue, putFile, putValue, resetToken, saveVaultRecord, snapshot, snapshots, token, vaultRecord, type FileRecord } from './store.ts';
 import * as vault from './vault.ts';
 import { DATA_KEY, keychain, keyStatus, loadKeyFromKeychain, readSecret, removeKey, removeSecret, saveKey, saveSecret, SecretError } from './secrets.ts';
 import { handleMcp } from './mcp.ts';
@@ -326,6 +326,24 @@ app.get('/api/snapshots', (c) => c.json(snapshots(STATE_KEY)));
 app.get('/api/snapshots/:id', (c) => {
   const v = snapshot(STATE_KEY, Number(c.req.param('id')));
   return v == null ? c.notFound() : c.body(v, 200, { 'content-type': 'application/json; charset=utf-8' });
+});
+
+/* attached and project files: the server keeps them, the page keeps a copy as a cache */
+const MAX_FILE_BYTES = 30 * 1024 * 1024;
+const FILE_ID = /^[A-Za-z0-9_-]{1,80}$/;
+app.get('/api/files', (c) => c.json(fileIds()));
+app.get('/api/files/:id', (c) => {
+  const id = c.req.param('id'); if (!FILE_ID.test(id)) return c.json({ code: 'bad_id' }, 400);
+  const f = getFile(id); return f ? c.json(f) : c.notFound();
+});
+app.put('/api/files/:id', async (c) => {
+  const id = c.req.param('id'); if (!FILE_ID.test(id)) return c.json({ code: 'bad_id' }, 400);
+  const body = await c.req.text();
+  if (body.length > MAX_FILE_BYTES) return c.json({ code: 'too_large' }, 413);
+  let f: FileRecord; try { f = JSON.parse(body); } catch { return c.json({ code: 'bad_json' }, 400); }
+  if (!f || typeof f.name !== 'string' || (f.kind !== 'text' && f.kind !== 'image') || (f.kind === 'text' && typeof f.text !== 'string') || (f.kind === 'image' && typeof f.data !== 'string')) return c.json({ code: 'bad_file' }, 400);
+  putFile(id, { name: f.name, type: f.type, size: f.size, kind: f.kind, ...(f.kind === 'text' ? { text: f.text } : { data: f.data }) });
+  return c.body(null, 204);
 });
 
 app.post('/api/sample', async (c) => {

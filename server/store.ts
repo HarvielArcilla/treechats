@@ -41,6 +41,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, value TEXT NOT NULL, saved INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL);
 `);
 ownerOnly();
 
@@ -108,6 +109,25 @@ export function snapshot(key: string, id: number): string | null {
   return row ? vault.open(row.value) : null;
 }
 
+/* ---- files ----
+   Attached and project files, one row each: their details and contents as JSON (an image's bytes as base64). A
+   file's id changes when it's edited, so rows are never rewritten in place. Encrypted like the rest with the lock on.
+   The browser keeps a copy too, as a cache. */
+export type FileRecord = { name: string; type?: string; size?: number; kind: 'text' | 'image'; text?: string; data?: string };
+const putFileStmt = db.prepare('INSERT INTO files (id, value, updated) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value, updated = excluded.updated');
+const getFileStmt = db.prepare('SELECT value FROM files WHERE id = ?');
+const fileIdsStmt = db.prepare('SELECT id FROM files');
+export function putFile(id: string, rec: FileRecord): void {
+  const v = JSON.stringify(rec);
+  putFileStmt.run(id, vaultRecord() ? vault.seal(v) : v, Date.now());
+}
+export function getFile(id: string): FileRecord | null {
+  const row = getFileStmt.get(id) as { value: string } | undefined;
+  if (!row) return null;
+  try { return JSON.parse(vault.open(row.value)); } catch { return null; }
+}
+export const fileIds = () => (fileIdsStmt.all() as { id: string }[]).map((r) => r.id);
+
 /* ---- the password lock's record, and re-encrypting everything when it is turned on or off ---- */
 export function vaultRecord(): vault.VaultRecord | null {
   const row = getMeta.get('vault') as { value: string } | undefined;
@@ -122,6 +142,7 @@ function rewriteAll(fn: (v: string) => string, after: () => void) {
   try {
     for (const r of db.prepare('SELECT key, value FROM kv').all() as { key: string; value: string }[]) db.prepare('UPDATE kv SET value = ? WHERE key = ?').run(fn(r.value), r.key);
     for (const r of db.prepare('SELECT id, value FROM snapshots').all() as { id: number; value: string }[]) db.prepare('UPDATE snapshots SET value = ? WHERE id = ?').run(fn(r.value), r.id);
+    for (const r of db.prepare('SELECT id, value FROM files').all() as { id: string; value: string }[]) db.prepare('UPDATE files SET value = ? WHERE id = ?').run(fn(r.value), r.id);
     after();
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }

@@ -71,6 +71,15 @@ test('test-reply mode: config, saving, streaming, and outside pages are refused'
   assert.equal((await fetch(base + '/api/state', { method: 'PUT', body: doc, headers: { origin: base } })).status, 204);
   assert.equal(await (await fetch(base + '/api/state')).text(), doc);
 
+  /* files: kept by the server */
+  const file = { name: 'notes.md', type: 'text/markdown', size: 5, kind: 'text', text: 'hello' };
+  assert.equal((await fetch(base + '/api/files/f1', { method: 'PUT', body: JSON.stringify(file), headers: { origin: base } })).status, 204);
+  assert.deepEqual(await (await fetch(base + '/api/files')).json(), ['f1']);
+  assert.equal((await (await fetch(base + '/api/files/f1')).json()).text, 'hello');
+  assert.equal((await fetch(base + '/api/files/nope')).status, 404);
+  assert.equal((await fetch(base + '/api/files/bad%20id', { method: 'PUT', body: '{}', headers: { origin: base } })).status, 400);
+  assert.equal((await fetch(base + '/api/files/f2', { method: 'PUT', body: JSON.stringify({ name: 'x', kind: 'text' }), headers: { origin: base } })).status, 400);
+
   const evs = await events(await post(base, { input: 'hello there', modelTier: 'quick' }));
   assert.ok(evs.filter((e) => e.t === 'text').length > 1, 'streams in pieces');
   const done = evs.at(-1);

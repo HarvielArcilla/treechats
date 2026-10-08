@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 /* The tree and the context a prompt sends are defined once, in web/public/treecore.js, for the page and the server.
    These tests pin down what a request contains, so a change to it is a deliberate one. */
+process.env.TREECHATS_DATA_DIR = process.env.TREECHATS_DATA_DIR || 'data/test';
 const { Core } = await import('../server/context.ts');
 
 type N = { id: number; parents: number[]; text: string; reply?: string; [k: string]: unknown };
