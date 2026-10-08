@@ -28,9 +28,16 @@ foundation once the agent interface has been tried on a real task, then everythi
 - MCP parity: edit_prompt, fan_out, get_tree, and operate/describe for every other operation
 - MCP: replay, review, judge, combine and list_saved_prompts; spawn and fork take model settings; get_prompt reports settings, usage and
   context changes
+- Include as (per-turn send modes): full, ✦ summary (editable, reviewable), excerpt (highlight parts of the prompt
+  and reply, or word it yourself), prompt only, reply only, left out; nothing is deleted; MCP `include_as`
+- See a ✦ request before it goes (always, or with Shift-click), with its wording editable for one use or as default
+- ✦ Blame: which part of the context made a reply say something, found by asking again with parts left out and
+  halving; results as counts, kept on the reply; `/blame` and MCP `blame`
+- Range selection (Shift-click) and picking prompts anywhere (Ctrl/⌘-click), each with a bar of what works on them
 
 ## Next
-- Range selection (Shift-click) with tools for a stretch of a line; recipes; running a prompt over many inputs
+- Recipes; running a prompt over many inputs
+- Blame across forks: compare two branches' contexts to explain why their replies differ
 - Try the subagent tools on a real task (Phase 1 below)
 
 ## Phase 1: subagents prototype
@@ -63,8 +70,7 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 ## Later
 - Cost: start one fan-out request first so the others read the shared start from the prompt cache (confirm cache
   timing first); warn when a chat is too short for the model to cache
-- Per-turn send modes (full, prompt only, summary, left out); reversible summaries
 - Recipes (saved pipelines of tools), sweeps across models or contexts, re-running saved contexts as evals
 - Export a branch as a standalone page; select several prompts at once
 - Other model providers; hosted and multi-user (open questions in the vision)
-- Harder: keep only part of a reply; the same prompt with and without some context (A/B)
+- The same prompt with and without some context, side by side (A/B), building on Blame's tests

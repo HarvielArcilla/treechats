@@ -1,10 +1,28 @@
 # Vision
 
-**Treechats is precise context control for power users, and for the agents they work with.**
+**Treechats is a context editor: precise, efficient control over what a model sees, for power users of AI and for
+the agents they work with.**
 
-On the surface it is a familiar chat (Chat view). Underneath, every chat is a version-controlled tree of
-turns, and you decide exactly what Claude sees on each request. The primary audience is technical people who want
-that control. Agents are a second kind of user of the same controls, working under the person's supervision.
+Anyone can chat. The people Treechats is for already know that the conversation *is* the program: what goes into
+the context decides what comes out, and long chats rot as dead ends, wrong assumptions and stale code pile up. They
+want to edit that context the way they edit code, cheaply and exactly, and to see why a reply came out the way it
+did.
+
+Underneath, every chat is a version-controlled tree of turns. On the surface there are two views, split on purpose:
+**Chat** for conversing (it reads like any chat app, and only reflects context edits as notes and tags), and
+**Editor** for editing context (the tree, the exact request, and every tool). Agents are a second kind of user of
+the same controls, working under the person's supervision.
+
+## What "precise and efficient" means
+
+- **Precise:** you choose, per turn, exactly what goes in: in full, a summary, a highlighted excerpt (or your own
+  wording of it), the prompt or the reply alone, or nothing. You can see the exact request before it goes, and what
+  changed above any reply since it was written.
+- **Efficient:** each choice shows what it costs in tokens; a summary or excerpt keeps what matters and drops the
+  rest; Replay regenerates only what a change affects; a brief can stand in for a whole chat.
+- **Explainable:** ✦ Blame answers "why did it say that?" by asking again with parts of the context left out, and
+  narrows it to the turns that change the answer, shown as counts rather than a verdict. Context editing becomes
+  evidence-driven: find the turn that's steering the model, then change how it's included.
 
 ## Principles
 
@@ -80,9 +98,12 @@ Rules that keep the person in control:
 
 ## UI shape
 
-Three views of the same data: **Chat** for everyday use, **Editor** (tree, map, inspector,
-context blocks) for precise context work, **Runs** (agent runs step by step, with "fork here"). Tools that move
-text live inline on prompts and replies; ✦ tools that rewrite context get a review step.
+Two views of the same data, split on purpose: **Chat** for conversing, **Editor** (tree, map, inspector) for
+precise context work. Context-editing controls (Include as, Excerpt, Blame) live in Editor; Chat shows their effect
+as notes and tags but doesn't edit, so it stays a calm place to talk. There is no separate "context view": the
+inspector and `/context` already show exactly what a prompt sends. Tools that change one prompt sit with it; the bar
+above the input box holds what changes the tree. ✦ tools that rewrite context show their request on demand and their
+result before it's used. A **Runs** view of agent runs step by step may come later.
 
 ## Open questions
 

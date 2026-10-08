@@ -34,6 +34,7 @@ Claude does the work; each use sends a request.
 |---|---|---|---|---|
 | Edit (reply) | On the reply | Change what Claude said; later prompts see your version, marked "edited" | Correcting a fact or a wrong assumption so it stops spreading | Power |
 | Leave out | Operations, inspector | Stops sending a turn from the prompts below; nothing is deleted | Dropping a dead end or a misleading tangent | Power |
+| ✦ Blame | Under the reply (Editor), `/blame` | Asks the prompt again with parts of its context left out and checks each new reply against your yes/no question, halving the context until it reaches the parts that change the answer; shows every test as counts | "Why did it say that?": finding which turn, file or instruction is steering a reply before you change it | Power |
 | Context changed (marker) | On replies | Says what changed above a reply since it was written (e.g. "#16 reply edited") | Knowing which replies are out of date after you edit context | Power (automatic) |
 | ✦ Replay from here | Under the prompt, the marker | Re-sends the prompt and the ones after it, one at a time, as new versions. A quick check stops at a prompt that no longer fits | Regenerating what followed after you change the context | Power |
 | Model settings | Inspector (Settings › System to turn on) | System prompt, thinking, effort, temperature, reply length from this prompt on | Trying the same chat under a different setup | Rare (advanced) |
@@ -75,6 +76,7 @@ sent as written. They are also in the command palette (Ctrl/⌘-K).
 |---|---|---|---|
 | `/btw question` | ✦ Claude answers from this chat's context; nothing is added to the chat. *Keep as a branch* saves the question and answer as a branch, without moving you | A quick aside that shouldn't clutter the context | Common |
 | `/loop [times] [every 10m] prompt [until: condition]` | ✦ Sends the same prompt again after each reply on this line. Stops after *times* (default 3), when a quick check says the condition is met (its verdict is noted under each reply), or when you stop it. *every* waits between sends while Treechats is open | "Keep improving it until…", polishing passes, periodic checks | Power |
+| `/blame [question]` | ✦ Blame on the reply, with your yes/no question | Tracing a reply back to the context that caused it | Power |
 | `/context` | What the next prompt sends, part by part (system prompt, instructions, project files, prompts, replies, files), with the largest turns | Knowing what to leave out before the limit bites | Power |
 | `/cost` | Tokens and cost on this line and in the whole chat | Keeping an eye on spend | Common |
 | `/model [quick\|default\|complex]` | Sets the model for next replies | Switching without the menu | Common |
@@ -147,6 +149,7 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 | list_saved_prompts | Read your prompt library | Rare |
 | spawn, ask, fork | Subagent chats whose context the agent controls exactly; spawn and fork take model settings | Power |
 | leave_out, edit_reply, regenerate | Steer what a subagent sees; leave_out takes a stretch (`until`) | Power |
+| blame | Which part of a subagent's context made its reply say something, tested by asking again with parts left out; spends up to its reply limit plus quick checks, refunds the rest | Power |
 | replay | Re-send after changing context (to the end, or `until` a prompt for a stretch); stops at a prompt that no longer fits, or rewrites it if asked | Power |
 | review | A fresh-eyes check of a subagent's reply | Power |
 | loop | /loop for a subagent: the same prompt after each reply, up to *times* or *until* a condition is met | Power |
@@ -157,8 +160,8 @@ Agents are operators like you: the same tools, carried out by the same code, mar
 ## Observations
 
 - **Where the value is:** the core and common tools are what anyone would expect from a chat app (Edit, Regenerate, Copy,
-  Review, Saved prompts). Treechats' own value is in the power tools that shape context: Edit reply, Leave out, Replay,
-  Distill, Compare and Judge, plus the stretch tools.
+  Review, Saved prompts). Treechats' own value is in the power tools that shape context: Include as, Edit reply, Leave out,
+  Blame, Replay, Distill, Compare and Judge, plus the stretch tools.
 - **Low-use restructuring tools:** Rebase, Cherry-pick, Splice out on one prompt, Reroot, Squash on one prompt, and
   Undo merge come from git, and I expect little use. Candidates to keep in **More** and out of the default bar.
 - **Variants overlaps others:** it covers much of what Fan out and Reply to several do. Worth watching whether it earns
