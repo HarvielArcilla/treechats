@@ -108,13 +108,14 @@ const branchTip = (t: T, a: A, what: string) => {
   point(t, after);
   return after as number;
 };
-/* the summary that stands in for a reply (Include as › Summary), written by Claude as the page writes it */
-async function summarize(sid: string, id: number) {
+/* the summary that stands in for a reply (Include as › Summary), for agents and for the page (POST /api/summarize):
+   the turn is marked as having one on the way, then gets it (or keeps the one it had). tpl: wording for this once */
+export async function summarize(sid: string, id: number, tpl?: string | null): Promise<{ summary?: string; error?: string }> {
   const t = treeOf(sid), n = t?.nodes[id]; if (!n || !n.reply) return { error: 'That prompt has no reply to summarize.' };
   const of = Core.h5(n.reply), keep = n.sum && n.sum.text ? { ...n.sum } : null, d = doc();
   change(sid, (tt) => { tt.nodes[id].sum = { ...(keep || {}), pending: true }; });
   try {
-    const r = await sample(Ops.fill(tplOf(d as any)('summarizeReply'), { prompt: n.text || '', reply: n.reply }), { modelTier: d.opts?.model || 'quick', cache: false });
+    const r = await sample(Ops.fill(tpl != null && String(tpl).trim() ? String(tpl) : tplOf(d as any)('summarizeReply'), { prompt: n.text || '', reply: n.reply }), { modelTier: d.opts?.model || 'quick', cache: false });
     const text = (r.text || '').trim(); if (!text) throw new Error('empty');
     change(sid, (tt) => { if (tt.nodes[id]) tt.nodes[id].sum = { text, of, by: 'claude' }; });
     return { summary: text };

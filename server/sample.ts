@@ -4,7 +4,7 @@ import { streamReply, type SampleRequest } from './claude.ts';
 import type { Usage } from './models.ts';
 
 type Turn = { role: 'user' | 'assistant'; content: string };
-export type SampleOpts = { modelTier?: string; settings?: SampleRequest['settings']; maxTokens?: number; signal?: AbortSignal; cache?: boolean;
+export type SampleOpts = { modelTier?: string; settings?: SampleRequest['settings']; maxTokens?: number; signal?: AbortSignal; cache?: boolean; images?: SampleRequest['images'];
   onText?: (t: { text: string; delta: string }) => void; onStep?: (kind: 'step' | 'stepresult', d: any) => void };
 export type SampleResult = { text: string; truncated: boolean; modelTierApplied: string; model?: string; usage?: Usage | null; notes: string[]; thinking: string; steps: any[] | null; sources: any[] | null };
 
@@ -12,7 +12,7 @@ export type SampleResult = { text: string; truncated: boolean; modelTierApplied:
 export class SampleError extends Error { constructor(public code: string, public text = '', message = '') { super(message || code); } }
 
 export async function sample(input: string | Turn[], o: SampleOpts = {}): Promise<SampleResult> {
-  const reader = streamReply({ input, modelTier: o.modelTier as SampleRequest['modelTier'], maxTokens: o.maxTokens, settings: o.settings }, o.signal || new AbortController().signal).getReader();
+  const reader = streamReply({ input, modelTier: o.modelTier as SampleRequest['modelTier'], maxTokens: o.maxTokens, settings: o.settings, images: o.images }, o.signal || new AbortController().signal).getReader();
   const dec = new TextDecoder();
   let buf = '', text = '', done: any = null;
   try {

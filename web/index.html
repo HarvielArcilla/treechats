@@ -1925,8 +1925,14 @@ document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState=
 const Sync=(()=>{
   const DL=TreechatsDoc, TAB=window.TREECHATS_TAB||'page';
   let on=false, ready=false, rev=0, base=new Map(), inflight=false, pending=false, catching=false, retry=null;
-  const queue=[], idle=[];
+  const queue=[], idle=[], revWaiters=[];
   const live = () => ({db:DB, opts});
+  /* resolves once this page has every change up to revision r (a reply's, say); without the server, at once */
+  function atLeast(r){
+    if(!on || rev>=r) return Promise.resolve();
+    return new Promise(res=>{ const w=[r, res]; revWaiters.push(w); setTimeout(()=>{ const i=revWaiters.indexOf(w); if(i>=0){ revWaiters.splice(i,1); res(); } }, 8000); });
+  }
+  function revMoved(){ for(let i=revWaiters.length-1; i>=0; i--) if(rev>=revWaiters[i][0]){ const [, res]=revWaiters[i]; revWaiters.splice(i,1); res(); } }
   const active = () => on;
   /* starts from the document as the server sent it (before this page tidied it up: that tidying is saved as changes) */
   async function init(){
@@ -1936,7 +1942,7 @@ const Sync=(()=>{
     if(window.TREECHATS_FLUSH) await window.TREECHATS_FLUSH();
     const d=window.TREECHATS_DOC||{};
     try{ base = d.raw ? DL.units(JSON.parse(d.raw)) : new Map(); }catch(e){ base=new Map(); }
-    rev=d.rev||0; ready=true;
+    rev=d.rev||0; ready=true; revMoved();
     window.TREECHATS_FLUSH=flush;
     drainQueue(); push();
   }
@@ -1968,12 +1974,12 @@ const Sync=(()=>{
         else if(DL.isCounter(o.p)) base.set(k, JSON.stringify(Math.max(+(base.get(k)||0), +cur.get(k))));
         else base.set(k, cur.get(k));
       }
-      rev=Math.max(rev, b.rev); window.TREECHATS_SAVE_ERROR=null;
+      rev=Math.max(rev, b.rev); window.TREECHATS_SAVE_ERROR=null; revMoved();
     } else if(b && b.reload){ await reloadDoc(); }
     else if(b && b.conflicts){
       /* someone changed the same units first: take their changes, then send what's left of ours */
       for(const m of b.missed||[]) if(m.rev>rev){ applyRemote(m.ops); rev=m.rev; }
-      rev=Math.max(rev, b.rev); pending=true;
+      rev=Math.max(rev, b.rev); pending=true; revMoved();
     } else { window.TREECHATS_SAVE_ERROR=new Error('save '+(res && res.status)); console.warn('Treechats could not save to the server:', b); }
     drainQueue();
     if(pending) push(); else settle();
@@ -1988,7 +1994,7 @@ const Sync=(()=>{
     if(e.reload){ reloadDoc(); return; }
     if(e.rev<=rev) return;
     if(e.rev!==rev+1){ catchUp(); return; }
-    applyRemote(e.ops); rev=e.rev;
+    applyRemote(e.ops); rev=e.rev; revMoved();
   }
   function drainQueue(){ const q=queue.splice(0).sort((a,b)=>(a.rev||0)-(b.rev||0)); for(const e of q) if(e.tab!==TAB) handle(e); }
   async function catchUp(){
@@ -1997,7 +2003,7 @@ const Sync=(()=>{
       const r=await fetch('/api/state/since/'+rev+'?tab='+encodeURIComponent(TAB)), b=await r.json();
       if(b.reload){ catching=false; await reloadDoc(); return; }
       for(const m of b.missed||[]) if(m.rev>rev){ applyRemote(m.ops); rev=m.rev; }
-      rev=Math.max(rev, b.rev);
+      rev=Math.max(rev, b.rev); revMoved();
     }catch(e){ /* the next change tries again */ }
     finally{ catching=false; }
     drainQueue(); if(pending) push();
@@ -2086,12 +2092,12 @@ const Sync=(()=>{
     const keep=DB.current;
     for(const k of Object.keys(DB)) delete DB[k]; Object.assign(DB, server.db);
     for(const k of Object.keys(opts)) delete opts[k]; Object.assign(opts, server.opts||{});
-    base=sU; rev=nrev; undoStack=[]; redoStack=[];
+    base=sU; rev=nrev; undoStack=[]; redoStack=[]; revMoved();
     enterSpace(DB.spaces[keep] ? keep : (DB.order.find(x=>DB.spaces[x]) || addSpace('My project', null)));
     G=null; reconcileReplies(); render(true);
     pending=true; push();
   }
-  return {init, push, remote, flush, active};
+  return {init, push, remote, flush, active, atLeast};
 })();
 function valid(t){ return t && typeof t.nextId==='number' && t.nodes && Object.values(t.nodes).every(n=>typeof n.id==='number' && Array.isArray(n.parents) && typeof n.text==='string'); }
 
@@ -3609,10 +3615,10 @@ function ctxMarkHTML(id){
 const PERMANENT=Ops.PERMANENT;
 function errCopy(code){ return Ops.errCopy(code); }
 /* ---- Replies ----
-   Replies are written side by side, a few at a time; the rest wait their turn. A prompt waits for the
-   replies above it, since they are part of what it sends. Each request remembers its space, so moving
-   around, undoing or switching spaces never interrupts it. */
-const MAX_PAR=3;
+   The server writes every reply (server/replies.ts), yours and agents' alike, so a reply carries on when this page
+   closes. Asking for one saves what has changed first (the server needs the prompt), then asks; the server queues
+   it, a few at a time, each prompt waiting for the replies above it. This page mirrors what's waiting (genQueue)
+   and what's being written (gens) from the server's events, and Stop asks the server. */
 const gens=new Map(), genQueue=[];
 const gkey=(sid,id)=>sid+':'+id;
 const treeOf=sid=>DB.spaces[sid] && DB.spaces[sid].tree;
@@ -3620,17 +3626,25 @@ const liveGen=id=>gens.get(gkey(DB.current,id));
 const queuedGen=id=>genQueue.some(q=>q.sid===DB.current && q.id===id);
 const replyBusy=id=>!!liveGen(id) || queuedGen(id);
 const busyCount=()=>gens.size+genQueue.length;
-/* ask Claude to answer these prompts in the current space */
+/* ask Claude to answer these prompts */
 function wantReplies(ids, sid=DB.current){
-  if(sampleState!=='ready' || !sampleFn) return;
-  const t=treeOf(sid);
+  if(sampleState!=='ready') return;
+  const t=treeOf(sid), list=[];
   for(const id of ids){
     const n=t && t.nodes[id]; if(!n || n.kind==='merge' || gens.has(gkey(sid,id)) || genQueue.some(q=>q.sid===sid && q.id===id)) continue;
-    genQueue.push({id, sid}); delete genNotes[gkey(sid,id)];
+    genQueue.push({id, sid}); delete genNotes[gkey(sid,id)]; list.push(id);
   }
-  pumpReplies(); if(sid===DB.current) refreshWaiting();
+  if(!list.length) return;
+  if(sid===DB.current) refreshWaiting();
+  (async()=>{
+    try{
+      await Sync.flush();
+      const r=await fetch('/api/replies', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sid, ids:list})});
+      if(!r.ok) throw new Error('replies '+r.status);
+    }catch(e){ for(const id of list) replyDone({sid, id, error:'Couldn’t reach the Treechats server to ask for this reply.'}); }
+  })();
 }
-/* for agents: resolves when the reply to a prompt is written (or fails, or is stopped) */
+/* resolves when the reply to a prompt is written (or fails, or is stopped): {reply, note} or {error} */
 const replyWaiters=new Map();
 function awaitReply(sid, id){ return new Promise(res=>{ const k=gkey(sid,id); replyWaiters.set(k, [...(replyWaiters.get(k)||[]), res]); }); }
 function settleReply(sid, id, result){ const k=gkey(sid,id), ws=replyWaiters.get(k); if(!ws) return; replyWaiters.delete(k); for(const w of ws) w(result); }
@@ -3644,79 +3658,54 @@ function waitingOn(q){
   }
   return null;
 }
-function pumpReplies(){
-  for(let i=0; i<genQueue.length && gens.size<MAX_PAR;){
-    const q=genQueue[i], w=waitingOn(q);
-    if(w==='gone'){ genQueue.splice(i,1); settleReply(q.sid, q.id, {error:'The prompt was deleted before its reply was written.'}); continue; }
-    if(w!=null){ i++; continue; }
-    genQueue.splice(i,1); startReply(q.sid, q.id);
-  }
+/* the server's events: a prompt is waiting, its reply is coming in, or it's done */
+function replyWaiting(d){
+  if(gens.has(gkey(d.sid, d.id)) || genQueue.some(q=>q.sid===d.sid && q.id===d.id)) return;
+  genQueue.push({id:d.id, sid:d.sid});
+  if(d.sid===DB.current) refreshWaiting();
 }
-async function startReply(sid, id){
-  const tree=treeOf(sid), n=tree.nodes[id];
-  const g={id, sid, ctl:new AbortController(), text:'', tier:n.askTier||opts.model, stopped:false, sig:withTree(tree, ()=>ctxSig(id)), started:Date.now()};
-  gens.set(gkey(sid,id), g); delete genNotes[gkey(sid,id)];
-  if(sid===DB.current) showLive(id);
-  try{
-    /* images can only travel with the turn being answered; earlier ones are described by name */
-    const imgs=(n.files||[]).filter(m=>m.kind==='image').map(m=>Files.get(m.id)).filter(r=>r && r.blob).map(r=>r.blob);
-    const extra = imgs.length && imageLimits ? {images: imgs.slice(0, imageLimits.maxCount)} : {};
-    if(imgs.length && !imageLimits) toast('Images can’t be sent from this view, so Claude only sees their names.');
-    const settings=withTree(tree, ()=>settingsFor(id).values);
-    /* tools: the branch's own choice if it has one, else the Tools menu by the input box */
-    if(settings.tools==null && activeTools().length) settings.tools=activeTools();
-    g.steps=[];
-    const r = await sampleFn(withTree(tree, ()=>turnsFor(id)), {...extra, modelTier:g.tier, cache:false, signal:g.ctl.signal, settings,
-      onText:({text})=>{ g.text=text; paintGen(g); },
-      onStep:(kind, d)=>{ if(kind==='step') g.steps.push({...d}); else { const st=g.steps.find(x=>x.id===d.id); if(st){ const {id:_, ...res}=d; st.result=res; } } paintSteps(g); }});
-    g.usage=r.usage||null; g.thinking=r.thinking||''; g.steps=r.steps||g.steps; g.sources=r.sources||null;
-    const unused=(r.notes||[]).length ? `Model settings not used by this model: ${r.notes.join(', ')}.` : null;
-    finishGen(g, r.text, r.modelTierApplied, [r.truncated ? 'Cut short by the length limit.' : (r.modelTierApplied!==g.tier ? `Your plan served the ${r.modelTierApplied} tier.` : null), unused].filter(Boolean).join(' ') || null);
-  }catch(e){
-    const code = e && e.code;
-    if(PERMANENT.includes(code)) sampleState='denied';
-    finishGen(g, (e && e.text) || '', null, code==='cancelled' ? ((e && e.text) ? 'Stopped early.' : null) : errCopy(code));
+function replyLive(d){
+  const k=gkey(d.sid, d.id); let g=gens.get(k);
+  if(!g){
+    const i=genQueue.findIndex(q=>q.sid===d.sid && q.id===d.id); if(i>=0) genQueue.splice(i,1);
+    g={id:d.id, sid:d.sid, text:'', steps:[], tier:d.tier, started:d.started,
+      ctl:{abort(){ fetch('/api/agent/stop', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sid:d.sid, id:d.id})}).catch(()=>{}); }}};
+    gens.set(k, g); delete genNotes[k];
+    if(d.sid===DB.current && S.nodes[d.id]) showLive(d.id);
   }
+  const stepsChanged=JSON.stringify(d.steps||[])!==JSON.stringify(g.steps);
+  g.text=d.text||''; g.steps=d.steps||[];
+  if(d.sid===DB.current){ paintGen(g); if(stepsChanged) paintSteps(g); }
 }
-function finishGen(g, text, tier, note){
-  gens.delete(gkey(g.sid,g.id));
-  const tree=treeOf(g.sid), n=tree && tree.nodes[g.id];
-  if(n){
-    if(text){ markUnreadFor(g.sid, g.id); n.reply=text; n.rt=[g.started, Date.now()]; delete n.stale; delete n.replyEdited; if(tier) n.model=tier; else delete n.model; if(g.sig) n.ctx=g.sig; if(g.usage) n.usage=g.usage; else delete n.usage; if(g.thinking) n.thinking=g.thinking; else delete n.thinking; if(g.steps && g.steps.length) n.steps=g.steps; else delete n.steps; if(g.sources && g.sources.length) n.sources=g.sources; else delete n.sources; withTree(tree, ()=>touch(g.id)); }
-    if(note) genNotes[gkey(g.sid,g.id)]=note;
-    delete n.askTier;
-    save();
-  }
-  settleReply(g.sid, g.id, n && text ? {reply:n.reply, note} : {error: note || 'No reply came back.'});
-  gridChanged();
-  /* stopping a reply also cancels the prompts below it that were waiting for it */
-  if(g.stopped) dropWaiting(g.sid, g.id);
-  pumpReplies();
-  if(g.sid===DB.current){
-    const end=atPageEnd();
-    animRender([g.id], editorFor===g.id);
-    if(end) scrollThreadEnd();
-    if(cmpFor!=null) renderCompare();
-    if(n && n.reply) afterReplyNaming(g.id);
-  }
-  if(!busyCount()) setTimeout(pumpNames, 0);
+/* done: the reply is in the document once this page has the change that holds it (rev), and then whatever waited
+   for it (Replay, /loop) goes on */
+function replyDone(d){
+  const k=gkey(d.sid, d.id);
+  gens.delete(k);
+  const i=genQueue.findIndex(q=>q.sid===d.sid && q.id===d.id); if(i>=0) genQueue.splice(i,1);
+  if(d.note) genNotes[k]=d.note;
+  Sync.atLeast(d.rev||0).then(()=>{
+    settleReply(d.sid, d.id, d.reply!=null ? {reply:d.reply, note:d.note||undefined} : {error:d.error || d.note || 'No reply came back.'});
+    gridChanged();
+    if(d.sid===DB.current && S.nodes[d.id]){
+      const end=atPageEnd();
+      animRender([d.id], editorFor===d.id);
+      if(end) scrollThreadEnd();
+      if(cmpFor!=null) renderCompare();
+      if(S.nodes[d.id].reply) afterReplyNaming(d.id);
+    } else if(d.sid===DB.current) refreshWaiting();
+    if(!busyCount()) setTimeout(pumpNames, 0);
+  });
 }
-function dropWaiting(sid, id){
-  const t=treeOf(sid);
-  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i]; if(q.sid===sid && (q.id===id || (t && t.nodes[q.id] && withTree(t, ()=>path(q.id)).includes(id)))){ genQueue.splice(i,1); settleReply(q.sid, q.id, {error:'The reply was cancelled.'}); } }
-}
+/* Stop: the server stops a reply being written (keeping what came) or cancels a waiting one, with the prompts
+   waiting below it */
 function stopReply(id){
-  const g=liveGen(id);
-  if(g){ g.stopped=true; g.ctl.abort(); return true; }
-  if(queuedGen(id)){ dropWaiting(DB.current, id); refreshWaiting(); animRender([id]); return true; }
-  return false;
+  if(!liveGen(id) && !queuedGen(id)) return false;
+  fetch('/api/agent/stop', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sid:DB.current, id})}).catch(()=>{});
+  return true;
 }
-/* after undo, deleting or moving prompts: forget replies whose prompt is gone */
-function reconcileReplies(){
-  for(const g of [...gens.values()]){ const t=treeOf(g.sid); if(!t || !t.nodes[g.id]){ g.stopped=true; g.ctl.abort(); } }
-  for(let i=genQueue.length-1; i>=0; i--){ const q=genQueue[i], t=treeOf(q.sid); if(!t || !t.nodes[q.id]){ genQueue.splice(i,1); settleReply(q.sid, q.id, {error:'The prompt was deleted before its reply was written.'}); } }
-  pumpReplies();
-}
+/* after undo, deleting or moving prompts: the server stops replies whose prompt is gone once it has the change */
+function reconcileReplies(){ if(saveTimer) writeStore(); }
 function showLive(id){
   const slot=treeEl.querySelector(`[data-key="r${id}"]`);
   if(slot && slot.closest('.tree')) slot.outerHTML=replyHTML(id); else animRender([id]);
@@ -3789,7 +3778,7 @@ async function summarizeInto(id, conversation, fallback){
     failed = e && e.code;
     const n=S.nodes[id]; if(n){ n.text=fallback.text; if(fallback.reply) n.reply=fallback.reply; delete n.pending; }
   }
-  sumGen=null; save(); pumpReplies(); setTimeout(()=>typeof pumpNames==='function' && pumpNames(), 0);
+  sumGen=null; save(); setTimeout(()=>typeof pumpNames==='function' && pumpNames(), 0);
   render(editorFor===id);
   if(failed) toast(failed==='cancelled' ? 'Summary stopped. The plain version was kept.' : 'Claude couldn\u2019t write the summary, so the plain version was kept.');
 }
@@ -4331,29 +4320,11 @@ async function useDistill(how){
    The server relays commands from MCP clients (server/relay.ts); this page carries them out. Agents only ever work
    in their own run spaces, never in yours. Their changes skip your Undo, and every prompt they add carries their
    name. Operations wait for Claude's reply and return it. */
-/* ---- Agents ----
-   Agents work through MCP, and the server carries their operations out (server/agent.ts): it changes the document
-   and writes their replies itself, so nothing here has to be open. This page is told about each change (see Sync)
-   and about replies the server is writing, which show as they come in, like your own, and can be stopped. */
+/* ---- Events from the server ----
+   Agents work through MCP, and the server carries their operations out (server/agent.ts), so nothing here has to be
+   open. This page is told about each change to the document (see Sync), about replies (see Replies), scheduled
+   runs and the lock. */
 const Agent=(()=>{
-  function remoteGen(d){
-    const k=gkey(d.sid, d.id); let g=gens.get(k);
-    if(!g){
-      g={id:d.id, sid:d.sid, remote:true, text:'', steps:[], tier:d.tier, started:d.started,
-        ctl:{abort(){ fetch('/api/agent/stop', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sid:d.sid, id:d.id})}).catch(()=>{}); }}};
-      gens.set(k, g);
-      if(d.sid===DB.current && S.nodes[d.id]) showLive(d.id);
-    }
-    const stepsChanged=(d.steps||[]).length!==g.steps.length || JSON.stringify(d.steps||[])!==JSON.stringify(g.steps);
-    g.text=d.text||''; g.steps=d.steps||[];
-    if(d.sid===DB.current){ paintGen(g); if(stepsChanged) paintSteps(g); }
-  }
-  function remoteGenDone(d){
-    if(!gens.delete(gkey(d.sid, d.id))) return;
-    if(d.note) genNotes[gkey(d.sid, d.id)]=d.note;
-    if(d.sid===DB.current && S.nodes[d.id]){ animRender([d.id]); if(cmpFor!=null) renderCompare(); if(S.nodes[d.id].reply) afterReplyNaming(d.id); }
-    gridChanged();
-  }
   function connect(){
     if(!window.TREECHATS_LOCAL || window.TREECHATS_LOCAL.offline || typeof EventSource==='undefined') return;
     const es=new EventSource('/api/agent/events');
@@ -4361,9 +4332,10 @@ const Agent=(()=>{
     es.addEventListener('lock', ()=>location.reload());
     /* the lock was turned on or off, or the token reset, in another tab: reload to match */
     es.addEventListener('vault', e=>{ if(e.data!==window.TREECHATS_TAB) location.reload(); });
-    /* a reply the server is writing (an agent's): shown as it comes, with Stop */
-    es.addEventListener('gen', e=>{ try{ remoteGen(JSON.parse(e.data)); }catch(err){} });
-    es.addEventListener('gendone', e=>{ try{ remoteGenDone(JSON.parse(e.data)); }catch(err){} });
+    /* replies, written by the server: waiting, coming in (shown as it comes, with Stop), done */
+    es.addEventListener('genwait', e=>{ try{ replyWaiting(JSON.parse(e.data)); }catch(err){} });
+    es.addEventListener('gen', e=>{ try{ replyLive(JSON.parse(e.data)); }catch(err){} });
+    es.addEventListener('gendone', e=>{ try{ replyDone(JSON.parse(e.data)); }catch(err){} });
     /* the document changed: another tab, an agent or a scheduled task */
     es.addEventListener('doc', e=>{ try{ Sync.remote(JSON.parse(e.data)); }catch(err){ console.warn('Treechats could not apply a change from the server:', err); } });
     /* a scheduled task ran (its prompt and reply came as a change to the document) */
@@ -5261,30 +5233,30 @@ async function rewriteSummary(ids){
    written the full reply is still sent. */
 const sumJobs=new Map();
 let sumEditFor=null;
+/* The summary that stands in for a reply, written by the server (server/agent.ts, the same code agents use): it
+   marks the turn as having one on the way, and the change comes back here like any other. tpl: your wording for
+   this once (from the request card), else Settings › Prompts. */
 async function summarizeTurn(sid, id, tpl){
   const t=treeOf(sid), n=t && t.nodes[id]; if(!n || !n.reply) return {error:'That prompt has no reply to summarize.'};
   if(sampleState!=='ready') return {error:'Claude isn’t connected, so it can’t write the summary.'};
   const key=sid+':'+id; if(sumJobs.has(key)) return sumJobs.get(key);
-  const of=h5(n.reply), keep=n.sum && n.sum.text ? {...n.sum} : null;
-  n.sum={...(keep||{}), pending:true}; if(sid===DB.current) showSendNote(id);
   const job=(async()=>{
+    let r;
     try{
-      const r=await sampleFn(fillPrompt('summarizeReply', {prompt:n.text||'', reply:n.reply}, tpl), {modelTier:opts.model, cache:false});
-      const text=(r.text||'').trim(); if(!text) throw new Error('empty');
-      n.sum={text, of, by:'claude'};
-      return {summary:text};
-    }catch(e){
-      if(keep) n.sum=keep; else delete n.sum;
-      if(sid===DB.current) toast('Claude couldn’t write the summary, so the full reply is still sent. You can write one yourself.');
-      return {error:'Claude couldn’t write the summary.'};
-    }finally{
-      sumJobs.delete(key); save();
-      if(sid===DB.current){ showSendNote(id); renderCtx(); }
-    }
+      await Sync.flush();
+      const res=await fetch('/api/summarize', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sid, id, tpl:tpl ?? null})});
+      r=await res.json();
+      await Sync.atLeast(r.rev||0);
+    }catch(e){ r={error:'Claude couldn’t write the summary.'}; }
+    sumJobs.delete(key);
+    if(r.error && sid===DB.current) toast('Claude couldn’t write the summary, so the full reply is still sent. You can write one yourself.');
+    if(sid===DB.current){ showSendNote(id); renderCtx(); }
+    return r.error ? {error:r.error} : {summary:r.summary};
   })();
   sumJobs.set(key, job);
   return job;
 }
+
 /* redraws just the parts that show a turn's mode */
 function showSendNote(id){ if(S.nodes[id]) animRender([id]); }
 /* the tag on a prompt sent another way; it opens the menu */

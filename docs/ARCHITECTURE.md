@@ -24,7 +24,8 @@ server/doc.ts           the document, owned by the server: revisions, applying c
                         from the server's own writers (mutate), pushing every change to open pages
 server/agent.ts         what agents do over MCP (spawn, ask, replay, operate…), carried out by the server; request
                         budget per run
-server/replies.ts       replies the server writes (agents'), written as the page writes its own, streamed to pages
+server/replies.ts       every reply, yours and agents': one queue (a few at a time, each prompt after the replies above
+                        it), written into the document, streamed to pages, stoppable
 server/sample.ts        asking Claude from the server, with the same result as the page's sampler
 server/context.ts       reads the saved tree on the server; builds context with treecore.js (files read from disk)
 server/store.ts         SQLite in the app data folder: the state document, rolling snapshots, the token, the lock record
@@ -66,9 +67,11 @@ another site can't do without a CORS preflight that Treechats doesn't answer.
 | `GET /api/files`, `GET`/`PUT /api/files/:id` | Attached and project files |
 | `GET /api/snapshots`, `GET /api/snapshots/:id` | Earlier saved states |
 | `POST /mcp` | MCP (streamable HTTP, stateless). Read: `list_projects`, `list_chats`, `get_context`, `search`, `get_prompt`, `get_tree`, `list_saved_prompts`, and `btw` (a side question with a chat's context, answered by the server, changing nothing). Subagents: `spawn`, `ask`, `fork`, `edit_prompt`, `regenerate`, `leave_out`, `edit_reply`, `replay`, `loop`, `fan_out`, `review`, `judge`, `combine`, `distill`, plus `operate` (every other operation by name) and `describe`. `get_prompt` reports when the context above a reply has changed since it was written |
-| `GET /api/agent/events` | Server-sent events for open pages: `doc` (a change to the document, with its ops), `gen` and `gendone` (a reply the server is writing), `scheduled`, `lock`, `vault` |
-| `POST /api/agent/stop` | `{sid, id}`: stop a reply the server is writing |
-| `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |
+| `GET /api/agent/events` | Server-sent events for open pages: `doc` (a change to the document, with its ops), `genwait`, `gen` and `gendone` (a reply waiting, coming in, and done, with the revision that holds it), `scheduled`, `lock`, `vault` |
+| `POST /api/replies` | `{sid, ids}`: write replies to these prompts (the page saves them first) |
+| `POST /api/agent/stop` | `{sid, id}`: stop a reply being written (what came is kept), or cancel a waiting one with the prompts waiting below it |
+| `POST /api/summarize` | `{sid, id, tpl?}`: write the summary that stands in for a turn's reply (Include as › Summary); answers when it's written |
+| `POST /api/sample` | One request to Claude, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page uses it for its ✦ tools (naming, fan out, checks); replies go through `/api/replies` |
 | `POST /api/folder/list`, `/read`, `/write` | Folders (server/folders.ts): list files (git-aware), read them, write one back. Paths stay inside the folder; writes only go to folders linked to a project, never into `.git`, and refuse a disk copy that changed since it was read |
 | `POST /api/folder/git`, `/diff` | Branch, changed files and diffs for a linked folder (server/run.ts), with secrets hidden |
 | `POST /api/folder/run` | Runs a command in a linked folder; refused unless Settings › System allows it and the folder is linked, both checked against the saved state. Secrets in the output are hidden |

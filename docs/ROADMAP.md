@@ -57,8 +57,8 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 
 ## Phase 2: foundation
 - Operations defined once and run where they're needed: done for context building, sync, agent operations and the
-  ✦ tools; your own edits are still made in the page and sent as changes, and your replies are still requested by
-  the page (a reply in progress stops if its tab closes)
+  ✦ tools; your own edits are still made in the page and sent as changes; every reply (yours and agents') is written by
+  the server, so it carries on when the tab closes
 - The tree stored as rows (projects, turns, branches) instead of one document; attachments in the database
 - Turns made of content blocks (text, tool calls and results, thinking, images), provider-neutral
 - Attribution and history for every change; permissions per project (read, suggest, write)
