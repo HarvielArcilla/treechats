@@ -1147,23 +1147,6 @@ ul.flist li .fname.linkbtn:hover{color:var(--accent);text-decoration:underline}
 .rvlinks{display:inline-flex;gap:4px}
 .rvlinks .linkbtn{font-size:.8rem;padding:2px 6px}
 .fan.review .segs{margin:4px 0 8px}
-.fan.blame .blq{margin:0;font-weight:600;overflow-wrap:anywhere}
-.fan.blame input.blq{font:inherit;font-weight:400;width:100%;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:7px 9px;color:var(--fg)}
-.blopts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
-.blverdict{margin:0;font-weight:600}
-.blfound{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.blrow{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
-.blwho{display:flex;gap:8px;align-items:baseline;min-width:0}
-.blwho .note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.blnum{font-size:.84rem}
-.blacts{display:flex;flex-wrap:wrap;gap:4px}
-.blrow .tag.strong,.blrep .tag.yes{color:var(--accent);border-color:var(--accent)}
-.bltests td:first-child{overflow-wrap:anywhere}
-.blreps td{padding-left:10px}
-.blrep{font-size:.8rem;margin:2px 0}
-.blrep .tag{margin-right:6px}
-.bldetails summary{cursor:pointer;font-size:.84rem;color:var(--muted)}
-.blink{font-size:.8rem;padding:2px 6px}
 .row.inrange{background:var(--accent-soft);border-color:color-mix(in srgb, var(--accent) 35%, var(--line))}
 .rangebar{flex-wrap:wrap;background:var(--surface);color:var(--fg);border:1px solid var(--line)}
 .rangebar .btn{background:var(--surface);color:var(--fg);border-color:var(--line)}
@@ -1472,9 +1455,6 @@ const PROMPTS = {
     fmt:'Reply with only JSON: {"prompt":"The follow-up message, in the person\'s voice.","reply":"The combined reply, in Markdown.","sources":{"#12":"What came from it.","#14":"What came from it."}}'},
   review:{label:'Review: second opinion', group:'tools', def:"Review the answer below with fresh eyes. Point out anything wrong, missing, unclear or weakly supported, most important first, and say what you would change. If it holds up, say so plainly.\n\n{material}",
     help:'The first prompt of the new chat ✦ Review starts. {material} becomes the prompt and reply being reviewed, or the whole conversation up to it if you include it.'},
-  blameJudge:{label:'Blame: checking each reply', group:'tools', def:"Below are several replies to the same message, each labelled with its number. Answer this question about each reply on its own, judging only what that reply says: {question}\n\n{replies}",
-    help:'What Claude is asked by ✦ Blame after each set of replies, on the quick model. {question} becomes your question about the reply, {replies} the numbered replies.',
-    fmt:'Reply with only JSON: {"answers":[{"yes":true,"why":"A few words."}]}\nGive exactly one answer per reply, in the order they are numbered.'},
   summarizeReply:{label:'Summary: writing it', group:'send', def:TreechatsSend.DEFAULTS.summarizeReply, help:'What Claude is asked when a turn is included as a summary. {prompt} becomes the prompt, {reply} the reply it summarizes.'},
   sendSummary:{label:'Summary: how it’s sent', group:'send', def:TreechatsSend.DEFAULTS.sendSummary, help:'Sent in place of the reply of a turn included as a summary. {summary} becomes the summary.'},
   sendExcerptPrompt:{label:'Excerpt: the prompt', group:'send', def:TreechatsSend.DEFAULTS.sendExcerptPrompt, help:'Sent in place of a prompt with highlighted parts. {excerpt} becomes the parts, each separated by a blank line. Add a note around it if you want Claude told it’s an excerpt.'},
@@ -1531,7 +1511,6 @@ const COMMANDS=[
   {name:'rewind', desc:'Go back to an earlier prompt on this line and continue from there. What came after stays on its branch.'},
   {name:'compact', desc:'Distill the context into a brief, then start a fresh chat from it. Same as ✦ Distill.'},
   {name:'review', args:'[what to check]', desc:'A fresh chat reviews the last reply. Same as ✦ Review.'},
-  {name:'blame', args:'[yes/no question about the reply]', desc:'Find which part of the context made Claude say something: it asks again with parts left out. Same as ✦ Blame.'},
   {name:'branch', args:'name', need:true, desc:'Rename the branch you’re on, or name a new one from here.'},
   {name:'clear', desc:'Start a new chat. This one stays as it is.', root:true},
   {name:'run', args:'command', need:true, desc:'Run a command in a linked folder (tests, a build, a script) and attach its output to your next prompt. Turn it on in Settings › System.'},
@@ -1580,7 +1559,6 @@ function runCommand(name, arg, at){
   if(name==='rewind'){ return rewindMenu(at); }
   if(name==='compact'){ if(ready()) openDistill(at); return; }
   if(name==='review'){ if(!ready()) return; if(!S.nodes[at].reply){ toast(`#${at} has no reply to review yet.`); return; } openReview(at); if(arg && reviewAsk){ reviewAsk.text=arg+'\n\n{material}'; animRender([at]); } return; }
-  if(name==='blame'){ if(!ready()) return; if(!S.nodes[at] || !S.nodes[at].reply){ toast(`#${at} has no reply to trace yet.`); return; } openBlame(at); if(arg && blame && blame.status!=='running'){ blame.status='setup'; blame.q=arg.trim(); paintBlame(); startBlame(); } return; }
   if(name==='branch'){
     const name2=arg.trim();
     if(!NAME_RE.test(name2)){ toast('Use letters, numbers, dots, dashes, slashes or underscores (no spaces).'); return; }
@@ -3467,17 +3445,14 @@ function settingsFor(id){
   return {values:out, from};
 }
 const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
-/* without: parts to leave out for this one request (✦ Blame): 'i' the standing instructions, 'f:<file id>' a project
-   file, a prompt's number for its turn */
-function turnsFor(id, includeLastReply, without){
-  const raw=[], instr=promptText('instructions').trim(), wo=without||new Set();
-  if(instr && !wo.has('i')) raw.push({role:'user', content:instr});
-  const files=(S.files||[]).filter(f=>!wo.has('f:'+f.id));
-  if(files.length){ const fe=promptText('fileEdits').trim(); raw.push({role:'user', content:'Files shared in this project:\n\n'+files.map(fileBlock).join('\n\n')+(fe?'\n\n'+fe:'')}); }
+function turnsFor(id, includeLastReply){
+  const raw=[], instr=promptText('instructions').trim();
+  if(instr) raw.push({role:'user', content:instr});
+  if(S.files && S.files.length){ const fe=promptText('fileEdits').trim(); raw.push({role:'user', content:'Files shared in this project:\n\n'+S.files.map(fileBlock).join('\n\n')+(fe?'\n\n'+fe:'')}); }
   for(const e of contextEntries(id)){
     if(e.seam){ raw.push({role:'user', content:e.text}); continue; }
     const n=S.nodes[e.id];
-    if((n.skip || wo.has(e.id)) && e.id!==id) continue;
+    if(n.skip && e.id!==id) continue;
     const fl=(n.files||[]).map(fileBlock).join('\n\n');
     let user = fl ? (fl+(n.text?'\n\n'+n.text:'')) : (n.text||''), reply = n.reply && (includeLastReply || e.id!==id) ? n.reply : '';
     /* its send mode applies once it's history: always, except to the prompt being sent now */
@@ -4281,246 +4256,6 @@ function reviewLinksHTML(id){
   return `<span class="rvlinks">${rs.map(n=>`<button class="linkbtn" data-goto="${n.id}" title="Open the review chat">${AI}Review #${n.id} ↗</button>`).join('')}</span>`;
 }
 
-/* the last Blame result on a reply, under it */
-function blameLinkHTML(id){
-  const r=S.nodes[id] && S.nodes[id].blame; if(!r || (blame && blame.id===id && blame.sid===DB.current)) return '';
-  const what = r.verdict==='found' && r.found.length ? blameLabel(r.found[0].parts, r.parts)+(r.found.length>1?` +${r.found.length-1}`:'') : r.verdict==='prompt' ? 'the prompt itself' : 'no clear cause';
-  return `<button class="linkbtn blink" data-blame="${id}" title="“${esc(r.q)}”: open the last result">Blamed: ${esc(what)}</button>`;
-}
-/* ---- ✦ Blame: which part of the context made Claude say this ----
-   You ask a yes/no question about a reply ("Does it recommend Redis?"). Treechats asks the same prompt again, the same
-   way (same model and settings), with parts of its context left out, and a quick check answers your question about
-   each new reply. A part is to blame when leaving it out changes the answer.
-   First it checks the answer holds with everything in (otherwise there's nothing steady to trace), then with nothing
-   above the prompt (if Claude still says it, the prompt alone does it), then it halves what's left until it reaches the
-   parts that matter. Every test is shown as counts, since a few replies are evidence, not proof. Nothing in the tree
-   changes and the new replies aren't kept; the result is kept on the reply. */
-const BLAME_SAMPLES=[2,3,5], BLAME_MAX=[15,30,60];
-/* what can be left out of a prompt's context, in the order it's sent */
-function blameParts(id){
-  const out=[], sys=(settingsFor(id).values.system||'').trim(), instr=promptText('instructions').trim();
-  if(sys) out.push({k:'y', label:'System prompt'});
-  if(instr) out.push({k:'i', label:'Standing instructions'});
-  for(const f of S.files||[]) out.push({k:'f:'+f.id, label:f.name, file:1});
-  for(const e of contextEntries(id)){
-    if(e.seam || e.id===id) continue;
-    const n=S.nodes[e.id]; if(n.kind==='merge' || n.skip) continue;
-    out.push({k:e.id, label:'#'+e.id, turn:1});
-  }
-  return out;
-}
-/* a set of parts in words: runs of neighbouring turns as #4–#9 */
-function blameLabel(keys, parts){
-  const ps=parts.filter(p=>keys.includes(p.k)), out=[]; let run=[];
-  const flush=()=>{ if(run.length) out.push(run.length>2 ? `${run[0].label}–${run[run.length-1].label} (${run.length} turns)` : run.map(p=>p.label).join(', ')); run=[]; };
-  for(const p of ps){
-    if(!p.turn){ flush(); out.push(p.label); continue; }
-    const prev=run[run.length-1]; if(prev && parts.indexOf(p)!==parts.indexOf(prev)+1) flush();
-    run.push(p);
-  }
-  flush(); return out.join(', ');
-}
-function blameKinds(parts){
-  const t=parts.filter(p=>p.turn).length, f=parts.filter(p=>p.file).length, bits=[];
-  if(parts.some(p=>p.k==='y')) bits.push('the system prompt');
-  if(parts.some(p=>p.k==='i')) bits.push('the standing instructions');
-  if(f) bits.push(`${f} project file${f===1?'':'s'}`);
-  if(t) bits.push(`${t} earlier turn${t===1?'':'s'}`);
-  return bits.length>1 ? bits.slice(0,-1).join(', ')+' and '+bits[bits.length-1] : bits[0]||'';
-}
-/* replies a search for one cause usually takes */
-const blameTypical = (nParts, k) => Math.max(0,k-1) + k*(1+2*Math.ceil(Math.log2(Math.max(2,nParts))));
-const blameStop = why => Object.assign(new Error(why), {blame:why});
-/* the search itself; o: samples, max (replies), tpl (the check's wording), signal, onProgress(res) */
-async function runBlame(sid, id, question, o={}){
-  const tree=treeOf(sid), n=tree.nodes[id], K=o.samples||3, max=o.max||30, signal=o.signal;
-  const parts=withTree(tree, ()=>blameParts(id)), tier=n.model||opts.model;
-  const base=withTree(tree, ()=>settingsFor(id).values);
-  if(base.tools==null && activeTools().length) base.tools=activeTools();
-  const res={q:question, samples:K, max, at:Date.now(), tier, parts, tests:[], found:[], replies:0, checks:0, cost:0, verdict:null};
-  const progress=()=>{ if(o.onProgress) o.onProgress(res); };
-  const call=async fn=>{ try{ return await fn(); }catch(e){ if(e && (e.code==='cancelled' || (signal && signal.aborted))) throw blameStop('stopped'); throw e; } };
-  const ask=wo=>call(async()=>{
-    const settings={...base}; if(wo.has('y')) delete settings.system;
-    const r=await sampleFn(withTree(tree, ()=>turnsFor(id, false, wo)), {modelTier:tier, cache:false, signal, settings});
-    res.replies++; if(r.usage && r.usage.cost!=null) res.cost+=r.usage.cost; progress();
-    return r.text||'';
-  });
-  const judge=replies=>call(async()=>{
-    const body=replies.map((t,i)=>`Reply ${i+1}:\n${clip(t,6000)}`).join('\n\n');
-    const d=await sampleFn.json(fillPrompt('blameJudge', {question, replies:body}, o.tpl), {modelTier:'quick', cache:false, signal});
-    res.checks++;
-    const a=Array.isArray(d && d.answers) ? d.answers : [];
-    return replies.map((_,i)=>({yes:!!(a[i] && a[i].yes===true), why:String(a[i] && a[i].why || '').slice(0,160)}));
-  });
-  const cache=new Map();
-  async function test(keys){
-    const key=keys.map(String).sort().join(','); if(cache.has(key)) return cache.get(key);
-    if(signal && signal.aborted) throw blameStop('stopped');
-    if(res.replies+K>max) throw blameStop('budget');
-    const t={without:keys, yes:null, of:K}; res.tests.push(t); progress();
-    const wo=new Set(keys), outs=await Promise.all(Array.from({length:K}, ()=>ask(wo))), v=await judge(outs);
-    t.yes=v.filter(x=>x.yes).length; t.why=v.map(x=>x.why); t.replies=outs.map((x,i)=>({text:x, yes:v[i].yes}));
-    cache.set(key, t); progress(); return t;
-  }
-  let b=1;
-  const eff = t => b - t.yes/t.of >= 0.5 - 1e-9;
-  const found = (keys, t, how) => { res.found.push({parts:keys, yes:t.yes, of:t.of, ti:res.tests.indexOf(t), ...(how?{[how]:1}:{})}); progress(); };
-  async function narrow(keys, t){
-    if(keys.length===1){ found(keys, t); return; }
-    const h=Math.ceil(keys.length/2), A=keys.slice(0,h), B=keys.slice(h);
-    let tA, tB;
-    try{ tA=await test(A); tB=await test(B); }catch(e){ if(e.blame) found(keys, t, 'open'); throw e; }
-    const hits=[[A,tA],[B,tB]].filter(([,x])=>eff(x));
-    if(!hits.length){ found(keys, t, 'together'); return; }
-    let stop=null;
-    for(const [X,tX] of hits){
-      if(stop){ found(X, tX, 'open'); continue; }
-      try{ await narrow(X, tX); }catch(e){ if(!e.blame) throw e; stop=e; }
-    }
-    if(stop) throw stop;
-  }
-  try{
-    /* with everything in: the reply you have counts as one */
-    const outs=[n.reply||'', ...await Promise.all(Array.from({length:K-1}, ()=>ask(new Set())))], v=await judge(outs);
-    res.base={yes:v.filter(x=>x.yes).length, of:K, why:v.map(x=>x.why), replies:outs.map((x,i)=>({text:x, yes:v[i].yes, yours:i===0}))};
-    b=res.base.yes/K; progress();
-    if(b < 2/3 - 1e-9){ res.verdict='unsteady'; return res; }
-    if(!parts.length){ res.verdict='nothing'; return res; }
-    const all=await test(parts.map(p=>p.k));
-    if(!eff(all)){ res.verdict='prompt'; res.allTi=res.tests.indexOf(all); return res; }
-    await narrow(parts.map(p=>p.k), all);
-    res.verdict='found';
-  }catch(e){
-    if(!e.blame) throw e;
-    res.stopped=e.message; res.verdict = res.found.length ? 'found' : 'stopped';
-  }
-  return res;
-}
-/* the result as kept on the reply: no reply texts */
-const blameKeep = r => JSON.parse(JSON.stringify(r, (k,v)=>k==='replies' && Array.isArray(v) ? undefined : v));
-/* the result in words, for agents */
-function blameText(r){
-  const L = keys => blameLabel(keys, r.parts), lines=[];
-  lines.push(`Question: ${r.q}`);
-  if(r.base) lines.push(`With everything: ${r.base.yes}/${r.base.of} yes`);
-  for(const t of r.tests) if(t.yes!=null) lines.push(`Without ${L(t.without)}: ${t.yes}/${t.of} yes`);
-  const v = r.verdict==='unsteady' ? 'Not steady enough to trace: with everything in, Claude doesn’t say it reliably. Try a sharper question or more samples.'
-    : r.verdict==='nothing' ? 'There is nothing above this prompt to leave out.'
-    : r.verdict==='prompt' ? 'Claude still says it with nothing above the prompt, so it comes from the prompt itself (or from Claude), not the earlier context.'
-    : r.verdict==='stopped' ? 'Stopped before finding anything.'
-    : 'To blame: '+r.found.map(f=>`${L(f.parts)} (without ${f.parts.length===1?'it':'them'}: ${f.yes}/${f.of})${f.together?' — only together; leaving out either half alone doesn’t change it':''}${f.open?' — narrowed this far before stopping':''}`).join('; ')+'.';
-  lines.push(v);
-  if(r.stopped==='budget') lines.push('Stopped at the reply limit.');
-  lines.push(`${r.replies} replies and ${r.checks} quick checks. ${r.samples} replies per test: likely, not proven.`);
-  return lines.join('\n');
-}
-
-let blame=null;
-function openBlame(id){
-  if(sampleState!=='ready'){ toast('Blame needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
-  const n=S.nodes[id]; if(!n) return;
-  if(!n.reply){ toast(`#${id} has no reply to trace yet.`); return; }
-  if(opts.simple) openInEditor(id);
-  if(!(blame && blame.id===id && blame.sid===DB.current)){
-    if(blame && blame.ctl) blame.ctl.abort();
-    const r=n.blame;
-    blame={id, sid:DB.current, q:r ? r.q : '', samples:r ? r.samples : 3, max:r ? r.max : 30, status:r ? 'done' : 'setup', res:r||null, open:new Set()};
-  }
-  distill=null; fan=null; reviewAsk=null;
-  if(sel!==id) select(id); else animRender([id]);
-  const el=treeEl.querySelector('.fan.blame'); if(el) el.scrollIntoView({block:'nearest', behavior: Motion.reduced()?'auto':'smooth'});
-  const q=document.getElementById('blameQ'); if(q && blame.status==='setup') q.focus({preventScroll:true});
-}
-function paintBlame(){ const el=treeEl.querySelector('.fan.blame'); if(el && blame) el.outerHTML=blameHTML(); }
-function closeBlame(){ if(!blame) return; const id=blame.id; if(blame.ctl) blame.ctl.abort(); blame=null; animRender([id]); }
-async function startBlame(){
-  const b=blame; if(!b || b.status==='running') return;
-  const q=document.getElementById('blameQ'); if(q) b.q=q.value.trim();
-  if(!b.q){ toast('Ask a yes/no question about the reply first, like “Does it recommend Redis?”'); if(q) q.focus(); return; }
-  const tpl=await askTemplate('blameJudge', {question:b.q, replies:'Reply 1:\n…'}, 'Blame: checking each reply'); if(tpl==null) return;
-  b.status='running'; b.err=null; b.ctl=new AbortController(); b.open=new Set();
-  b.res={q:b.q, samples:b.samples, max:b.max, parts:blameParts(b.id), tests:[], found:[], replies:0, checks:0};
-  paintBlame();
-  try{
-    b.res=await runBlame(b.sid, b.id, b.q, {samples:b.samples, max:b.max, tpl, signal:b.ctl.signal, onProgress:r=>{ if(blame===b){ b.res=r; paintBlame(); } }});
-    const t=treeOf(b.sid), n=t && t.nodes[b.id];
-    if(n && b.res.verdict!=='stopped'){ n.blame=blameKeep(b.res); save(); }
-    b.status='done';
-  }catch(e){ b.status='error'; b.err=errCopy(e && e.code) || String(e && e.message || e); }
-  b.ctl=null;
-  if(blame===b){ if(b.sid===DB.current && S.nodes[b.id]) animRender([b.id]); }
-}
-function blameTestRow(r, t, label, i){
-  const val = t.yes==null ? `<span class="note">asking…</span>` : `<b>${t.yes}/${t.of}</b> yes`;
-  const reps = t.replies ? `<button class="linkbtn" data-blreps="${i}" aria-expanded="${blame.open.has(i)}">Replies</button>` : '';
-  return `<tr><td>${esc(label)}</td><td class="num">${val}</td><td>${reps}</td></tr>${blame.open.has(i) && t.replies ? `<tr class="blreps"><td colspan="3">${t.replies.map((x,j)=>`<div class="blrep"><span class="tag ${x.yes?'yes':''}">${x.yes?'yes':'no'}</span>${x.yours?'<span class="note">your reply</span> ':''}${esc(clip(x.text.replace(/\s+/g,' '),280))}${t.why && t.why[j]?` <span class="note">— ${esc(t.why[j])}</span>`:''}</div>`).join('')}</td></tr>` : ''}`;
-}
-function blameHTML(){
-  const b=blame, n=S.nodes[b.id]; if(!n) return '';
-  const running=b.status==='running';
-  const head=`<div class="fanhead"><b>${AI}Blame</b><span class="note">what in the context made Claude say this</span><button class="rmore" data-blclose>${running?'Stop':'Close'}</button></div>`;
-  if(b.status==='setup'){
-    const parts=blameParts(b.id), tier=n.model||opts.model, c=n.usage && n.usage.cost, typ=Math.min(b.max, blameTypical(parts.length, b.samples));
-    const seg=(attr, vals, cur, fmt)=>`<div class="segs" role="group">${vals.map(v=>`<button class="seg" ${attr}="${v}" aria-pressed="${v===cur}">${fmt(v)}</button>`).join('')}</div>`;
-    return `<div class="fan blame" data-key="bl${b.id}">${head}
-      <p class="note">Treechats asks #${b.id} again with parts of its context left out, and checks each new reply. A part is to blame when leaving it out changes the answer. Nothing in your tree changes.</p>
-      <label class="flabel" for="blameQ">What in the reply? <span class="flhint">a yes/no question about it</span></label>
-      <input id="blameQ" class="blq" value="${esc(b.q)}" placeholder="Does the reply recommend Redis?" autocomplete="off">
-      <div class="blopts"><span class="note">Replies per test</span>${seg('data-blsamples', BLAME_SAMPLES, b.samples, v=>v)}<span class="note">At most</span>${seg('data-blmax', BLAME_MAX, b.max, v=>v+' replies')}</div>
-      <p class="note">${parts.length ? `${parts.length} part${parts.length===1?'':'s'} to test: ${blameKinds(parts)}. One cause usually takes about ${typ} replies on ${esc(tierLabel(tier))}${c?` (about ${fmtCost(c*typ)})`:''}, never more than ${b.max}, plus one quick check per test. More replies per test give surer answers.` : 'There’s nothing above this prompt to leave out.'}</p>
-      <div class="bar"><button class="btn primary" data-blgo ${parts.length?'':'disabled'}>${AI}Find the cause</button><button class="btn" data-blclose>Cancel</button></div></div>`;
-  }
-  const r=b.res||{tests:[], found:[], parts:[]}, P=r.parts||[], L=keys=>blameLabel(keys, P);
-  const rows=[r.base ? blameTestRow(r, r.base, 'With everything', 'b') : (running ? `<tr><td>With everything</td><td class="num"><span class="note">asking…</span></td><td></td></tr>` : ''),
-    ...r.tests.map((t,i)=>blameTestRow(r, t, 'Without '+L(t.without), i))].join('');
-  const table=`<table class="cmdtable bltests">${rows}</table>`;
-  let body='';
-  if(running) body=`<p class="note">${r.replies} of at most ${r.max} replies so far.</p>${table}`;
-  else if(b.status==='error') body=`<p class="note err">${esc(b.err||'Something went wrong.')}</p>${table}`;
-  else{
-    const base=r.base ? `${r.base.yes}/${r.base.of}` : '';
-    let v='';
-    if(r.verdict==='unsteady') v=`With everything in, only ${base} replies say yes. That isn’t steady enough to trace: try a sharper question, or more replies per test.`;
-    else if(r.verdict==='nothing') v='There’s nothing above this prompt to leave out.';
-    else if(r.verdict==='prompt'){ const t=r.tests[r.allTi]; v=`Claude still says it with nothing above #${b.id} (${t?`${t.yes}/${t.of}`:''}), so it comes from the prompt itself, or from Claude, not from the earlier context.`; }
-    else if(r.verdict==='stopped') v='Stopped before anything was found.';
-    else v='Leaving out '+(r.found.length===1?'this':'these')+' changes the answer:';
-    const now=new Set(blameParts(b.id).map(p=>String(p.k)));
-    const found = r.verdict==='found' ? `<ul class="blfound">${r.found.map(f=>{
-      const turns=f.parts.filter(k=>typeof k==='number' && S.nodes[k]), one=f.parts.length===1 ? P.find(p=>p.k===f.parts[0]) : null;
-      const tag = f.open ? '<span class="tag">narrowed this far</span>' : f.together ? '<span class="tag">only together</span>' : f.yes===0 ? '<span class="tag strong">strong</span>' : '<span class="tag">partial</span>';
-      const what = one && one.turn && S.nodes[one.k] ? `<span class="note">${esc(clip((S.nodes[one.k].text||'').replace(/\s+/g,' '),110))}</span>` : '';
-      const acts=[turns.length ? `<button class="act" data-blsend="${turns.join(',')}" aria-haspopup="menu" title="Choose how ${turns.length===1?'this turn is':'these turns are'} included in the context of the prompts below">Include as… ▾</button>` : '',
-        turns.length===1 ? `<button class="act" data-goto="${turns[0]}">Show</button>` : '',
-        f.parts.includes('i') || f.parts.includes('y') ? `<button class="act" data-blmemory>Open instructions</button>` : '',
-        f.ti!=null && r.tests[f.ti] && r.tests[f.ti].replies ? `<button class="act" data-blreps="${f.ti}">Replies</button>` : ''].join('');
-      const gone = f.parts.some(k=>!now.has(String(k))) ? ' <span class="note">(changed since)</span>' : '';
-      return `<li class="blrow"><div class="blwho"><b>${esc(L(f.parts))}</b>${gone} ${what}</div><div class="blnum">Without ${f.parts.length===1?'it':'them'}: <b>${f.yes}/${f.of}</b> yes <span class="note">(with everything ${base})</span> ${tag}</div>${f.together?`<p class="note">Leaving out either half alone doesn’t change it: more than one part points Claude there.</p>`:''}<div class="blacts">${acts}</div></li>`;
-    }).join('')}</ul>` : '';
-    const stop = r.stopped==='budget' ? `<p class="note">Stopped at the limit of ${r.max} replies; “narrowed this far” could be split further with a higher limit.</p>` : r.stopped==='stopped' ? '<p class="note">Stopped early.</p>' : '';
-    body=`<p class="blverdict">${v}</p>${found}${stop}<details class="bldetails" ${r.found.length && !b.open.size?'':'open'}><summary>All tests · ${r.replies} replies, ${r.checks} quick checks${r.cost?` · ${fmtCost(r.cost)}`:''}</summary>${table}</details>
-      <p class="note">${r.samples} replies per test: a part here likely matters, but it isn’t proven. Leaving a part out only for this test changes nothing in your tree.</p>
-      <div class="bar"><button class="btn" data-blagain>Ask something else</button><button class="btn" data-blclose>Close</button></div>`;
-  }
-  return `<div class="fan blame" data-key="bl${b.id}">${head}<p class="blq">“${esc(r.q||b.q)}”</p>${body}</div>`;
-}
-/* clicks inside the Blame card; true when one was handled */
-function blameClick(e){
-  if(!blame) return false;
-  const b=blame;
-  if(e.target.closest('[data-blgo]')){ startBlame(); return true; }
-  if(e.target.closest('[data-blclose]')){ if(b.status==='running'){ b.ctl && b.ctl.abort(); } else closeBlame(); return true; }
-  const keepQ=()=>{ const q=document.getElementById('blameQ'); if(q) b.q=q.value; };
-  const s=e.target.closest('[data-blsamples]'); if(s){ keepQ(); b.samples=+s.dataset.blsamples; paintBlame(); return true; }
-  const m=e.target.closest('[data-blmax]'); if(m){ keepQ(); b.max=+m.dataset.blmax; paintBlame(); return true; }
-  if(e.target.closest('[data-blagain]')){ b.status='setup'; b.q=''; paintBlame(); const q=document.getElementById('blameQ'); if(q) q.focus({preventScroll:true}); return true; }
-  const rp=e.target.closest('[data-blreps]'); if(rp){ const k=rp.dataset.blreps, i=k==='b'?'b':+k; if(b.open.has(i)) b.open.delete(i); else b.open.add(i); paintBlame(); return true; }
-  const sd=e.target.closest('[data-blsend]'); if(sd){ e.stopPropagation(); sendMenu(sd, sd.dataset.blsend.split(',').map(Number)); return true; }
-  if(e.target.closest('[data-blmemory]')){ runCommand('memory', '', b.id); return true; }
-  return false;
-}
-
 /* ---- ✦ Judge and ✦ Combine (in Compare) ----
    Judge: one request with the context up to the prompt, each follow-up and its reply, and your criteria; Claude gives a
    reason for every follow-up and picks one. It changes nothing; you act on the verdict.
@@ -4874,14 +4609,6 @@ const Agent=(()=>{
       const which = ids.length>1 ? `#${ids[0]}–#${ids[ids.length-1]} (${ids.length} prompts) are` : `#${a.prompt} is`;
       const msg = mode==='full' ? `${which} included in full again` : mode==='out' ? `${which} left out of what later prompts send` : `${which} included as ${SM.LABELS[mode].toLowerCase()} by later prompts`;
       return {...where(sid,a.prompt), prompt:a.prompt, requests, message: msg+(failed.length?`. Claude couldn’t write the summary of ${failed.map(x=>'#'+x).join(', ')}, so ${failed.length===1?'its':'their'} full reply is still sent`:'')};
-    },
-    async blame(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
-      if(!n.reply) throw new Error(`#${a.prompt} has no reply to trace.`);
-      const q=String(a.question||'').trim(); if(!q) throw new Error('Give a yes/no question about the reply, like "Does it recommend Redis?".');
-      const res=await runBlame(sid, a.prompt, q, {samples:a.samples||3, max:a.max_replies||30});
-      if(t.nodes[a.prompt]){ t.nodes[a.prompt].blame=blameKeep(res); save(); }
-      return {...where(sid,a.prompt), prompt:a.prompt, requests:res.replies+res.checks, message:blameText(res)};
     },
     async edit_reply(a){
       const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
@@ -5696,7 +5423,6 @@ function rowHTML(id, pathSet){
   if(fan && fan.id===id) h+=fanHTML();
   if(distill && distill.id===id) h+=distillHTML();
   if(reviewAsk && reviewAsk.id===id) h+=reviewHTML();
-  if(blame && blame.id===id && blame.sid===DB.current) h+=blameHTML();
   if(replayAsk && replayAsk.at===id) h+=replayHTML();
   if(replayRun && !replayRun.done && replayRun.sid===DB.current && replayRun.at===id) h+=replayRunHTML();
   return h;
@@ -5763,8 +5489,7 @@ function replyFoot(id){
   const fo = id===sel && S.nodes[id].reply && !(fan && fan.id===id) && !liveGen(id) ? `<button class="rmore" data-fan="${id}" title="${esc(OPS.fan.hint)}">${AI}Fan out${nOpt>=2?` · ${nOpt} options`:''}</button>` : '';
   const ds = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(distill && distill.id===id) ? `<button class="rmore" data-distill="${id}" title="Claude writes a reusable brief of the context up to here">✦ Distill</button>` : '';
   const rv = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(reviewAsk && reviewAsk.id===id) ? `<button class="rmore" data-review="${id}" title="A second opinion: a new chat that sees only this reply (and, if you choose, the conversation before it)">${AI}Review</button>` : '';
-  const bl = id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) && !(blame && blame.id===id && blame.sid===DB.current) ? `<button class="rmore" data-blame="${id}" title="Find which part of the context made Claude say something: it asks again with parts left out">${AI}Blame</button>` : '';
-  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button>` : '')+fo+ds+rv+bl+reviewLinksHTML(id)+blameLinkHTML(id);
+  const rg = (id===sel && sampleState==='ready' && S.nodes[id].reply && !liveGen(id) ? `<button class="rmore" data-regen="${id}">↻ Regenerate</button>` : '')+fo+ds+rv+reviewLinksHTML(id);
   const cm = ctxMarkHTML(id);
   const st = !cm && S.nodes[id].stale && S.nodes[id].reply && !liveGen(id) ? '<span class="stale">Prompt edited after this reply</span>' : '';
   return sw||rg||st||cm ? `<div class="rfoot">${sw}${rg}${st}${cm ? `<span class="ctxwrap">${cm}</span>` : ''}</div>` : '';
@@ -6657,7 +6382,6 @@ function select(id){
   if(fan && fan.id!==id) fan=null;
   if(replayAsk && replayAsk.at!==id) replayAsk=null;
   if(reviewAsk && reviewAsk.id!==id) reviewAsk=null;
-  if(blame && blame.id!==id && blame.status!=='running') blame=null;
   if(variants && id!==sel) variants=null;
   if(S.nodes[id]) for(const x of path(id)) if(x!==id && S.fold[x]) delete S.fold[x];
   const changed=sel!==id, prevSel=sel;
@@ -7613,8 +7337,6 @@ treeEl.addEventListener('click', e=>{
   const fb=e.target.closest('[data-fan]'); if(fb){ openFan(+fb.dataset.fan); return; }
   const dsb=e.target.closest('[data-distill]'); if(dsb){ openDistill(+dsb.dataset.distill); return; }
   const rvb=e.target.closest('[data-review]'); if(rvb){ openReview(+rvb.dataset.review); return; }
-  const blb=e.target.closest('[data-blame]'); if(blb){ openBlame(+blb.dataset.blame); return; }
-  if(e.target.closest('.fan.blame') && !e.target.closest('[data-goto]')){ blameClick(e); return; }
   const rvw=e.target.closest('[data-rvwhole]'); if(rvw && reviewAsk){ const t=document.getElementById('reviewText'); if(t) reviewAsk.text=t.value; reviewAsk.whole=rvw.dataset.rvwhole==='1'; animRender([reviewAsk.id]); return; }
   if(e.target.closest('[data-rvgo]')){ startReview(); return; }
   if(e.target.closest('[data-rvcancel]') && reviewAsk){ const id=reviewAsk.id; reviewAsk=null; animRender([id]); return; }
@@ -7743,7 +7465,6 @@ treeEl.addEventListener('focusin', e=>{ const b=e.target.closest('[data-hint]');
 treeEl.addEventListener('focusout', e=>{ if(slash && e.target===slash.box) setTimeout(()=>{ if(slash && document.activeElement!==slash.box) closeSlash(); }, 120); });
 addEventListener('scroll', ()=>{ if(slash) paintSlash(); }, {passive:true});
 treeEl.addEventListener('keydown', e=>{
-  if(e.target.id==='blameQ' && e.key==='Enter'){ e.preventDefault(); startBlame(); return; }
   const send = e.key==='Enter' && !e.isComposing && e.keyCode!==229 && (opts.sendKey==='mod' ? (e.metaKey||e.ctrlKey) : (!e.shiftKey && !e.altKey));
   if(slash && e.target===slash.box && !e.isComposing){
     if(e.key==='ArrowDown' || e.key==='ArrowUp'){ if(!slash.hint){ e.preventDefault(); moveSlash(e.key==='ArrowDown'?1:-1); return; } }

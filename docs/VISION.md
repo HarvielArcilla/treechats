@@ -5,8 +5,7 @@ the agents they work with.**
 
 Anyone can chat. The people Treechats is for already know that the conversation *is* the program: what goes into
 the context decides what comes out, and long chats rot as dead ends, wrong assumptions and stale code pile up. They
-want to edit that context the way they edit code, cheaply and exactly, and to see why a reply came out the way it
-did.
+want to edit that context the way they edit code, cheaply and exactly, and to see exactly what each request sends.
 
 Underneath, every chat is a version-controlled tree of turns. On the surface there are two views, split on purpose:
 **Chat** for conversing (it reads like any chat app, and only reflects context edits as notes and tags), and
@@ -20,9 +19,6 @@ the same controls, working under the person's supervision.
   changed above any reply since it was written.
 - **Efficient:** each choice shows what it costs in tokens; a summary or excerpt keeps what matters and drops the
   rest; Replay regenerates only what a change affects; a brief can stand in for a whole chat.
-- **Explainable:** ✦ Blame answers "why did it say that?" by asking again with parts of the context left out, and
-  narrows it to the turns that change the answer, shown as counts rather than a verdict. Context editing becomes
-  evidence-driven: find the turn that's steering the model, then change how it's included.
 
 ## Principles
 
@@ -99,7 +95,7 @@ Rules that keep the person in control:
 ## UI shape
 
 Two views of the same data, split on purpose: **Chat** for conversing, **Editor** (tree, map, inspector) for
-precise context work. Context-editing controls (Include as, Excerpt, Blame) live in Editor; Chat shows their effect
+precise context work. Context-editing controls (Include as, Excerpt) live in Editor; Chat shows their effect
 as notes and tags but doesn't edit, so it stays a calm place to talk. There is no separate "context view": the
 inspector and `/context` already show exactly what a prompt sends. Tools that change one prompt sit with it; the bar
 above the input box holds what changes the tree. ✦ tools that rewrite context show their request on demand and their
