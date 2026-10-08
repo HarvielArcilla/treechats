@@ -231,21 +231,16 @@ test('MCP: Claude Code can list, search and read the context of a saved chat', a
   assert.equal(r.status, 403);
 });
 
-test('MCP subagents: commands go to the open page, results come back, and each run has a request budget', async () => {
+test('MCP subagents: the server carries agent operations out with no page open, tells listeners, and each run has a request budget', async () => {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
-  const { base } = await startServer({ TREECHATS_FAKE: '1', TREECHATS_AGENT_MAX_REQUESTS: '2' });
+  const { base } = await startServer({ TREECHATS_FAKE: '1', TREECHATS_AGENT_MAX_REQUESTS: '3' });
   const client = new Client({ name: 'test', version: '1' });
   await client.connect(await mcpTransport(base));
   const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
 
-  /* without the page open, agent tools say so and spend nothing */
-  const closed = await call('spawn', { run: 'r', prompt: 'hi' });
-  assert.equal(closed.isError, true);
-  assert.match(closed.content[0].text, /isn’t open in a browser/);
-
-  /* a stand-in for the page: reads commands from the event stream and answers them */
-  const seen: { op: string; args: Record<string, unknown> }[] = [];
+  /* what an open page would be told */
+  const seen: string[] = [];
   const ctl = new AbortController();
   const events = await fetch(base + '/api/agent/events', { signal: ctl.signal });
   (async () => {
@@ -254,34 +249,34 @@ test('MCP subagents: commands go to the open page, results come back, and each r
       for (;;) {
         const { value, done } = await reader.read(); if (done) break;
         buf += dec.decode(value, { stream: true });
-        let i; while ((i = buf.indexOf('\n\n')) >= 0) {
-          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
-          const data = chunk.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
-          if (!data) continue;
-          const cmd = JSON.parse(data); seen.push(cmd);
-          const body = cmd.args.prompt === 'fail' ? { id: cmd.id, ok: false, error: 'There is no prompt #9 in this run.' } : { id: cmd.id, ok: true, result: { project: 'Run: r', chat: 1, prompt: 1, branch: 'main', reply: 'Atomic, yes.' } };
-          await fetch(base + '/api/agent/result', { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-        }
+        let i; while ((i = buf.indexOf('\n\n')) >= 0) { const chunk = buf.slice(0, i); buf = buf.slice(i + 2); const ev = chunk.split('\n').find((l) => l.startsWith('event:')); if (ev) seen.push(ev.slice(6).trim()); }
       }
     } catch {}
   })();
-  await new Promise((r) => setTimeout(r, 300));
+  await new Promise((r) => setTimeout(r, 200));
 
+  /* no page has ever been opened: the server does it all */
   const ok = await call('spawn', { run: 'r', prompt: 'Is it atomic?', context: 'redis.call("INCR")', agent: 'tester' });
   assert.equal(ok.isError, undefined, ok.content[0].text);
-  assert.match(ok.content[0].text, /Atomic, yes\./);
-  assert.match(ok.content[0].text, /1 request left in this run/);
-  assert.equal(seen[0].op, 'spawn');
-  assert.equal(seen[0].args.context, 'redis.call("INCR")');
+  assert.match(ok.content[0].text, /Started a subagent \(project "Run: r", chat #1, prompt #1, branch main\)/);
+  assert.match(ok.content[0].text, /You said: “redis\.call\("INCR"\)/);
+  assert.match(ok.content[0].text, /2 requests left in this run/);
+  const doc = await (await fetch(base + '/api/state')).json();
+  const sp = Object.values(doc.db.spaces as Record<string, any>).find((x) => x.agentRun === 'r');
+  assert.equal(sp.name, 'Run: r');
+  assert.equal(sp.tree.nodes[1].by, 'tester');
+  assert.ok(sp.tree.nodes[1].reply && sp.tree.nodes[1].ctx, 'the reply is written with what was sent to get it');
+  assert.ok(seen.includes('doc') && seen.includes('gen') && seen.includes('gendone'), seen.join(','));
 
-  /* a failure from the page comes back as an error and refunds the request */
-  const bad = await call('ask', { run: 'r', after: 1, prompt: 'fail' });
+  /* a failure comes back as an error and refunds the request */
+  const bad = await call('ask', { run: 'r', after: 9, prompt: 'fail' });
   assert.equal(bad.isError, true);
   assert.match(bad.content[0].text, /no prompt #9/);
   await call('ask', { run: 'r', after: 1, prompt: 'again' });
+  await call('ask', { run: 'r', after: 2, prompt: 'and again' });
   const over = await call('ask', { run: 'r', after: 1, prompt: 'one too many' });
   assert.equal(over.isError, true);
-  assert.match(over.content[0].text, /has used its 2 requests/);
+  assert.match(over.content[0].text, /has used its 3 requests/);
 
   /* copying context from a branch that doesn't exist is caught before anything is spent */
   const missing = await call('spawn', { run: 'other', prompt: 'x', from: { branch: 'nope' } });

@@ -83,11 +83,12 @@ Rules that keep the person in control:
 
 ## Architecture this implies
 
-1. **One definition of each operation**, in TypeScript on the server, used by the UI, MCP and a CLI. Context building
-   is already one definition (web/public/treecore.js), used by the page and the server; the other operations
-   still live in the page.
-2. **The server holds the tree** as rows (projects, turns, branches), with the page as one client. Needed for agent
-   writes without the page open, and for a hosted version later.
+1. **One definition of each operation**, in TypeScript on the server, used by the UI, MCP and a CLI. Context building,
+   syncing the document, agent operations and the ✦ tools are each one definition, shared by the page and the
+   server (web/public/treecore.js, docsync.js, treeops.js).
+2. **The server holds the tree**, with the page as one client (done): writers send small changes with revisions,
+   merged per unit, and every change is pushed to open pages. Storing turns as rows is left until a project's size
+   or a hosted version needs it.
 3. **Turns made of content blocks** (text, tool calls and results, thinking, images), so agent traces and other
    providers fit without a migration later.
 4. **Manage, don't run:** Treechats owns chat history and context; tool execution belongs to Claude Code or

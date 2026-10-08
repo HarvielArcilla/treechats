@@ -6,7 +6,8 @@
    Subagents (Phase 1, see docs/VISION.md): an agent can start chats whose context Treechats owns, continue
    and fork them, leave turns out, correct replies, regenerate, and distill what they found. Agents only ever change
    their own run projects ("Run: <name>"); everything they add is labeled with the agent's name, stays out of your
-   Undo, and each run has a cap on model requests. The open Treechats page carries the changes out (server/relay.ts).
+   Undo, and each run has a cap on model requests. The server carries the changes out (server/agent.ts), whether or
+   not Treechats is open in a browser; open pages see them as they happen.
 
    Add it to Claude Code with:
 
@@ -17,7 +18,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import { contextPrompt, ctxChanges, hash53, loadState, Send, settingsFor, tplOf, TreeView, turnsFor, type Tree } from './context.ts';
-import { pageOpen, refund, relay, RelayError, spend } from './relay.ts';
+import { AgentError, refund, run as runOp, spend } from './agent.ts';
 import { sampleOnce, type SampleRequest } from './claude.ts';
 
 type State = NonNullable<ReturnType<typeof loadState>>;
@@ -283,13 +284,12 @@ export function buildMcpServer(read: () => State | null) {
   const act = (op: string, spends: boolean) => async (a: Record<string, unknown>) => {
     let left: number | undefined;
     try {
-      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
       if (spends) left = spend(String(a.run));
-      const d = await relay(op, a);
+      const d = await runOp(op, a);
       return text(report(d as Done, left));
     } catch (e) {
       if (left != null) refund(String(a.run)); /* nothing was spent on a request that failed */
-      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+      return fail(e instanceof AgentError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   };
 
@@ -336,15 +336,14 @@ export function buildMcpServer(read: () => State | null) {
     /* Claude writes a summary for each prompt that needs one: reserve one request per prompt, and give back what wasn't used */
     let left: number | undefined, n = 1;
     try {
-      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
       if (a.until != null) { const s = read(); const sp = s && Object.values(s.db.spaces).find((x) => x.tree.nodes[a.until!] && x.tree.nodes[a.prompt]); if (sp) { const ch = new TreeView(sp.tree).chain(a.until); const i = ch.indexOf(a.prompt); if (i >= 0) n = ch.length - i; } }
       left = spend(String(a.run), n);
-      const d = await relay('include_as', a) as Done & { requests?: number };
+      const d = await runOp('include_as', a) as Done & { requests?: number };
       if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
       return text(report(d, left));
     } catch (e) {
       if (left != null) refund(String(a.run), n);
-      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+      return fail(e instanceof AgentError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
   server.registerTool('edit_reply', { title: 'Correct a reply', description: 'Replace what the subagent said at a prompt. Prompts after it see your version. Marked as edited.', inputSchema: { run, agent, prompt: promptNo, reply: z.string() } }, act('edit_reply', false));
@@ -363,15 +362,14 @@ export function buildMcpServer(read: () => State | null) {
   }, async (a) => {
     let left: number | undefined, n = 0;
     try {
-      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
-      n = ((await relay('replay_plan', a)) as { count: number }).count;
+      n = ((await runOp('replay_plan', a)) as { count: number }).count;
       left = spend(String(a.run), n);
-      const d = await relay('replay', a) as Done & { requests?: number };
+      const d = await runOp('replay', a) as Done & { requests?: number };
       if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
       return text(report(d, left));
     } catch (e) {
       if (left != null) refund(String(a.run), n);
-      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+      return fail(e instanceof AgentError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
   server.registerTool('loop', {
@@ -388,14 +386,13 @@ export function buildMcpServer(read: () => State | null) {
     const n = ((a.times as number | undefined) ?? 3) * (a.until ? 2 : 1);
     let left: number | undefined;
     try {
-      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
       left = spend(String(a.run), n);
-      const d = await relay('loop', a) as Done & { requests?: number };
+      const d = await runOp('loop', a) as Done & { requests?: number };
       if (d.requests != null && d.requests < n) { refund(String(a.run), n - d.requests); left += n - d.requests; }
       return text(report(d, left));
     } catch (e) {
       if (left != null) refund(String(a.run), n);
-      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+      return fail(e instanceof AgentError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
   server.registerTool('edit_prompt', {
@@ -410,16 +407,15 @@ export function buildMcpServer(read: () => State | null) {
   }, async (a) => {
     let left: number | undefined, spent = 0;
     try {
-      if (!pageOpen()) return fail('Treechats isn’t open in a browser. Open it (npm start opens it for you), then try again: agent tools run through the open page for now.');
       if (!a.options?.length) { left = spend(String(a.run), 1); spent++; }
-      const plan = await relay('fan_plan', a) as { options: { title: string; prompt: string }[]; read: boolean };
+      const plan = await runOp('fan_plan', a) as { options: { title: string; prompt: string }[]; read: boolean };
       if (spent && !plan.read) { refund(String(a.run), 1); spent--; left = (left ?? 0) + 1; }
       if (a.replies !== false) { left = spend(String(a.run), plan.options.length); spent += plan.options.length; }
-      const d = await relay('fan_out', { ...a, options: plan.options });
+      const d = await runOp('fan_out', { ...a, options: plan.options });
       return text(report(d as Done, left));
     } catch (e) {
       if (spent) refund(String(a.run), spent);
-      return fail(e instanceof RelayError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
+      return fail(e instanceof AgentError ? e.message : `Treechats couldn’t do that: ${(e as Error).message}`);
     }
   });
   const OPS: Record<string, string> = {

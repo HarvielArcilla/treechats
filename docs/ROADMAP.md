@@ -34,6 +34,11 @@ foundation once the agent interface has been tried on a real task, then everythi
 - Range selection (Shift-click) and picking prompts anywhere (Ctrl/⌘-click), each with a bar of what works on them
 - One context builder: the tree and the request a prompt sends are defined once (treecore.js) for the page, MCP and
   scheduled tasks
+- The server owns the document: files kept on the server; changes sent as small ops with revisions and merged per
+  unit, so tabs, agents and scheduled tasks never overwrite each other; every change pushed to open pages; Undo
+  rebased over other writers' changes
+- Agent operations run on the server (the page relay is gone): MCP works with no page open; agents' replies stream to
+  open pages; the ✦ tools are shared by the page and the server (treeops.js)
 
 ## Next
 - Recipes; running a prompt over many inputs
@@ -47,20 +52,20 @@ Test whether an orchestrating agent benefits from subagents whose context Treech
 - Agent runs go into their own project; every turn an agent creates is labeled with the agent's name
 - Guardrails from day one: agents can only change their own run projects; a cap on requests per run; agent
   changes stay out of your Undo
-- Prototype shortcut: writes are carried out by the open Treechats page (the server relays them), so operations
-  keep their single definition in the page for now; if the page isn't open, the tools say so
+- Prototype shortcut (since removed): writes were carried out by the open Treechats page, relayed by the server
 - Try it on a real task, then decide what the agent interface should be before building more of it
 
 ## Phase 2: foundation
-- Each operation defined once in TypeScript and run on the server; the page becomes a client (context building
-  is already shared, in treecore.js; this removes the page-relay shortcut)
+- Operations defined once and run where they're needed: done for context building, sync, agent operations and the
+  ✦ tools; your own edits are still made in the page and sent as changes, and your replies are still requested by
+  the page (a reply in progress stops if its tab closes)
 - The tree stored as rows (projects, turns, branches) instead of one document; attachments in the database
 - Turns made of content blocks (text, tool calls and results, thinking, images), provider-neutral
 - Attribution and history for every change; permissions per project (read, suggest, write)
 - Context fingerprint, the rest of it (the marker itself is done): opt-in checks for agents ("only if the context is
   still ab12…"), cache awareness (where two requests' prefixes diverge) and reproducibility. Identity stays numeric
   (#12) and branch names; no git-style content addressing
-- MCP writes without the page open; a small CLI over the same operations
+- A small CLI over the same operations (MCP writes without the page open: done)
 
 ## Phase 3: reuse and agents in full
 - For agents: history per run with undo; a Runs view of agent runs

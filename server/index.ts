@@ -17,7 +17,7 @@ import { decryptAll, encryptAll, fileIds, getFile, getValue, putFile, putValue, 
 import * as vault from './vault.ts';
 import { DATA_KEY, keychain, keyStatus, loadKeyFromKeychain, readSecret, removeKey, removeSecret, saveKey, saveSecret, SecretError } from './secrets.ts';
 import { handleMcp } from './mcp.ts';
-import { attachPage, settle } from './relay.ts';
+import { liveNow, onLive, stopReply } from './replies.ts';
 import { loadState } from './context.ts';
 import { FolderError, listFolder, readFolderFiles, writeFolderFile } from './folders.ts';
 import { listSessions, parseSession, readSession, SessionError } from './sessions.ts';
@@ -372,18 +372,21 @@ app.post('/api/sample', async (c) => {
   });
 });
 
-/* the open page carries out agent commands (see server/relay.ts) */
+/* What open pages are told as it happens: changes to the document ("doc"), replies the server is writing ("gen",
+   then "gendone"), scheduled runs, and the lock. */
 app.get('/api/agent/events', (c) => streamSSE(c, async (stream) => {
-  const detach = attachPage((data) => { stream.writeSSE({ data }).catch(() => {}); });
   const offDoc = docStore.onChange((e) => { stream.writeSSE({ event: 'doc', data: JSON.stringify(e) }).catch(() => {}); });
+  const offLive = onLive((e) => { stream.writeSSE({ event: e.kind, data: JSON.stringify(e) }).catch(() => {}); });
+  for (const e of liveNow()) stream.writeSSE({ event: 'gen', data: JSON.stringify(e) }).catch(() => {});
   lockListeners.add(stream);
   const ping = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }).catch(() => {}); }, 20000);
   await new Promise<void>((resolve) => { stream.onAbort(() => resolve()); c.req.raw.signal.addEventListener('abort', () => resolve(), { once: true }); });
-  clearInterval(ping); detach(); offDoc(); lockListeners.delete(stream);
+  clearInterval(ping); offDoc(); offLive(); lockListeners.delete(stream);
 }));
-app.post('/api/agent/result', async (c) => {
-  let body; try { body = await c.req.json(); } catch { return c.json({ code: 'bad_request' }, 400); }
-  return settle(body) ? c.body(null, 204) : c.json({ code: 'unknown_command' }, 404);
+/* Stop on a reply the server is writing (an agent's) */
+app.post('/api/agent/stop', async (c) => {
+  let b; try { b = await c.req.json(); } catch { return c.json({ code: 'bad_request' }, 400); }
+  return stopReply(String(b.sid), Number(b.id)) ? c.body(null, 204) : c.json({ code: 'not_running' }, 404);
 });
 
 /* folders on this computer, for project files (see server/folders.ts) */

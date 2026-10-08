@@ -125,7 +125,7 @@ Type `/` in the input box for commands, as in Claude Code (they're also in the C
 
 A prompt can be sent at a set time: once, every hour, every day, on weekdays or every week. Each run either continues a chat (added at the end of its branch, with the chat so far as context) or starts a new chat, titled with the task's name. Make one with `/schedule` followed by the prompt, from a chat's ⋯ menu (**Schedule a prompt here…**), or from **Scheduled tasks** in the Ctrl/⌘-K palette, where you can also run a task now, pause it, edit it or delete it.
 
-Treechats runs scheduled tasks while it's running, even with the page closed, and adds each reply to its chat the next time the page is open, marked unread and tagged *scheduled*. A run that was due while Treechats was off happens once when it starts again. With the password lock on, tasks wait until Treechats is unlocked. Runs use the chat's text and files from linked folders; files attached in the browser are sent by name only, since the server can't see them.
+Treechats runs scheduled tasks while it's running, even with the page closed, and adds each prompt and reply to its chat right away, marked unread and tagged *scheduled* (an open page shows it as it lands). A run that was due while Treechats was off happens once when it starts again. With the password lock on, tasks wait until Treechats is unlocked. Runs use the chat's text and files from linked folders; files attached in the browser are sent by name only, since the server can't see them.
 
 ## Folders and files
 
@@ -184,7 +184,7 @@ For example: "use treechats to spawn three subagents that each review this desig
 - Everything an agent adds is labeled with its name (⚙).
 - Each run may spend 60 model requests (`TREECHATS_AGENT_MAX_REQUESTS` in `.env`; the count resets when Treechats restarts).
 - Subagents have no tools: they answer from the context they're given. `spawn` and `fork` take model settings (system prompt, thinking, effort, temperature, max tokens).
-- For now the open Treechats page carries the changes out, so keep it open in your browser while an agent works.
+- Treechats carries the changes out itself, so agents work whether or not Treechats is open in a browser. An open page shows each change as it happens, and replies as they're written, with Stop.
 
 Treechats must be running for any of this.
 
@@ -200,8 +200,10 @@ Everything stays on your computer, in the places apps normally keep their data, 
 | What | Where |
 |---|---|
 | Chats, projects, settings, snapshots (one every 10 minutes, the last 50) | `treechats.db` (SQLite) in the data folder: `~/Library/Application Support/Treechats` on a Mac, `%APPDATA%\Treechats` on Windows, `~/.local/share/treechats` on Linux. `TREECHATS_DATA_DIR` in `.env` picks another. |
-| Attached and project files | Your browser's storage for this page (IndexedDB). Files from a linked folder stay in that folder; Treechats keeps a copy and reads the folder again when you Sync. |
+| Attached and project files | `treechats.db` too, encrypted with the rest when the lock is on (the browser keeps a copy as a cache). Files from a linked folder stay in that folder; Treechats keeps a copy and reads the folder again when you Sync. |
 | Your API key | `.env` next to the code, or the system keychain (Settings › Privacy & security), which keeps it out of plain files, backups and synced folders |
+
+The server keeps the one copy of everything, so several tabs, coding agents and scheduled tasks can all work at once without overwriting each other: each change goes to the server and is shown in every open tab. Files an older version kept only in the browser move to the data folder the first time a page opens.
 
 Data from older versions, in the `data/` folder next to the code, moves to the data folder the first time this version starts. `.env` is in `.gitignore`, so it is never committed.
 

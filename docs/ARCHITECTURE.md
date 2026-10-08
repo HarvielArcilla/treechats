@@ -7,6 +7,10 @@ web/public/sendmodes.js  Include as rules: what each turn sends in each mode (sh
 web/public/treecore.js  the tree and the context a prompt sends: path, merge notes, model settings, the request,
                           Copy as a prompt, the context fingerprint. Shared: the page loads it as a script, the
                           server imports it, so both build exactly the same request
+web/public/docsync.js   how the document splits into units (a prompt, a branch, a setting) and how changes apply;
+                          shared, so the page and the server merge changes the same way
+web/public/treeops.js   tree helpers and the ✦ tools (replay, judge, combine, review, loop checks, fan out),
+                          used by the page for you and by the server for agents
 web/public/local-shim.js loads before the app; connects it to the server:
                           - saving: the app's storage goes to the server instead of the browser
                           - Claude: window.claude.use('sample') sends requests to /api/sample
@@ -16,14 +20,19 @@ server/proc.ts          starting and stopping other programs the same way on Win
 server/claude.ts        turns → Messages API request; streaming; prompt caching; error codes
 server/cli.ts           the same through `claude -p` (Claude Code, e.g. with a subscription)
 server/mcp.ts           MCP server for Claude Code: read (list, search, get context) and subagents (spawn, ask, fork…)
-server/relay.ts         passes subagent commands to the open page and waits for results; request budget per run
+server/doc.ts           the document, owned by the server: revisions, applying changes from the page (patch) and
+                        from the server's own writers (mutate), pushing every change to open pages
+server/agent.ts         what agents do over MCP (spawn, ask, replay, operate…), carried out by the server; request
+                        budget per run
+server/replies.ts       replies the server writes (agents'), written as the page writes its own, streamed to pages
+server/sample.ts        asking Claude from the server, with the same result as the page's sampler
 server/context.ts       reads the saved tree on the server; builds context with treecore.js (files read from disk)
 server/store.ts         SQLite in the app data folder: the state document, rolling snapshots, the token, the lock record
 server/vault.ts         Encryption at rest and the password lock: data key kept in the keychain or wrapped by
                         scrypt(password), AES-256-GCM, recovery key, auto-lock
 server/secrets.ts       The system keychain (macOS Keychain, Windows DPAPI, libsecret): the API key, the data key
 server/redact.ts        Hides secrets in command output and diffs
-server/schedule.ts      Scheduled tasks: when each runs, running them, and the inbox of results for the page
+server/schedule.ts      Scheduled tasks: when each runs, running them, and adding each result to its chat
 server/config.ts        .env settings
 ```
 
@@ -45,16 +54,20 @@ tools answer "Treechats is locked".
 | `GET /api/vault/fileskey` | While unlocked, the key the page encrypts attachments with |
 | `POST /api/key/save`, `/move`, `/remove` | The API key in the system keychain |
 | `POST /api/auth/reset` | A new token; other browsers and coding tools are signed out |
-| `GET /api/schedule/status`, `/inbox`; `POST /api/schedule/run`, `/ack` | Scheduled tasks (server/schedule.ts): when each last ran and runs next, results waiting for the page, run one now, and clear results the page has added. The tasks themselves are in the saved state (`opts.schedules`); the event stream sends `inbox` when a result is ready |
+| `GET /api/schedule/status`; `POST /api/schedule/run` | Scheduled tasks (server/schedule.ts): when each last ran and runs next, and run one now. The tasks themselves are in the saved state (`opts.schedules`); a run adds its prompt and reply to the chat, and the event stream sends `scheduled` |
 
 Requests that change something (`POST`/`PUT` under `/api/`) must be sent as `application/json`, which a page on
 another site can't do without a CORS preflight that Treechats doesn't answer.
 | `GET /api/config` | Which provider is active and ready, model labels for each tier, limits |
-| `GET /api/state`, `PUT /api/state` | Load and save the app state (one JSON document) |
+| `GET /api/state` | The document and its revision (`x-treechats-rev`) |
+| `POST /api/state/patch` | `{base, ops, tab}`: the page's changes since revision `base`, as unit ops (docsync.js). Applied unless another writer changed the same unit since then; otherwise 409 with what was missed, so the page catches up and sends what's left |
+| `GET /api/state/since/:rev` | The changes after a revision, or 409 when they're no longer all known (load the document again) |
+| `PUT /api/state` | The whole document at once: the first save, or a restore; every open page loads it again |
+| `GET /api/files`, `GET`/`PUT /api/files/:id` | Attached and project files |
 | `GET /api/snapshots`, `GET /api/snapshots/:id` | Earlier saved states |
 | `POST /mcp` | MCP (streamable HTTP, stateless). Read: `list_projects`, `list_chats`, `get_context`, `search`, `get_prompt`, `get_tree`, `list_saved_prompts`, and `btw` (a side question with a chat's context, answered by the server, changing nothing). Subagents: `spawn`, `ask`, `fork`, `edit_prompt`, `regenerate`, `leave_out`, `edit_reply`, `replay`, `loop`, `fan_out`, `review`, `judge`, `combine`, `distill`, plus `operate` (every other operation by name) and `describe`. `get_prompt` reports when the context above a reply has changed since it was written |
-| `GET /api/agent/events` | Server-sent events: subagent commands for the open page to carry out |
-| `POST /api/agent/result` | The page's answer to a command: `{id, ok, result}` or `{id, ok:false, error}` |
+| `GET /api/agent/events` | Server-sent events for open pages: `doc` (a change to the document, with its ops), `gen` and `gendone` (a reply the server is writing), `scheduled`, `lock`, `vault` |
+| `POST /api/agent/stop` | `{sid, id}`: stop a reply the server is writing |
 | `POST /api/sample` | One reply, streamed as newline-separated JSON: `{"t":"text","d"}` pieces, then `{"t":"done",…}` or `{"t":"error","code","message"}`. The page runs up to three at once and queues the rest; a prompt waits for the replies above it, since they are part of what it sends |
 | `POST /api/folder/list`, `/read`, `/write` | Folders (server/folders.ts): list files (git-aware), read them, write one back. Paths stay inside the folder; writes only go to folders linked to a project, never into `.git`, and refuse a disk copy that changed since it was read |
 | `POST /api/folder/git`, `/diff` | Branch, changed files and diffs for a linked folder (server/run.ts), with secrets hidden |

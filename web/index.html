@@ -11,6 +11,7 @@
 <script src="/sendmodes.js"></script>
 <script src="/treecore.js"></script>
 <script src="/docsync.js"></script>
+<script src="/treeops.js"></script>
 <script type="module" src="./markdown.js"></script>
 <title>Treechats</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1419,6 +1420,8 @@ let editingNow = false;
 /* Sent ahead of the turns a merge brings in, so the model reads the join as a separate thread. */
 /* the tree and the context a prompt sends are built by treecore.js, shared with the server */
 const Core = TreechatsCore;
+/* tree helpers and the ✦ tools agents can use too, shared with the server (treeops.js) */
+const Ops = TreechatsOps;
 const SEAM = Core.DEFAULTS.seam;
 /* Every piece of text the app sends on your behalf. Each can be edited and reset to its default. */
 const PROMPTS = {
@@ -1427,11 +1430,11 @@ const PROMPTS = {
   seam:{label:'Merge note', group:'ops', def:SEAM, help:'Sent just before the turns a merge brings in.'},
   summarize:{label:'Summary request', group:'ops', def:'Summarize the conversation below so the summary can stand in for it as context when the discussion continues. Keep decisions, key facts, names, code identifiers and open questions. Write a brief recap in plain prose, under 150 words, with no preamble.\n\n{conversation}',
     help:'What Claude is asked when it writes a summary for Reroot or Squash. {conversation} becomes the turns being summarized.'},
-  distill:{label:'Distill request', group:'tools', def:'Distill the conversation below into a brief that can start a fresh conversation with the same understanding. Write Markdown with these sections, leaving out any that would be empty: Goal, Decisions (each with its reason), Key facts and names (exact identifiers, values, file paths), Constraints, Open questions, Next step. Be specific and concise. No preamble.\n\n{conversation}',
+  distill:{label:'Distill request', group:'tools', def:Ops.PROMPTS.distill.def,
     help:'What Claude is asked when you distill a chat into a brief. {conversation} becomes the context up to the prompt you picked.'},
-  fan:{label:'Fan out: reading the options', group:'tools', def:"You are helping someone branch a conversation into one thread per option.\n\nBelow are their message and the assistant's reply. If the reply offers several distinct options, approaches or directions to choose between, list each one. For each, give a short title of 2 to 4 words, and a follow-up message they could send to pursue only that option: written in their voice, one or two sentences, making sense on its own. Also say which option the reply recommends, if it clearly recommends one.\n\nTheir message:\n{message}\n\nThe assistant's reply:\n{reply}",
+  fan:{label:'Fan out: reading the options', group:'tools', def:Ops.PROMPTS.fan.def,
     help:'What Claude is asked when you fan out a reply. {message} becomes your prompt and {reply} Claude\u2019s reply.',
-    fmt:'Reply with only JSON in this shape:\n{"options":[{"title":"Token bucket","prompt":"Let\'s go with the token bucket. Walk me through implementing it."}],"recommended":0}\nUse "recommended": null when nothing is clearly recommended, and "options": [] when the reply doesn\'t offer a choice.'},
+    fmt:Ops.PROMPTS.fan.fmt},
   wordings:{label:'Variants: suggesting wordings', group:'tools', def:'Rewrite the message below 3 different ways that a person might send it to an assistant. Keep the same request and meaning; vary the wording, framing or level of detail so the replies could reasonably differ.\n\nMessage:\n{message}',
     help:'What Claude is asked by Suggest wordings. {message} becomes the first variant.', fmt:'Reply with only a JSON array of strings.'},
   nameBranch:{label:'Naming branches', group:'naming', def:'Name a branch of a conversation, the way a developer names a git branch: 1 to 3 lowercase words joined by hyphens, at most 24 characters, saying what this branch explores.\n\n{branch}\n\nNames already used here: {used}',
@@ -1440,24 +1443,24 @@ const PROMPTS = {
     help:'{conversation} becomes the first message and the start of the first reply.', fmt:'Reply with only JSON: {"title":"Rate limiter design"}'},
   nameSpace:{label:'Naming projects', group:'naming', def:'Name a workspace that holds these conversations, in 1 to 4 words, no quotes.\n\nConversations:\n{titles}',
     help:'{titles} becomes the titles of up to six chats in the project.', fmt:'Reply with only JSON: {"name":"API rate limiting"}'},
-  replayCheck:{label:'Replay: does the next prompt still fit?', group:'tools', def:"Someone is re-running a conversation after changing something earlier in it, so the replies may now differ from the ones their messages were written for. Decide whether their next message still makes sense as the next message after the conversation as it now stands. It fits if it reads naturally, even if the reply before it is worded differently or reaches a different conclusion that the message doesn't depend on. It doesn't fit if it refers to something the new reply no longer says, answers a question that is no longer asked, or assumes a choice that was no longer made.\n\nThe conversation as it now stands (most recent part):\n{conversation}\n\nThe reply the message was originally written after:\n{original}\n\nThe next message:\n{message}",
+  replayCheck:{label:'Replay: does the next prompt still fit?', group:'tools', def:Ops.PROMPTS.replayCheck.def,
     help:'Sent before each prompt after the first when you replay, unless checks are off. {conversation} becomes the latest turns, {original} the reply the prompt was first written after, {message} the prompt.',
-    fmt:'Reply with only JSON: {"fits":true,"reason":"","rewrite":""}\nWhen it doesn\'t fit, give a one-sentence reason, and a rewrite of the message that keeps its intent and voice but fits the conversation as it now stands. When it fits, leave reason and rewrite empty.'},
-  loopCheck:{label:'Loop: is the condition met?', group:'tools', def:"Someone is sending the same message to Claude again after each reply, until a condition is met. Read the latest turns of the conversation and decide whether this condition is met now: {condition}\n\nThe conversation (most recent part):\n{conversation}",
+    fmt:Ops.PROMPTS.replayCheck.fmt},
+  loopCheck:{label:'Loop: is the condition met?', group:'tools', def:Ops.PROMPTS.loopCheck.def,
     help:'Sent after each reply of a /loop that has an until: condition. {condition} becomes the condition, {conversation} the latest turns.',
-    fmt:'Reply with only JSON: {"met":false,"why":"One short sentence."}\nmet is true only when the condition is clearly met by the latest reply.'},
+    fmt:Ops.PROMPTS.loopCheck.fmt},
   fileEdits:{label:'How to show file changes', group:'every', def:Core.DEFAULTS.fileEdits,
     help:'Sent with the project files, when a project has any, so Claude writes changes in a form Treechats can show as a diff. Empty sends nothing; code blocks are still recognized when Claude names the file.'},
-  judge:{label:'Compare: judging the follow-ups', group:'tools', def:"You are judging alternative follow-ups in a branching conversation. Below is the conversation up to the point where it branched, then each alternative: the follow-up message and the reply to it, labelled with its number.\n\nJudge them only against these criteria: {criteria}\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
+  judge:{label:'Compare: judging the follow-ups', group:'tools', def:Ops.PROMPTS.judge.def,
     help:'What Claude is asked by ✦ Judge in Compare. {criteria} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
-    fmt:'Reply with only JSON: {"best":"#12","reasons":{"#12":"One sentence on how it meets the criteria.","#14":"One sentence."},"summary":"One or two sentences on the choice."}\nUse the labels exactly as given, and give a reason for every alternative.'},
+    fmt:Ops.PROMPTS.judge.fmt},
   gridScore:{label:'Grid: scoring the replies', group:'tools', def:"You are scoring alternative replies in a branching conversation. Below is the conversation up to the point where it branched, then each alternative: a follow-up message and the reply to it, labelled with its number. You are not told how each reply was produced; judge only what is written.\n\nScore every reply from 1 to 10 against these criteria: {criteria}\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
     help:'What Claude is asked by Score in a comparison grid. {criteria} becomes what you typed, {conversation} the context up to the prompt the grid follows, {alternatives} each follow-up with its reply.',
     fmt:'Reply with only JSON: {"scores":{"#12":{"score":8,"why":"One sentence."},"#14":{"score":6,"why":"One sentence."}},"best":"#12","summary":"One or two sentences on the choice."}\nUse the labels exactly as given, score every alternative with a whole number from 1 to 10, and keep each reason to one sentence.'},
-  combine:{label:'Compare: combining the follow-ups', group:'tools', def:"Below is a conversation that branched into alternatives: each is a follow-up message and the reply to it, labelled with its number. Write one reply that combines the best parts of the alternative replies, following these instructions: {instructions}\n\nAlso write the follow-up message that the combined reply answers, in the person's voice, so the pair reads naturally after the conversation. Say which parts came from which alternative.\n\nThe conversation up to the branch point:\n{conversation}\n\nThe alternatives:\n{alternatives}",
+  combine:{label:'Compare: combining the follow-ups', group:'tools', def:Ops.PROMPTS.combine.def,
     help:'What Claude is asked by ✦ Combine in Compare. {instructions} becomes what you typed, {conversation} the context up to the prompt they follow, {alternatives} each follow-up with its reply.',
-    fmt:'Reply with only JSON: {"prompt":"The follow-up message, in the person\'s voice.","reply":"The combined reply, in Markdown.","sources":{"#12":"What came from it.","#14":"What came from it."}}'},
-  review:{label:'Review: second opinion', group:'tools', def:"Review the answer below with fresh eyes. Point out anything wrong, missing, unclear or weakly supported, most important first, and say what you would change. If it holds up, say so plainly.\n\n{material}",
+    fmt:Ops.PROMPTS.combine.fmt},
+  review:{label:'Review: second opinion', group:'tools', def:Ops.PROMPTS.review.def,
     help:'The first prompt of the new chat ✦ Review starts. {material} becomes the prompt and reply being reviewed, or the whole conversation up to it if you include it.'},
   summarizeReply:{label:'Summary: writing it', group:'send', def:TreechatsSend.DEFAULTS.summarizeReply, help:'What Claude is asked when a turn is included as a summary. {prompt} becomes the prompt, {reply} the reply it summarizes.'},
   sendSummary:{label:'Summary: how it’s sent', group:'send', def:TreechatsSend.DEFAULTS.sendSummary, help:'Sent in place of the reply of a turn included as a summary. {summary} becomes the summary.'},
@@ -1756,15 +1759,7 @@ async function runLoop(L){
   }
   L.end=`Loop stopped after ${L.done} of ${L.times}.`;
 }
-async function loopCheck(L, id){
-  const turns=withTree(treeOf(L.sid), ()=>turnsFor(id, true)).slice(-4);
-  const conversation=clip(turns.map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 16000);
-  try{
-    const d=await sampleFn.json(fillPrompt('loopCheck', {condition:L.until, conversation}), {modelTier:'quick', cache:false});
-    if(!d || typeof d.met!=='boolean') return {met:false, why:'The check didn’t give a clear answer, so the loop carries on.', unclear:true};
-    return {met:d.met, why:String(d.why||'').trim()};
-  }catch(e){ return {met:false, why:'The check failed, so the loop carries on.', unclear:true}; }
-}
+function loopCheck(L, id){ return Ops.loopCheck(opsIo(), treeOf(L.sid), L.until, id); }
 function paintLoop(L){ if(L.sid!==DB.current) return; const el=document.querySelector('.loopbar'); if(el) el.outerHTML=loopHTML(); else paintCmds(sel); }
 function loopHTML(){
   const L=loop;
@@ -1839,22 +1834,17 @@ function acceptSlash(run){
 const promptText = k => opts.prompts && opts.prompts[k]!=null ? opts.prompts[k] : PROMPTS[k].def;
 /* A prompt with its {placeholders} filled. A value whose placeholder was edited out is added at the end, so Claude
    always gets the material. Tools that need a set answer shape get it appended, since Treechats reads the answer. */
-function fillPrompt(k, vars, tpl){
-  let t=tpl ?? promptText(k); const rest=[];
-  for(const [name, val] of Object.entries(vars)){ const tag='{'+name+'}'; if(t.includes(tag)) t=t.split(tag).join(val); else if(val) rest.push(val); }
-  if(rest.length) t+='\n\n'+rest.join('\n\n');
-  return PROMPTS[k].fmt ? t+'\n\n'+PROMPTS[k].fmt : t;
-}
+function fillPrompt(k, vars, tpl){ return Ops.fill(tpl ?? promptText(k), vars, PROMPTS[k].fmt); }
 const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---- Spaces ----
    DB holds every space; S is always the current space's tree, so tree code works on S unchanged. */
 let DB = null, renamingSpace = null, foreignTree = false, saveWarned = false;
 const spaceIds = () => DB.order.filter(id=>DB.spaces[id]);
-const emptyTree = () => ({nextId:1, nextRef:1, nodes:{}, refs:{}, head:null, active:{}, convs:{}, fold:{}, files:[], views:[]});
+const emptyTree = () => Ops.emptyTree();
 function withTree(tree, fn){ const prevS=S, prevF=foreignTree, prevG=G; S=tree; foreignTree=true; G=null; try{ return fn(); } finally{ S=prevS; foreignTree=prevF; G=prevG; } }
 function addSpace(name, tree){ const id='s'+(DB.nextSpace++); DB.spaces[id]={id, name, tree: tree || emptyTree()}; DB.order.unshift(id); return id; }
-function uniqueSpaceName(base){ const used=new Set(spaceIds().map(id=>DB.spaces[id].name)); if(!used.has(base)) return base; let k=2; while(used.has(`${base} ${k}`)) k++; return `${base} ${k}`; }
+function uniqueSpaceName(base){ return Ops.uniqueSpaceName(DB, base); }
 function spaceStats(tree){ return withTree(tree, ()=>({convs:vRoots().length, prompts:all().filter(n=>n.kind!=='merge').length})); }
 function enterSpace(sid){
   DB.current=sid; S=DB.spaces[sid].tree; lastConv=null; pickingRows=false;
@@ -2120,16 +2110,12 @@ function buildGraph(){
   return {all:list, kids:kidsM, prim, sec:secM, alt, tips, chain:new Map(), path:new Map(), desc:new Map()};
 }
 function withGraph(fn){ if(G) return fn(); G=buildGraph(); try{ return fn(); } finally{ G=null; } }
-const all = () => G ? G.all : Object.values(S.nodes).sort((a,b)=>a.id-b.id);
+const all = () => Ops.all(S, G);
 const roots = () => all().filter(n=>!n.parents.length);
-const kids = id => G ? (G.kids.get(id)||[]) : all().filter(n=>n.parents.includes(id));
-const primaryKids = id => G ? (G.prim.get(id)||[]) : all().filter(n=>n.parents[0]===id);
+const kids = id => Ops.kids(S, id, G);
+const primaryKids = id => Ops.primaryKids(S, id, G);
 const secondaryKids = id => G ? (G.sec.get(id)||[]) : all().filter(n=>n.parents.indexOf(id)>0);
-function desc(id){
-  if(G && G.desc.has(id)) return new Set(G.desc.get(id));
-  const out=new Set(), st=[id]; while(st.length){ const c=st.pop(); for(const k of kids(c)) if(!out.has(k.id)){ out.add(k.id); st.push(k.id);} }
-  if(G) G.desc.set(id, out); return new Set(out);
-}
+function desc(id){ return Ops.desc(S, id, G); }
 /* every prompt a prompt sends, oldest first: its first parent's path, then what each other parent adds, then itself.
    A post-order walk that skips what it has seen gives exactly that, in time linear in the ancestors (and without
    recursion, so very long chats are fine) */
@@ -2150,17 +2136,13 @@ const esc = s => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"'
 const tokens = turns => Math.ceil(turns.reduce((a,t)=>a+t.content.length,0)/4);
 
 /* reply versions: regenerating adds a sibling with the same prompt; only the active one is drawn */
-function activeOf(gid){
-  const a=S.active[gid];
-  if(a!=null && S.nodes[a] && S.nodes[a].alt===gid) return a;
-  const g=G ? (G.alt.get(gid)||[]) : all().filter(m=>m.alt===gid); return g.length ? g[g.length-1].id : null;
-}
-const visible = n => n.alt==null || activeOf(n.alt)===n.id;
-const vKids = id => primaryKids(id).filter(visible);
+function activeOf(gid){ return Ops.activeOf(S, gid, G); }
+const visible = n => Ops.visible(S, n, G);
+const vKids = id => Ops.vKids(S, id, G);
 const vSec = id => secondaryKids(id).filter(visible);
 const vRoots = () => roots().filter(visible);
 /* conversations: a visible root and everything under it. Keyed by version group so regenerating the first prompt keeps its identity. */
-const convKey = r => r.alt ?? r.id;
+const convKey = r => Ops.convKey(r);
 const convKeyOf = id => id!=null && S.nodes[id] ? convKey(S.nodes[chain(id)[0]]) : null;
 const rootOfSel = () => sel!=null && S.nodes[sel] ? vRoots().find(r=>convKey(r)===convKeyOf(sel)) || null : null;
 const convMeta = k => (S.convs && S.convs[k]) || {};
@@ -2218,21 +2200,21 @@ function defaultSel(){
 const firstRoot = defaultSel;
 function touch(id){ const k=convKeyOf(id); if(k!=null) S.convs[k]=Object.assign(S.convs[k]||{}, {t:Date.now()}); }
 function versions(id){ const n=S.nodes[id]; return n.alt==null ? [id] : (G ? (G.alt.get(n.alt)||[]) : all().filter(m=>m.alt===n.alt)).map(m=>m.id); }
-function setActivePath(id){ if(id==null || !S.nodes[id]) return; for(const i of path(id)){ const n=S.nodes[i]; if(n.alt!=null) S.active[n.alt]=i; } }
+function setActivePath(id){ Ops.setActivePath(S, id, path); }
 
 /* branches: labels on tips, scoped to their conversation so each can have its own main */
-function refsAt(id){ const r=G ? (G.tips.get(id)||[]).filter(rid=>S.refs[rid] && S.refs[rid].tip===id) : Object.keys(S.refs).filter(rid=>S.refs[rid].tip===id); return r.sort((a,b)=>(b===S.head)-(a===S.head)); }
-const refName = rid => S.refs[rid] ? S.refs[rid].name : '';
-function namesIn(root, exceptRid){ return new Set(Object.entries(S.refs).filter(([rid,r])=>rid!==exceptRid && S.nodes[r.tip] && convOf(r.tip)===root).map(([,r])=>r.name)); }
-function autoName(root){ const used=namesIn(root); let k=1; while(used.has(`branch-${k}`)) k++; return `branch-${k}`; }
-function newRef(name, tip){ const rid='r'+(S.nextRef++); S.refs[rid]={name, tip}; return rid; }
+function refsAt(id){ return Ops.refsAt(S, id, G); }
+const refName = rid => Ops.refName(S, rid);
+function namesIn(root, exceptRid){ return Ops.namesIn(S, root, exceptRid, chain); }
+function autoName(root){ return Ops.autoName(S, root, chain); }
+function newRef(name, tip){ return Ops.newRef(S, name, tip); }
 function headTip(){ const r=S.head && S.refs[S.head]; return r && S.nodes[r.tip] ? r.tip : null; }
 function syncHead(){
   if(sel==null) return; /* deselecting keeps the checked-out branch */
   if(S.head && S.refs[S.head] && S.refs[S.head].tip===sel) return;
   S.head = sel==null ? null : (refsAt(sel)[0] ?? null);
 }
-function leafOf(id){ let cur=id; for(;;){ const k=vKids(cur); if(!k.length) return cur; cur=k[0].id; } }
+function leafOf(id){ return Ops.leafOf(S, id, G); }
 /* older saves used a flat name→tip map */
 function migrate(){
   /* prompts made from now on get a time (see stampNew); earlier ones have none, rather than a made-up one */
@@ -3592,7 +3574,7 @@ function addPrompt(parent, text){
   if(opts.simple) scrollThreadEnd();
 }
 function takePending(){ const f=pendingFiles.length ? pendingFiles : null; pendingFiles=[]; return f; }
-const NAME_RE=/^[A-Za-z0-9._\/-]{1,40}$/;
+const NAME_RE=Ops.NAME_RE;
 function renameRef(rid, to){
   const r=S.refs[rid]; if(!r) return;
   to=to.trim(); if(to===r.name) return;
@@ -3630,7 +3612,12 @@ async function connectModel(){
 function contextEntries(id){ return Core.entries(S, id, coreEnv()); }
 /* what the core needs from the page: your wording (Settings › Prompts), files with their contents, and the memoized
    path and chain */
-function coreEnv(){ return {tpl:promptText, file:fileBlock, path, chain}; }
+function coreEnv(t){ return t && t!==S ? {tpl:promptText, file:fileBlock} : {tpl:promptText, file:fileBlock, path, chain}; }
+/* what the shared ✦ tools need from the page (see treeops.js) */
+function opsIo(){
+  return {tpl:promptText, env:coreEnv, sample:(i, o)=>sampleFn(i, o), json:(i, o)=>sampleFn.json(i, o), model:opts.model, tree:treeOf,
+    ask:(sid, id)=>{ const w=awaitReply(sid, id); wantReplies([id], sid); return w; }, update(){}, pause:()=>Promise.resolve(null)};
+}
 /* Messages for the API: user/assistant turns, with back-to-back turns of one role joined so they alternate. */
 /* ---- Model settings ----
    A system prompt, thinking, effort, temperature and a reply length limit, set on a prompt and used by it and every
@@ -3638,7 +3625,7 @@ function coreEnv(){ return {tpl:promptText, file:fileBlock, path, chain}; }
    conversation under a different setup. Each field is inherited on its own; null means "back to the default". */
 const SET_FIELDS=Core.SET_FIELDS;
 function settingsFor(id){ return Core.settingsFor(S, id, coreEnv()); }
-const hasSettings = st => !!st && SET_FIELDS.some(f=>f in st);
+const hasSettings = st => Ops.hasSettings(st);
 function turnsFor(id, includeLastReply){ return Core.turnsFor(S, id, coreEnv(), includeLastReply); }
 /* ---- Context fingerprint ----
    Each reply remembers exactly what was sent to get it: a short hash per turn (instructions, project files, merge
@@ -3662,25 +3649,8 @@ function ctxMarkHTML(id){
   const rp = sampleState==='ready' ? `<button class="linkbtn" data-replayask="${id}" title="Re-send #${id} and the prompts below it with the context as it is now">Replay</button>` : '';
   return `<span class="ctxmark" title="Changed above this reply since it was written: ${esc(all)}. Claude never sees this note.">Context changed: ${esc(ch[0].label)}${ch.length>1?` +${ch.length-1}`:''}</span>${rp}`;
 }
-const PERMANENT=['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'];
-function errCopy(code){
-  return ({
-    rate_limited:'Too many requests, or your usage limit was reached. Try again later.',
-    session_expired:'Sign in to Claude again, then retry.',
-    refused:'Claude declined this prompt. Try rewording it.',
-    empty_completion:'No reply came back. Try a simpler prompt.',
-    prompt_too_large:'This context path is too long to send. Squash or reroot to shorten it.',
-    no_api_key:'Add your Anthropic API key to the .env file, then restart Treechats.',
-    cli_missing:'Couldn\u2019t find Claude Code. Install it, or set TREECHATS_CLAUDE_PATH in .env, then restart Treechats.',
-    cli_auth:'Claude Code isn\u2019t signed in. Run claude in a terminal and sign in, then try again.',
-    cli_error:'Claude Code stopped with an error. Try again, or check the Treechats window for details.',
-    auth:'The API key was rejected. Check ANTHROPIC_API_KEY in .env, then restart Treechats.',
-    permission:'This API key isn\u2019t allowed to use that model. Pick another model or check your key.',
-    unknown_model:'That model name wasn\u2019t recognized. Check the TREECHATS_MODEL_ settings in .env.',
-    overloaded:'Claude is busy right now. Try again in a moment.',
-    network:'Couldn\u2019t reach the Treechats server or Claude. Check that Treechats is still running and you\u2019re online.'
-  })[code] || (PERMANENT.includes(code) ? 'Replies are turned off. Check your API key or Claude Code sign-in, then restart Treechats.' : 'The reply was interrupted. Try again.');
-}
+const PERMANENT=Ops.PERMANENT;
+function errCopy(code){ return Ops.errCopy(code); }
 /* ---- Replies ----
    Replies are written side by side, a few at a time; the rest wait their turn. A prompt waits for the
    replies above it, since they are part of what it sends. Each request remembers its space, so moving
@@ -3999,7 +3969,7 @@ function lineFrom(id){
   const c=chain(tip), i=c.indexOf(id);
   return i<0 ? [id] : c.slice(i);
 }
-const replayCount = line => line.filter(x=>S.nodes[x] && S.nodes[x].kind!=='merge').length;
+const replayCount = line => Ops.replayCount(S, line);
 /* from: replay `from` and the prompts below it. onto (optional): attach the copies under this prompt instead, for
    carrying the prompts below an edited prompt over to its new version. */
 function askReplay(from, onto=null, only=null){
@@ -4027,67 +3997,14 @@ function replayHTML(){
     <div class="bar"><button class="btn primary" data-replaygo>${AI}Replay ${n} prompt${n===1?'':'s'}</button><button class="btn" data-replaycancel>Cancel</button></div></div>`;
 }
 /* one prompt of the line, copied under `parent` (or beside the original as a new version), in the tree in S */
-function copyOne(o, parent, asVersion, by, text, rewrite){
-  const nid=S.nextId++, c={id:nid, text: text ?? (o.text||'')};
-  for(const k of ['kind','files','skip','note','from','into','seam','set']) if(o[k]!=null) c[k]=clone(o[k]);
-  if(o.model) c.askTier=o.model;
-  if(by) c.by=by;
-  if(rewrite) c.rewritten=rewrite;
-  if(asVersion){ const gid=o.alt ?? o.id; o.alt=gid; c.alt=gid; c.parents=[...o.parents]; S.active[gid]=nid; }
-  else c.parents=[parent, ...o.parents.slice(1)];
-  S.nodes[nid]=c; setActivePath(nid);
-  return nid;
-}
+function copyOne(o, parent, asVersion, by, text, rewrite){ return Ops.copyOne(S, o, parent, asVersion, by, text, rewrite); }
 /* ✦ does this prompt still make sense after the conversation as it now stands? */
-async function checkFit(sid, afterId, o, original){
-  const t=treeOf(sid);
-  const turns=withTree(t, ()=>turnsFor(afterId, true)).slice(-6);
-  const conversation=clip(turns.map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 16000);
-  try{
-    const d=await sampleFn.json(fillPrompt('replayCheck', {conversation, original:clip(original||'(none)', 6000), message:clip(o.text||'', 4000)}), {modelTier:'quick', cache:false});
-    if(!d || typeof d.fits!=='boolean') return {fits:true, unchecked:true};
-    return {fits:d.fits, reason:String(d.reason||'').trim(), rewrite:String(d.rewrite||'').trim()};
-  }catch(e){ return {fits:true, unchecked:true}; }
-}
+function checkFit(sid, afterId, o, original){ return Ops.checkFit(opsIo(), treeOf(sid), afterId, o, original); }
 /* The replay itself, shared by the page and agents. io.apply(fn, msg) makes a change in the space; io.pause(info)
    resolves to {text} to send, or null to stop; io.update() redraws. Returns what happened. */
-async function runReplay(r, io){
-  const t=treeOf(r.sid), made=[], line=r.line;
-  let parent=r.onto, requests=0, stoppedAt=null, why=null, rewrites=0;
-  for(const [i,id] of line.entries()){
-    if(r.stop){ stoppedAt=id; why='stopped'; break; }
-    const o=t.nodes[id]; if(!o){ stoppedAt=id; why='gone'; break; }
-    if(parent!=null && !t.nodes[parent]){ stoppedAt=id; why='gone'; break; }
-    let text=i===0 && r.firstText!=null ? r.firstText : o.text, rewrite=null;
-    const lastAsk=[...made].reverse().find(x=>t.nodes[x] && t.nodes[x].kind!=='merge' && t.nodes[x].reply);
-    const prevOld = i>0 ? t.nodes[line[i-1]] : (r.onto!=null ? t.nodes[t.nodes[line[0]].parents[0]] : null);
-    if(o.kind!=='merge' && r.mode!=='off' && (lastAsk!=null || (i===0 && r.onto!=null && t.nodes[r.onto] && t.nodes[r.onto].reply)) && !(i===0 && r.firstText!=null)){
-      r.status={what:'checking', id}; io.update();
-      const v=await checkFit(r.sid, lastAsk ?? r.onto, o, prevOld && prevOld.reply); requests++;
-      if(r.stop){ stoppedAt=id; why='stopped'; break; }
-      if(!v.fits){
-        if(r.mode==='rewrite' && v.rewrite){ text=v.rewrite; rewrite={from:o.text, by:'claude', why:v.reason}; rewrites++; }
-        else {
-          r.status={what:'paused', id, reason:v.reason, suggest:v.rewrite}; io.update();
-          const ans=await io.pause({id, reason:v.reason, rewrite:v.rewrite});
-          if(!ans){ stoppedAt=id; why='mismatch'; r.mismatch={id, reason:v.reason, rewrite:v.rewrite}; break; }
-          text=ans.text; if(text!==o.text) rewrite={from:o.text, by: text===v.rewrite ? 'claude' : 'you', why:v.reason};
-        }
-      }
-    }
-    const asVersion = i===0 && r.onto==null;
-    const nid=io.apply(()=>copyOne(o, parent, asVersion, r.by, text, rewrite), `Replay: #${id} re-sent as #${S.nextId}`);
-    made.push(nid); parent=nid; r.at=nid;
-    if(o.kind==='merge') continue;
-    r.status={what:'sending', id:nid}; io.update();
-    const wait=awaitReply(r.sid, nid); wantReplies([nid], r.sid); requests++;
-    const res=await wait;
-    if(res.error){ stoppedAt=id; why=r.stop ? 'stopped' : 'error'; r.error=res.error; break; }
-  }
-  /* finished the whole line: branches that ended at the old tip carry on from the new one */
-  if(stoppedAt==null && made.length) io.apply(()=>{ for(const rid of withTree(t, ()=>refsAt(line[line.length-1]))) t.refs[rid].tip=made[made.length-1]; return null; }, null);
-  r.done=true; r.status=null;
-  return {made, requests, stoppedAt, why, rewrites, mismatch:r.mismatch, error:r.error};
+function runReplay(r, io){
+  /* the shared engine (treeops.js), with the page's way of changing the tree: io.apply runs fn on the tree in S */
+  return Ops.runReplay(r, Object.assign(opsIo(), io, {apply:(fn, msg)=>io.apply(()=>fn(S), msg)}));
 }
 async function replay(from, onto=null, line=lineFrom(from)){
   if(sampleState!=='ready' || !line.length) return;
@@ -4132,7 +4049,7 @@ function onMain(id){
   const c=convOf(id);
   return Object.values(S.refs).some(r=>r.name==='main' && S.nodes[r.tip] && convOf(r.tip)===c && chain(r.tip).includes(id));
 }
-function refsThrough(id){ return Object.keys(S.refs).filter(rid=>S.nodes[S.refs[rid].tip] && chain(S.refs[rid].tip).includes(id)); }
+function refsThrough(id){ return Ops.refsThrough(S, id, chain); }
 function promote(id){
   if(onMain(id)){ toast('This prompt is already on main.'); return; }
   const c=convOf(id), through=refsThrough(id);
@@ -4151,33 +4068,11 @@ function promote(id){
 /* ---- Fan out ----
    Turns the options a reply offers into one follow-up prompt each, on its own branch. */
 let fan=null;
-const stripMd = t => t.replace(/\*\*|__|`/g,'').replace(/^\s*#+\s*/,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').trim();
-function shortTitle(line){
-  const b=line.match(/^\s*\*\*([^*]{2,60})\*\*/); if(b) return stripMd(b[1]).replace(/[:.\s–—-]+$/,'');
-  let t=stripMd(line).replace(/^(option|approach|choice|alternative)\s*[A-Z0-9]{0,2}\s*[:.)–—-]\s+(?=\S)/i,'');
-  const cut=t.search(/(:\s| [–—-] |\.\s|\(| because | so that )/);
-  if(cut>3) t=t.slice(0,cut);
-  return clip(t.replace(/[:.,;\s]+$/,''), 48);
-}
+const stripMd = t => Ops.stripMd(t);
+function shortTitle(line){ return Ops.shortTitle(line); }
 /* without Claude: read numbered and bulleted lists, or headings, at the top level of the reply */
-function listOptions(reply){
-  const body=reply.replace(/```[\s\S]*?```/g,''), lines=body.split('\n');
-  const groups={head:[], num:[], bullet:[]};
-  for(const l of lines){
-    let m;
-    if((m=l.match(/^#{2,4}\s+(.+)$/))) groups.head.push(m[1]);
-    else if((m=l.match(/^(\d+)[.)]\s+(.+)$/))) groups.num.push(m[2]);
-    else if((m=l.match(/^[-*•]\s+(.+)$/))) groups.bullet.push(m[1]);
-  }
-  const optHeads=groups.head.filter(h=>/^(\*\*)?(option|approach|choice|alternative|path|plan)\b/i.test(h));
-  const pickFrom = optHeads.length>=2 ? optHeads : groups.num.length>=2 ? groups.num : groups.head.length>=2 && groups.head.length<=6 ? groups.head : groups.bullet.length>=2 && groups.bullet.length<=8 ? groups.bullet : [];
-  const options=pickFrom.slice(0,8).map(l=>{ const title=shortTitle(l); return {title, prompt:`Let's go with ${title}. Walk me through it.`}; }).filter(o=>o.title);
-  let recommended=null;
-  const rec=lines.find(l=>/\b(recommend|i'd go with|i would go with|i'd pick|i'd start with|best (fit|choice|option|bet))\b/i.test(l));
-  if(rec){ const low=rec.toLowerCase(); const i=options.findIndex(o=>o.title.length>2 && low.includes(o.title.toLowerCase())); if(i>=0) recommended=i; }
-  return {options, recommended};
-}
-const FAN_ASK = (text, reply) => fillPrompt('fan', {message:clip(text||'',4000), reply:clip(reply,24000)});
+function listOptions(reply){ return Ops.listOptions(reply); }
+const FAN_ASK = (text, reply) => Ops.fanAsk(opsIo(), text, reply);
 async function openFan(id){
   const n=S.nodes[id]; if(!n || !n.reply) return;
   let tpl=null;
@@ -4235,11 +4130,7 @@ function fanHTML(){
   </div>`;
 }
 const fanGoLabel = on => `Create ${on} branch${on===1?'':'es'}`;
-function slugName(title, conv){
-  let b=title.toLowerCase().replace(/^(option|approach)\s+\w+:\s*/,'').replace(/[^a-z0-9._\/-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32).replace(/-+$/,'') || 'option';
-  const used=namesIn(conv); if(!used.has(b)) return b;
-  let k=2; while(used.has(`${b}-${k}`)) k++; return `${b}-${k}`;
-}
+function slugName(title, conv){ return Ops.slugName(S, title, conv, chain); }
 function fanCreate(){
   const f=fan; if(!f) return;
   const id=f.id, list=f.options.map((o,i)=>({...o, i})).filter(o=>o.on && o.prompt.trim());
@@ -4265,16 +4156,12 @@ function fanCreate(){
    The follow-ups to one prompt side by side, with their replies. */
 const cmpEl=()=>document.getElementById('compare');
 let cmpFor=null, cmpReturn=null, cmpIds=null;
-function cmpKids(id){ return vKids(id).filter(k=>k.kind!=='merge'); }
+function cmpKids(id){ return Ops.cmpKids(S, id, G); }
 /* Compare shows the follow-ups of one prompt, or prompts you picked with Ctrl/⌘-click (cmpIds) */
 const cmpList = () => cmpIds ? cmpIds.map(i=>S.nodes[i]).filter(n=>n && n.kind!=='merge') : cmpKids(cmpFor);
 const cmpKey = () => cmpIds ? 'p'+cmpIds.join(',') : cmpFor;
 /* the deepest prompt every picked one follows: their shared context (null when they're in different chats) */
-function sharedParent(ids){
-  const ps=ids.filter(i=>S.nodes[i]).map(i=>path(i)); if(!ps.length) return null;
-  const common=ps[0].filter(x=>!ids.includes(x) && ps.every(p=>p.includes(x)));
-  return common.length ? common[common.length-1] : null;
-}
+function sharedParent(ids){ return Ops.sharedParent(S, ids, path); }
 const cmpParent = () => cmpIds ? sharedParent(cmpIds) : cmpFor;
 function openCompareIds(ids){
   ids=[...new Set(ids)].filter(i=>S.nodes[i] && S.nodes[i].kind!=='merge');
@@ -4324,23 +4211,9 @@ function renderCompare(){
    here and in Settings › Prompts) with that material filled in, so the review chat shows exactly what was sent. The
    reply and its review link to each other. */
 let reviewAsk=null;
-function reviewMaterial(id, whole){
-  const n=S.nodes[id];
-  if(whole) return `The conversation:\n\n${turnsFor(id, true).map(t=>`${t.role==='user'?'User':'Assistant'}: ${t.content}`).join('\n\n')}`;
-  return `The question:\n${n.text||''}\n\nThe answer:\n${n.reply||''}`;
-}
+function reviewMaterial(id, whole){ return Ops.reviewMaterial(S, coreEnv(), id, whole); }
 /* adds the review chat to the tree in S; returns its first prompt */
-function addReviewChat(id, whole, instructions, by){
-  let t=(instructions!=null && instructions.trim() ? instructions : promptText('review'));
-  const material=reviewMaterial(id, whole);
-  t = t.includes('{material}') ? t.split('{material}').join(material) : t+'\n\n'+material;
-  const nid=S.nextId++;
-  S.nodes[nid]={id:nid, parents:[], text:t, reviewOf:{id, whole:!!whole}};
-  if(by) S.nodes[nid].by=by;
-  newRef('main', nid);
-  S.convs[nid]=Object.assign(S.convs[nid]||{}, {title:`Review of #${id}`});
-  return nid;
-}
+function addReviewChat(id, whole, instructions, by){ return Ops.addReviewChat(S, coreEnv(), id, whole, instructions, by, promptText('review')); }
 const reviewsOf = id => all().filter(n=>n.reviewOf && n.reviewOf.id===id);
 function openReview(id){
   if(sampleState!=='ready'){ toast('Review needs Claude. Add an API key or sign in to Claude Code, then restart Treechats.'); return; }
@@ -4378,44 +4251,14 @@ function reviewLinksHTML(id){
    Combine: one request that writes a single reply from the best parts of the follow-ups, with the follow-up message it
    answers and where each part came from. It arrives as a draft you can edit, and enters the tree only when you add it,
    as a new follow-up marked "combined" with its sources. Both prompts are editable in Settings › Prompts. */
-const JUDGE_DEFAULT='Most correct and useful for what the person is trying to do.';
-const COMBINE_DEFAULT='Keep what is correct and useful from each. Resolve contradictions. Don’t add new claims.';
+const JUDGE_DEFAULT=Ops.JUDGE_DEFAULT;
+const COMBINE_DEFAULT=Ops.COMBINE_DEFAULT;
 let cmpTool=null;
-function compareMaterial(sid, parent, ids){
-  const t=treeOf(sid);
-  return withTree(t, ()=>{
-    const alts=ids.map(i=>S.nodes[i]).filter(n=>n && n.reply);
-    if(alts.length<2) throw new Error('Needs at least two follow-ups with replies.');
-    const conversation=parent==null ? '(They come from different chats, with no shared context.)' : clip(turnsFor(parent, true).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n'), 24000);
-    const alternatives=alts.map(n=>`#${n.id}\nFollow-up: ${clip(n.text||'',3000)}\nReply: ${clip(n.reply,9000)}`).join('\n\n---\n\n');
-    return {conversation, alternatives, ids:alts.map(n=>n.id)};
-  });
-}
-async function judgeCore(sid, parent, ids, criteria){
-  const m=compareMaterial(sid, parent, ids);
-  const d=await sampleFn.json(fillPrompt('judge', {criteria:criteria||JUDGE_DEFAULT, conversation:m.conversation, alternatives:m.alternatives}), {modelTier:opts.model, cache:false});
-  const num=x=>+String(x||'').replace(/[^\d]/g,'');
-  const best=m.ids.includes(num(d && d.best)) ? num(d.best) : null, reasons={};
-  for(const [k,v] of Object.entries((d && d.reasons) || {})){ const id=num(k); if(m.ids.includes(id)) reasons[id]=String(v); }
-  return {best, reasons, summary:String((d && d.summary)||'').trim(), criteria:criteria||JUDGE_DEFAULT, ids:m.ids};
-}
-async function combineCore(sid, parent, ids, instructions){
-  const m=compareMaterial(sid, parent, ids);
-  const d=await sampleFn.json(fillPrompt('combine', {instructions:instructions||COMBINE_DEFAULT, conversation:m.conversation, alternatives:m.alternatives}), {modelTier:opts.model, cache:false});
-  if(!d || !String(d.reply||'').trim()) throw new Error('Claude didn’t return a combined reply.');
-  const num=x=>+String(x||'').replace(/[^\d]/g,''), sources={};
-  for(const [k,v] of Object.entries(d.sources||{})){ const id=num(k); if(m.ids.includes(id)) sources[id]=String(v); }
-  return {prompt:String(d.prompt||'').trim() || 'Combine the best of these.', reply:String(d.reply).trim(), sources, ids:m.ids, tier:opts.model};
-}
+function compareMaterial(sid, parent, ids){ const t=treeOf(sid); return Ops.compareMaterial(t, coreEnv(t), parent, ids); }
+function judgeCore(sid, parent, ids, criteria){ return Ops.judge(opsIo(), treeOf(sid), parent, ids, criteria); }
+function combineCore(sid, parent, ids, instructions){ return Ops.combine(opsIo(), treeOf(sid), parent, ids, instructions); }
 /* adds a combined reply as a new follow-up to `parent`, on its own branch, in the tree in S */
-function addCombined(parent, c, by){
-  const nid=S.nextId++;
-  S.nodes[nid]={id:nid, parents:[parent], text:c.prompt, reply:c.reply, model:c.tier, combined:{from:c.ids, sources:c.sources}};
-  if(by) S.nodes[nid].by=by;
-  newRef(slugName('combined', convOf(parent)), nid);
-  S.nodes[nid].ctx=ctxSig(nid);
-  return nid;
-}
+function addCombined(parent, c, by){ return Ops.addCombined(S, coreEnv(), parent, c, by); }
 const combinedTitle = n => `Claude combined ${n.combined.from.map(x=>'#'+x).join(', ')} in Compare.${Object.entries(n.combined.sources||{}).map(([k,v])=>` #${k}: ${v}`).join('')}`;
 function cmpToolsHTML(){
   const key=cmpKey(), par=cmpParent();
@@ -4551,333 +4394,28 @@ async function useDistill(how){
    The server relays commands from MCP clients (server/relay.ts); this page carries them out. Agents only ever work
    in their own run spaces, never in yours. Their changes skip your Undo, and every prompt they add carries their
    name. Operations wait for Claude's reply and return it. */
+/* ---- Agents ----
+   Agents work through MCP, and the server carries their operations out (server/agent.ts): it changes the document
+   and writes their replies itself, so nothing here has to be open. This page is told about each change (see Sync)
+   and about replies the server is writing, which show as they come in, like your own, and can be stopped. */
 const Agent=(()=>{
-  const tierOf = m => TIERS.some(t=>t[0]===m) ? m : null;
-  function runSpace(run, create){
-    let sid=Object.keys(DB.spaces).find(k=>DB.spaces[k].agentRun===run);
-    if(!sid && create){
-      sid='s'+(DB.nextSpace++);
-      DB.spaces[sid]={id:sid, name:uniqueSpaceName('Run: '+run), tree:emptyTree(), agentRun:run};
-      DB.order.unshift(sid);
+  function remoteGen(d){
+    const k=gkey(d.sid, d.id); let g=gens.get(k);
+    if(!g){
+      g={id:d.id, sid:d.sid, remote:true, text:'', steps:[], tier:d.tier, started:d.started,
+        ctl:{abort(){ fetch('/api/agent/stop', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sid:d.sid, id:d.id})}).catch(()=>{}); }}};
+      gens.set(k, g);
+      if(d.sid===DB.current && S.nodes[d.id]) showLive(d.id);
     }
-    if(!sid) throw new Error(`There is no run named "${run}" yet. Start one with spawn.`);
-    return sid;
+    const stepsChanged=(d.steps||[]).length!==g.steps.length || JSON.stringify(d.steps||[])!==JSON.stringify(g.steps);
+    g.text=d.text||''; g.steps=d.steps||[];
+    if(d.sid===DB.current){ paintGen(g); if(stepsChanged) paintSteps(g); }
   }
-  /* changes go straight into the run space's tree, outside commit(), so they never enter your Undo */
-  function change(sid, fn){
-    const t=DB.spaces[sid].tree, out=withTree(t, fn);
-    /* as after your own changes: a branch whose prompts are gone goes too, and the view moves off deleted prompts */
-    for(const [rid, r] of Object.entries(t.refs||{})) if(!t.nodes[r.tip]) delete t.refs[rid];
-    if(t.head && !t.refs[t.head]) t.head=null;
-    undoStack=undoStack.filter(e=>e.sid!==sid); redoStack=redoStack.filter(e=>e.sid!==sid);
-    save(); if(sid===DB.current){ render(); } else renderSpaces();
-    return out;
-  }
-  function agentLine(t, from, branch){
-    return withTree(t, ()=>{
-      let tip;
-      if(branch){ const r=Object.values(S.refs).find(r=>r.name===branch && S.nodes[r.tip]); if(!r) throw new Error(`No branch named "${branch}" in this run.`); tip=r.tip; }
-      else { const rid=refsThrough(from)[0]; tip=rid ? S.refs[rid].tip : leafOf(from); }
-      const c=chain(tip), i=c.indexOf(from);
-      if(i<0) throw new Error(`#${from} isn’t on branch ${branch}.`);
-      return c.slice(i);
-    });
-  }
-  /* what judge and combine work on: the follow-ups of after, or prompts named anywhere (their shared context) */
-  function pickedSet(t, a){
-    if(a.prompts && a.prompts.length){ for(const x of a.prompts) need(t, x); return {ids:a.prompts, parent: a.after ?? withTree(t, ()=>sharedParent(a.prompts))}; }
-    if(a.after==null) throw new Error('Say which prompts: after (their shared prompt) or prompts (a list).');
-    need(t, a.after); return {parent:a.after, ids:withTree(t, ()=>cmpKids(a.after).map(k=>k.id))};
-  }
-  /* the prompts from one to another along a line, both included, skipping merge points */
-  function stretch(t, from, until){
-    const c=withTree(t, ()=>chain(until)), i=c.indexOf(from);
-    if(i<0) throw new Error(`#${from} isn’t on the line up to #${until}.`);
-    return c.slice(i).filter(x=>t.nodes[x].kind!=='merge');
-  }
-  const replayLine = (t, a) => a.until!=null ? (()=>{ const c=withTree(t, ()=>chain(a.until)), i=c.indexOf(a.prompt); if(i<0) throw new Error(`#${a.prompt} isn’t on the line up to #${a.until}.`); return c.slice(i); })() : agentLine(t, a.prompt, a.branch);
-  const need = (t, id) => { const n=t.nodes[id]; if(!n || n.kind==='merge') throw new Error(`There is no prompt #${id} in this run.`); return n; };
-  /* a point to continue from: a prompt, or a merge point (a branch tip after a merge) */
-  const point = (t, id) => { const n=t.nodes[id]; if(!n) throw new Error(`There is no prompt #${id} in this run.`); return n; };
-  /* model settings an agent asks for on spawn or fork: they apply to that prompt and the ones after it */
-  function agentSettings(a){
-    const st={};
-    if(typeof a.system==='string' && a.system.trim()) st.system=a.system.trim();
-    if(typeof a.thinking==='boolean') st.thinking=a.thinking;
-    if(EFFORT_OPTS.includes(a.effort)) st.effort=a.effort;
-    if(typeof a.temperature==='number') st.temperature=Math.min(1, Math.max(0, a.temperature));
-    if(Number.isFinite(a.max_tokens)) st.maxTokens=Math.round(a.max_tokens);
-    return hasSettings(st) ? st : null;
-  }
-  function addTurn(t, parent, text, by, tier){
-    const nid=t.nextId++; t.nodes[nid]={id:nid, parents: parent==null ? [] : [parent], text, by};
-    if(tier) t.nodes[nid].askTier=tier;
-    return nid;
-  }
-  async function reply(sid, id, base){
-    if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
-    const wait=awaitReply(sid, id); wantReplies([id], sid);
-    const r=await wait;
-    if(r.error) throw new Error(`#${id} got no reply: ${r.error}`);
-    return {...base, prompt:id, reply:r.reply, note:r.note||undefined};
-  }
-  const where = (sid, id) => withTree(DB.spaces[sid].tree, ()=>({project:DB.spaces[sid].name, chat:chain(id)[0], branch:refsAt(id).map(refName)[0]}));
-  const ops={
-    async spawn(a){
-      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
-      const sid=runSpace(a.run, true), by=a.agent||'agent';
-      const text=(a.context ? `${a.context.trim()}\n\n---\n\n` : '')+a.prompt;
-      const id=change(sid, ()=>{
-        const nid=addTurn(S, null, text, by, tierOf(a.model));
-        const st=agentSettings(a); if(st) S.nodes[nid].set=st;
-        const rid=newRef('main', nid); S.head=rid;
-        if(a.title) S.convs[nid]={title:String(a.title).slice(0,80)};
-        return nid;
-      });
-      return reply(sid, id, {...where(sid,id), message:'Started a subagent'});
-    },
-    async ask(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
-      let after=a.after;
-      if(after==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); after=r.tip; }
-      if(after==null) throw new Error('Say where to continue: after (a prompt number) or branch.');
-      point(t, after);
-      const id=change(sid, ()=>{
-        const nid=addTurn(S, after, a.prompt, by, tierOf(a.model));
-        const rids=refsAt(after); if(rids.length) S.refs[rids[0]].tip=nid; else newRef(autoName(convOf(after)), nid);
-        return nid;
-      });
-      return reply(sid, id, {...where(sid,id), message:'Asked'});
-    },
-    /* /loop for agents: the same prompt again after each reply, up to times, or until a quick check says the
-       condition is met (that verdict is noted under the reply, as in the page) */
-    async loop(a){
-      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats: add an API key to .env or sign in to Claude Code, then restart it.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
-      let after=a.after;
-      if(after==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); after=r.tip; }
-      if(after==null) throw new Error('Say where to loop from: after (a prompt number) or branch.');
-      point(t, after);
-      const times=Math.min(20, Math.max(1, a.times||3)), L={id:'a'+(++loopSeq), sid, until:a.until||null};
-      let requests=0, last=null, lastReply='', met=null, sent=0, stopNote='';
-      for(let i=1; i<=times; i++){
-        const nid=change(sid, ()=>{
-          const nid=addTurn(S, after, a.prompt, by, tierOf(a.model)); S.nodes[nid].loop={id:L.id, i, of:times, ...(L.until?{until:L.until}:{})};
-          const rids=refsAt(after); if(rids.length) for(const r of rids) S.refs[r].tip=nid; else newRef(autoName(convOf(after)), nid);
-          return nid;
-        });
-        const w=awaitReply(sid, nid); wantReplies([nid], sid); const r=await w; requests++;
-        if(r.error){ stopNote=` Stopped at #${nid}: ${r.error}`; last=nid; break; }
-        after=nid; last=nid; lastReply=r.reply; sent=i;
-        if(L.until){ const c=await loopCheck(L, nid); requests++; change(sid, ()=>{ S.nodes[nid].loopCheck=c; }); if(c.met){ met=c; break; } }
-      }
-      const msg = met ? `Looped ${sent} time${sent===1?'':'s'}; the condition is met at #${last}${met.why?` (${met.why.replace(/\.$/,'')})`:''}`
-        : `Looped ${sent} time${sent===1?'':'s'}${L.until?' and the condition wasn’t met':''}`;
-      return {...where(sid,last), prompt:last, reply:lastReply, requests, message:msg+stopNote};
-    },
-    async fork(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent';
-      point(t, a.at);
-      const id=change(sid, ()=>{
-        const nid=addTurn(S, a.at, a.prompt, by, tierOf(a.model));
-        const st=agentSettings(a); if(st) S.nodes[nid].set=st;
-        const name = a.name && NAME_RE.test(a.name) && !namesIn(convOf(a.at)).has(a.name) ? a.name : slugName(a.name || 'fork', convOf(a.at));
-        newRef(name, nid);
-        return nid;
-      });
-      return reply(sid, id, {...where(sid,id), message:`Forked after #${a.at}`});
-    },
-    async leave_out(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, on=a.left_out!==false; need(t, a.prompt);
-      const ids = a.until!=null ? stretch(t, a.prompt, a.until) : [a.prompt];
-      change(sid, ()=>{ for(const x of ids){ const n=S.nodes[x]; if(on) n.skip=true; else delete n.skip; } });
-      const which = ids.length>1 ? `#${ids[0]}–#${ids[ids.length-1]} (${ids.length} prompts) are` : `#${a.prompt} is`;
-      return {...where(sid,a.prompt), prompt:a.prompt, message: on ? `${which} left out of what later prompts send` : `${which} included again`};
-    },
-    async include_as(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
-      const mode={full:'full', summary:'summary', excerpt:'excerpt', prompt_only:'prompt', reply_only:'reply', left_out:'out'}[a.mode];
-      if(!mode) throw new Error(`Unknown mode "${a.mode}".`);
-      const ids = a.until!=null ? stretch(t, a.prompt, a.until) : [a.prompt];
-      if(mode==='excerpt' && ids.length>1) throw new Error('An excerpt is for one prompt at a time; leave out until.');
-      if(['summary','prompt','reply'].includes(mode)){ const no=ids.filter(x=>!t.nodes[x].reply); if(no.length) throw new Error(`${no.map(x=>'#'+x).join(', ')} ${no.length===1?'has':'have'} no reply, so ${SM.LABELS[mode].toLowerCase()} doesn’t apply.`); }
-      let ex=null;
-      if(mode==='excerpt'){
-        const n=t.nodes[a.prompt], e=a.excerpt||{}, p=SM.piecesFromText(n.text||'', e.prompt||[]), r=SM.piecesFromText(n.reply||'', e.reply||[]);
-        const ed={}, edOf={}; if(typeof e.prompt_text==='string'){ ed.p=e.prompt_text; edOf.p=h5(n.text||''); } if(typeof e.reply_text==='string'){ ed.r=e.reply_text; edOf.r=h5(n.reply||''); }
-        const miss=[...p.missing.map(x=>'prompt: "'+clip(x,60)+'"'), ...r.missing.map(x=>'reply: "'+clip(x,60)+'"')];
-        if(miss.length) throw new Error(`These pieces aren’t in #${a.prompt} exactly as given, so nothing changed: ${miss.join('; ')}. Copy them from get_prompt.`);
-        if(!p.pieces.length && !r.pieces.length && !Object.keys(ed).length) throw new Error('Pass the pieces to keep in excerpt.prompt and/or excerpt.reply, or your own wording in excerpt.prompt_text or excerpt.reply_text.');
-        ex={p:p.pieces, r:r.pieces, ...(Object.keys(ed).length?{ed, edOf}:{})};
-      }
-      const by=a.agent||'agent';
-      change(sid, ()=>{ for(const x of ids){ const n=S.nodes[x];
-        if(mode==='out'){ n.skip=true; continue; }
-        delete n.skip;
-        if(mode==='full') delete n.send; else n.send=mode;
-        if(ex) n.ex=ex;
-        if(mode==='summary' && a.summary && String(a.summary).trim()) n.sum={text:String(a.summary).trim(), of:h5(n.reply||''), by};
-      } });
-      let requests=0; const failed=[];
-      if(mode==='summary' && !(a.summary && String(a.summary).trim())){
-        for(const x of ids){ const n=t.nodes[x]; if(SM.hasSummary(n) && !SM.stale(n,h5).length) continue; const r=await summarizeTurn(sid, x); requests++; if(r.error) failed.push(x); }
-      }
-      const which = ids.length>1 ? `#${ids[0]}–#${ids[ids.length-1]} (${ids.length} prompts) are` : `#${a.prompt} is`;
-      const msg = mode==='full' ? `${which} included in full again` : mode==='out' ? `${which} left out of what later prompts send` : `${which} included as ${SM.LABELS[mode].toLowerCase()} by later prompts`;
-      return {...where(sid,a.prompt), prompt:a.prompt, requests, message: msg+(failed.length?`. Claude couldn’t write the summary of ${failed.map(x=>'#'+x).join(', ')}, so ${failed.length===1?'its':'their'} full reply is still sent`:'')};
-    },
-    async edit_reply(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
-      change(sid, ()=>{ n.reply=String(a.reply); n.replyEdited=true; n.editedBy=a.agent||'agent'; });
-      return {...where(sid,a.prompt), prompt:a.prompt, message:`Replaced the reply to #${a.prompt}; prompts after it see this version`};
-    },
-    async regenerate(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt), by=a.agent||'agent';
-      const id=change(sid, ()=>{
-        const gid=n.alt ?? n.id; n.alt=gid;
-        const nid=S.nextId++;
-        S.nodes[nid]={id:nid, parents:[...n.parents], text:n.text, alt:gid, by};
-        if(n.files) S.nodes[nid].files=clone(n.files); if(n.set) S.nodes[nid].set=clone(n.set);
-        const tier=tierOf(a.model)||n.model; if(tier) S.nodes[nid].askTier=tier;
-        S.active[gid]=nid;
-        for(const rid of refsAt(n.id)) S.refs[rid].tip=nid;
-        return nid;
-      });
-      return reply(sid, id, {...where(sid,id), replaced:a.prompt, message:`New version of #${a.prompt} (the old one is kept)`});
-    },
-    /* replay: the line from a prompt to the end of a branch (or to the end of the line), one prompt at a time, as new
-       versions; onto carries it under another prompt (to continue after a stop), first_prompt replaces the first */
-    replay_plan(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt); if(a.onto!=null) need(t, a.onto);
-      const line=replayLine(t, a), n=withTree(t, ()=>replayCount(line));
-      return {count: n + (a.on_mismatch==='ignore' ? 0 : Math.max(0, n-1) + (a.onto!=null ? 1 : 0))};
-    },
-    async replay(a){
-      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt); if(a.onto!=null) need(t, a.onto);
-      const line=replayLine(t, a);
-      const r={sid, from:a.prompt, onto:a.onto ?? null, line, by:a.agent||'agent', firstText:a.first_prompt ?? null,
-        mode: a.on_mismatch==='rewrite' ? 'rewrite' : a.on_mismatch==='ignore' ? 'off' : 'stop', done:false};
-      const out=await runReplay(r, {apply:fn=>change(sid, fn), pause:()=>Promise.resolve(null), update(){}});
-      const asks=out.made.filter(x=>t.nodes[x] && t.nodes[x].kind!=='merge'), last=asks[asks.length-1];
-      const lastReply = last!=null ? t.nodes[last].reply : undefined;
-      let message = asks.length ? `Replayed ${asks.length} prompt${asks.length===1?'':'s'} as new versions (#${asks[0]}${asks.length>1?`–#${last}`:''}); the old ones are kept` : 'Nothing was re-sent';
-      if(out.rewrites) message += `. ${out.rewrites} rewritten to fit`;
-      if(out.why==='mismatch'){ const m=out.mismatch;
-        message += `. Stopped before #${m.id}, which no longer fits: ${m.reason || 'the new reply went a different way'}${m.rewrite?` Suggested rewrite: "${m.rewrite}"`:''} To go on, call replay with prompt ${m.id}, onto ${last ?? (a.onto ?? '(the prompt before it)')}, and first_prompt set to your version (or ask after #${last} yourself).`; }
-      else if(out.why==='error') message += `. Stopped: ${out.error}`;
-      return {...(last!=null ? where(sid,last) : where(sid,a.prompt)), prompt:last, reply:lastReply, requests:out.requests, message};
-    },
-    /* an edited prompt: a new version on its own branch, with a reply (as Edit does for people) */
-    async edit_prompt(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt), by=a.agent||'agent';
-      if(!String(a.text||'').trim()) throw new Error('Give the new text of the prompt.');
-      let name='';
-      const id=change(sid, ()=>{
-        const gid=n.alt ?? n.id; n.alt=gid;
-        const nid=S.nextId++;
-        S.nodes[nid]={id:nid, parents:[...n.parents], text:String(a.text), alt:gid, by};
-        if(n.files) S.nodes[nid].files=clone(n.files); if(n.set) S.nodes[nid].set=clone(n.set);
-        const tier=tierOf(a.model)||n.model; if(tier) S.nodes[nid].askTier=tier;
-        S.active[gid]=nid; name=autoName(convOf(n.id)); newRef(name, nid);
-        return nid;
-      });
-      return reply(sid, id, {...where(sid,id), replaced:a.prompt, message:`Edited #${a.prompt} as #${id} on a new branch, ${name}; the original keeps its branch and what followed`});
-    },
-    /* fan out: the options a reply offers, one branch each. Reading them is one request (unless you give them) */
-    async fan_plan(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, n=need(t, a.prompt);
-      if(!n.reply) throw new Error(`#${a.prompt} has no reply to fan out yet.`);
-      if(Array.isArray(a.options) && a.options.length) return {options:a.options.map(o=>({title:String(o.title||o.prompt||'option').slice(0,40), prompt:String(o.prompt||o.title||'')})).filter(o=>o.prompt.trim()), read:false};
-      let opts2=[];
-      if(sampleState==='ready'){ try{ const d=await sampleFn.json(FAN_ASK(n.text, n.reply), {modelTier:'quick', cache:false}); opts2=(d && d.options || []).map(o=>({title:String(o.title||'').slice(0,40), prompt:String(o.prompt||'')})).filter(o=>o.prompt.trim()); }catch(e){} }
-      if(!opts2.length) opts2=listOptions(n.reply).options.map(o=>({title:o.title, prompt:o.prompt}));
-      if(!opts2.length) throw new Error(`#${a.prompt}'s reply doesn't offer options to fan out. Use fork to try a direction yourself.`);
-      return {options:opts2, read:sampleState==='ready'};
-    },
-    async fan_out(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, by=a.agent||'agent'; need(t, a.prompt);
-      const options=(a.options||[]).filter(o=>o && String(o.prompt||'').trim());
-      if(!options.length) throw new Error('No options to fan out.');
-      const made=change(sid, ()=>options.map(o=>{ const nid=addTurn(S, a.prompt, String(o.prompt), by, tierOf(a.model)); newRef(slugName(o.title||'option', convOf(a.prompt)), nid); return nid; }));
-      if(a.replies===false) return {...where(sid,a.prompt), prompt:a.prompt, message:`Fanned out #${a.prompt} into ${made.length} branches: ${made.map((x,i)=>`#${x} ${options[i].title||''}`).join(', ')}. No replies requested.`};
-      const waits=made.map(x=>awaitReply(sid, x)); wantReplies(made, sid);
-      const rs=await Promise.all(waits);
-      const lines=made.map((x,i)=>`#${x} (${options[i].title||'option'}): ${rs[i].error ? 'no reply: '+rs[i].error : clip(rs[i].reply, 1200)}`).join('\n\n');
-      return {...where(sid,a.prompt), prompt:a.prompt, message:`Fanned out #${a.prompt} into ${made.length} branches, each answered. Use judge after ${a.prompt} to pick, or distill one.\n\n${lines}`};
-    },
-    /* everything else, by name; describe lists them */
-    operate(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree, op=a.op, by=a.agent||'agent';
-      const want=(id, what='prompt')=>{ if(id==null) throw new Error(`"${op}" needs ${what}.`); return need(t, id); };
-      const lineBetween=(from, until)=>{ if(until==null) return [from]; const c=withTree(t, ()=>chain(until)); const i=c.indexOf(from); if(i<0) throw new Error(`#${from} isn’t on the line up to #${until}.`); return c.slice(i); };
-      let msg='', at=a.prompt;
-      change(sid, ()=>{
-        if(op==='star'){ const n=want(a.prompt); const on=a.value!==false; if(on) n.star=true; else delete n.star; msg=on?`Starred #${a.prompt}`:`Unstarred #${a.prompt}`; }
-        else if(op==='note'){ const n=want(a.prompt); const txt=String(a.text||'').trim(); if(a.value===false || !txt){ delete n.note; msg=`Cleared the note on #${a.prompt}`; } else { n.note = a.append && n.note ? n.note+'\n\n'+txt : txt; msg=`Noted on #${a.prompt} (never sent to the model)`; } }
-        else if(op==='branch'){ want(a.prompt); const name=a.name && NAME_RE.test(a.name) && !namesIn(convOf(a.prompt)).has(a.name) ? a.name : slugName(a.name||'branch', convOf(a.prompt)); newRef(name, a.prompt); msg=`Started branch ${name} at #${a.prompt}`; }
-        else if(op==='rename_branch'){ const r=Object.values(S.refs).find(r=>r.name===a.branch && S.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}".`); if(!a.name || !NAME_RE.test(a.name)) throw new Error('Give a new name: up to 40 letters, numbers, dots, dashes, slashes or underscores, with no spaces.'); if(a.name!==r.name && namesIn(convOf(r.tip)).has(a.name)) throw new Error(`This chat already has a branch named ${a.name}.`); msg=`Renamed ${r.name} to ${a.name}`; r.name=a.name; }
-        else if(op==='make_mainline'){ want(a.prompt); const c=convOf(a.prompt), through=refsThrough(a.prompt); let rid=through.sort((x,y)=>chain(S.refs[x].tip).length-chain(S.refs[y].tip).length)[0]; const mains=Object.keys(S.refs).filter(r=>S.refs[r].name==='main' && S.nodes[S.refs[r].tip] && convOf(S.refs[r].tip)===c && r!==rid); if(!rid) rid=newRef(autoName(c), leafOf(a.prompt)); const was=S.refs[rid].name; for(const m of mains) S.refs[m].name=was; S.refs[rid].name='main'; msg=`The line through #${a.prompt} is now main`; }
-        else if(op==='merge'){ want(a.prompt, 'prompt (the branch tip to merge)'); want(a.onto, 'onto (the prompt to merge into)'); if(path(a.onto).includes(a.prompt) || path(a.prompt).includes(a.onto)) throw new Error('Those are on the same line; there is nothing to merge.'); const into=refsAt(a.onto), from=refsAt(a.prompt).map(refName)[0]||`#${a.prompt}`, intoName=into.map(refName)[0]||`#${a.onto}`; const mid=S.nextId++; S.nodes[mid]={id:mid, kind:'merge', parents:[a.onto, a.prompt], text:'', from, into:intoName, by}; if(into.length) for(const rid of into) S.refs[rid].tip=mid; else newRef(autoName(convOf(a.onto)), mid); at=mid; msg=`Merged ${from} into ${intoName} at #${mid}`; }
-        else if(op==='unmerge'){ const n=S.nodes[a.prompt]; if(!n) throw new Error(`There is no #${a.prompt} in this run.`); if(n.kind!=='merge') throw new Error(`#${a.prompt} isn’t a merge point.`); const p0=n.parents[0]; for(const k of kids(a.prompt)) k.parents=[...new Set(k.parents.map(q=>q===a.prompt?p0:q))]; for(const r of Object.values(S.refs)) if(r.tip===a.prompt) r.tip=p0; delete S.nodes[a.prompt]; msg=`Removed the merge at #${a.prompt}`; at=p0; }
-        else if(op==='reroot'){ const n=want(a.prompt); let parents=[]; if(String(a.text||'').trim()){ const sid2=S.nextId++; S.nodes[sid2]={id:sid2, kind:'summary', parents:[], text:String(a.text).trim(), by}; parents=[sid2]; } n.parents=parents; delete n.alt; msg=`#${a.prompt} now starts its own chat${parents.length?`, after a summary (#${parents[0]})`:''}`; }
-        else if(op==='squash'){ want(a.prompt); want(a.until, 'until (the last prompt to include)'); const seg=lineBetween(a.prompt, a.until); if(seg.length<2) throw new Error('Squash needs at least two prompts.'); if(seg.some(x=>S.nodes[x].kind==='merge')) throw new Error('The stretch crosses a merge.'); const A=S.nodes[a.prompt], removed=new Set(seg.slice(1)), dA=desc(a.prompt); A.text=seg.map(x=>S.nodes[x].text).filter(Boolean).join('\n\n'); const rs=seg.map(x=>S.nodes[x].reply).filter(Boolean); if(rs.length) A.reply=rs.join('\n\n'); else delete A.reply; if(A.kind!=='summary') A.kind='squash'; for(const x of removed) for(const p of S.nodes[x].parents.slice(1)) if(!removed.has(p) && !dA.has(p) && !A.parents.includes(p)) A.parents.push(p); for(const x of removed) delete S.nodes[x]; for(const m of all()) m.parents=[...new Set(m.parents.map(p=>removed.has(p)?a.prompt:p))].filter(p=>p!==m.id); for(const r of Object.values(S.refs)) if(removed.has(r.tip)) r.tip=a.prompt; msg=`Squashed #${seg[0]}–#${seg[seg.length-1]} into #${a.prompt}`; }
-        else if(op==='splice'){ want(a.prompt); const seg=lineBetween(a.prompt, a.until).filter(x=>S.nodes[x].kind!=='merge'); const top=S.nodes[seg[0]].parents[0]; for(const id of [...seg].reverse()){ const n=S.nodes[id]; for(const k of kids(id)){ const out=[]; for(const p of k.parents){ if(p===id) out.push(...n.parents); else out.push(p); } k.parents=[...new Set(out)]; } for(const r of Object.values(S.refs)) if(r.tip===id && n.parents[0]!=null) r.tip=n.parents[0]; delete S.nodes[id]; } at=top; msg=`Spliced out ${seg.map(x=>'#'+x).join(', ')}; what followed now follows #${top ?? 'nothing'}`; }
-        else if(op==='delete'){ want(a.prompt); const del=new Set([a.prompt]), d=[...desc(a.prompt)]; let grew=true; while(grew){ grew=false; for(const x of d) if(!del.has(x) && S.nodes[x].parents.every(p=>del.has(p))){ del.add(x); grew=true; } } const up=S.nodes[a.prompt].parents[0]; for(const x of del) delete S.nodes[x]; for(const m of all()) m.parents=m.parents.filter(p=>!del.has(p)); for(const r of Object.values(S.refs)) if(del.has(r.tip) && up!=null) r.tip=up; at=up; msg=`Deleted ${del.size} prompt${del.size===1?'':'s'} from #${a.prompt}`; }
-        else if(op==='rebase'){ const n=want(a.prompt); want(a.onto, 'onto (the new parent)'); if(a.onto===a.prompt || desc(a.prompt).has(a.onto)) throw new Error('Can’t rebase a prompt onto itself or what follows it.'); n.parents=[...new Set([a.onto, ...n.parents.slice(1)])]; delete n.alt; msg=`Moved #${a.prompt} and what follows under #${a.onto}; their replies stay as they were (see get_prompt for context changes)`; }
-        else if(op==='cherry_pick'){ const n=want(a.prompt); want(a.onto, 'onto (where the copy goes)'); const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[a.onto], text:n.text, by}; if(n.files) S.nodes[nid].files=clone(n.files); at=nid; msg=`Copied #${a.prompt}'s text under #${a.onto} as #${nid}, without a reply (ask regenerate for one)`; }
-        else if(op==='rename_chat'){ want(a.prompt); const name=String(a.name||'').trim(); if(!name) throw new Error('Give the new title as name.'); const k=convKeyOf(a.prompt); S.convs[k]=Object.assign(S.convs[k]||{}, {title:name.slice(0,80)}); msg=`Renamed the chat to "${name.slice(0,80)}"`; }
-        else if(op==='model_settings'){ const n=want(a.prompt); if(a.value===false){ delete n.set; msg=`Cleared the model settings on #${a.prompt}`; } else { const st=agentSettings(a); if(!st) throw new Error('Give at least one of system, thinking, effort, temperature, max_tokens (or value: false to clear).'); n.set=Object.assign(n.set||{}, st); msg=`Model settings from #${a.prompt}: ${setSummary(n.set)}`; } }
-        else throw new Error(`Unknown operation "${op}". Call describe to see them.`);
-      });
-      return {...(at!=null && t.nodes[at] ? where(sid,at) : {project:DB.spaces[sid].name}), prompt: at!=null && t.nodes[at] ? at : undefined, message:msg};
-    },
-    /* a second opinion: a new chat in the run that sees only the reply (or the conversation up to it) */
-    async review(a){
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree; need(t, a.prompt);
-      if(!t.nodes[a.prompt].reply) throw new Error(`#${a.prompt} has no reply to review yet.`);
-      const id=change(sid, ()=>addReviewChat(a.prompt, !!a.include_conversation, a.instructions, a.agent||'agent'));
-      return reply(sid, id, {...where(sid,id), message:`Reviewed #${a.prompt} in a new chat, which saw ${a.include_conversation?'the conversation up to it':'only that prompt and reply'}`});
-    },
-    /* the follow-ups of a prompt (or the ones named), judged or combined as in Compare */
-    async judge(a){
-      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree;
-      const {parent, ids}=pickedSet(t, a);
-      const r=await judgeCore(sid, parent, ids, a.criteria);
-      const lines=r.ids.map(i=>`#${i}${i===r.best?' (pick)':''}: ${r.reasons[i]||'no reason given'}`).join('\n');
-      return {...where(sid, r.best ?? ids[0]), prompt:r.best ?? undefined, message:`Judged ${r.ids.length} ${parent!=null && a.after!=null ? `follow-ups to #${a.after}` : 'prompts'} against "${r.criteria}". ${r.best?`Pick: #${r.best}.`:'No pick.'} ${r.summary}\n${lines}\nNothing was changed.`};
-    },
-    async combine(a){
-      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree;
-      const {parent, ids}=pickedSet(t, a);
-      if(parent==null) throw new Error('These prompts share no context, so there is nowhere to add a combined reply.');
-      const c=await combineCore(sid, parent, ids, a.instructions);
-      const nid=change(sid, ()=>addCombined(parent, c, a.agent||'agent'));
-      return {...where(sid,nid), prompt:nid, reply:c.reply, message:`Combined ${c.ids.map(x=>'#'+x).join(', ')} into #${nid}, a new follow-up to #${parent}, marked as combined. Sources: ${Object.entries(c.sources).map(([k,v])=>`#${k} ${v}`).join('; ') || 'not given'}`};
-    },
-    async distill(a){
-      if(sampleState!=='ready') throw new Error('Replies aren’t set up in Treechats.');
-      const sid=runSpace(a.run), t=DB.spaces[sid].tree;
-      let id=a.prompt;
-      if(id==null && a.branch){ const r=Object.values(t.refs).find(r=>r.name===a.branch && t.nodes[r.tip]); if(!r) throw new Error(`No branch named "${a.branch}" in this run.`); id=r.tip; }
-      if(id==null) throw new Error('Say what to distill: prompt (a number) or branch.');
-      if(point(t, id).kind==='merge' && a.save_as_note) throw new Error(`#${id} is a merge point, which can’t hold a note. Distill the prompt before it.`);
-      const convo=withTree(t, ()=>turnsFor(id, true)).map(x=>`${x.role==='user'?'User':'Claude'}: ${x.content}`).join('\n\n');
-      const r=await sampleFn(fillPrompt('distill', {conversation:convo}), {modelTier:opts.model, cache:false});
-      const brief=r.text.trim();
-      if(a.save_as_note) change(sid, ()=>{ const n=S.nodes[id]; n.note=(n.note&&n.note.trim()?n.note.trim()+'\n\n':'')+brief; });
-      return {...where(sid,id), prompt:id, brief, message:'Distilled'};
-    },
-  };
-  async function handle(cmd){
-    const f=ops[cmd.op]; if(!f) throw new Error(`Unknown operation "${cmd.op}".`);
-    const out=await f(cmd.args||{});
-    /* saved before answering, so the agent can read its changes straight back */
-    if(saveTimer) writeStore();
-    if(window.TREECHATS_FLUSH) await window.TREECHATS_FLUSH();
-    return out;
+  function remoteGenDone(d){
+    if(!gens.delete(gkey(d.sid, d.id))) return;
+    if(d.note) genNotes[gkey(d.sid, d.id)]=d.note;
+    if(d.sid===DB.current && S.nodes[d.id]){ animRender([d.id]); if(cmpFor!=null) renderCompare(); if(S.nodes[d.id].reply) afterReplyNaming(d.id); }
+    gridChanged();
   }
   function connect(){
     if(!window.TREECHATS_LOCAL || window.TREECHATS_LOCAL.offline || typeof EventSource==='undefined') return;
@@ -4886,6 +4424,9 @@ const Agent=(()=>{
     es.addEventListener('lock', ()=>location.reload());
     /* the lock was turned on or off, or the token reset, in another tab: reload to match */
     es.addEventListener('vault', e=>{ if(e.data!==window.TREECHATS_TAB) location.reload(); });
+    /* a reply the server is writing (an agent's): shown as it comes, with Stop */
+    es.addEventListener('gen', e=>{ try{ remoteGen(JSON.parse(e.data)); }catch(err){} });
+    es.addEventListener('gendone', e=>{ try{ remoteGenDone(JSON.parse(e.data)); }catch(err){} });
     /* the document changed: another tab, an agent or a scheduled task */
     es.addEventListener('doc', e=>{ try{ Sync.remote(JSON.parse(e.data)); }catch(err){ console.warn('Treechats could not apply a change from the server:', err); } });
     /* a scheduled task ran (its prompt and reply came as a change to the document) */
@@ -4895,13 +4436,8 @@ const Agent=(()=>{
       else if(d.sid===DB.current){ const ids=all().filter(n=>n.sched && n.sched.id===d.task).map(n=>n.id), last=ids[ids.length-1]; toast(`A scheduled task ran: “${clip(d.name||'',40)}”`, false, last!=null ? {label:'Open', fn:()=>gotoNode(last)} : undefined); }
       renderSpaces(); if(schedUI) refreshSchedStatus();
     });
-    es.onmessage=e=>{
-      let cmd; try{ cmd=JSON.parse(e.data); }catch(err){ return; }
-      handle(cmd).then(result=>({id:cmd.id, ok:true, result}), err=>({id:cmd.id, ok:false, error:String(err && err.message || err)}))
-        .then(body=>fetch('/api/agent/result', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)}).catch(()=>{}));
-    };
   }
-  return {connect, handle, runSpace};
+  return {connect};
 })();
 /* ---- Copy context as a prompt ----
    Exactly what the next request from a prompt would send (standing instructions, space files, merge notes, every
@@ -5381,7 +4917,7 @@ const TOOL_LIST=[['search','Search the web','Claude looks things up and cites it
 const viaCLI = () => (window.TREECHATS_LOCAL||{}).provider==='claude-code';
 const toolsOK = () => { const L=window.TREECHATS_LOCAL; return !!L && ['api','fake','claude-code'].includes(L.provider); };
 const toolAvail = k => toolsOK() && !(viaCLI() && k==='code');
-const activeTools = () => Array.isArray(opts.tools) ? opts.tools.filter(t=>TOOL_LIST.some(x=>x[0]===t) && toolAvail(t)) : [];
+const activeTools = () => Ops.toolsFor(opts.tools, (window.TREECHATS_LOCAL||{}).provider);
 function toolsPicker(){
   if(!toolsOK()) return '';
   const n=activeTools().length;
@@ -6334,16 +5870,8 @@ function usageHTML(id){
 }
 /* ---- Model settings in the inspector ---- */
 let bsetFor=null;
-const EFFORT_OPTS=['low','medium','high','xhigh','max'];
-function setSummary(st){
-  const v=st||{}, out=[];
-  if('system' in v) out.push(v.system ? `system prompt “${clip(v.system,40)}”` : 'no system prompt');
-  if('thinking' in v) out.push(v.thinking ? 'thinking on' : 'thinking off');
-  if('effort' in v) out.push(v.effort ? `effort ${v.effort}` : 'model’s default effort');
-  if('temperature' in v) out.push(v.temperature!=null ? `temperature ${v.temperature}` : 'default temperature');
-  if('maxTokens' in v) out.push(v.maxTokens ? `up to ${v.maxTokens.toLocaleString()} tokens` : 'default reply length');
-  return out.join(', ');
-}
+const EFFORT_OPTS=Ops.EFFORT_OPTS;
+function setSummary(st){ return Ops.setSummary(st); }
 /* which tiers' models use a setting, from what the server reports */
 function capsNote(){
   const c=(window.TREECHATS_LOCAL && window.TREECHATS_LOCAL.caps) || null; if(!c) return '';

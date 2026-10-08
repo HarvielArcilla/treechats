@@ -14,6 +14,8 @@ import { current } from './doc.ts';
 import '../web/public/sendmodes.js';
 /* the tree and the context a prompt sends: the page's own file too */
 import '../web/public/treecore.js';
+/* tree helpers and the ✦ tools agents use, shared with the page */
+import '../web/public/treeops.js';
 
 type Send = {
   MODES: string[]; LABELS: Record<string, string>; DEFAULTS: Record<string, string>; JOIN: string;
@@ -46,6 +48,8 @@ type Core = {
   ctxChanges(tree: Tree, id: number, env: Env, now?: { h: string; at: string }): Change[] | null;
 };
 export const Core = (globalThis as unknown as { TreechatsCore: Core }).TreechatsCore;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Ops = (globalThis as unknown as { TreechatsOps: any }).TreechatsOps;
 export const FILE_EDITS = Core.DEFAULTS.fileEdits;
 export const SEAM = Core.DEFAULTS.seam;
 
@@ -114,8 +118,8 @@ const fileStub = (f: FileMeta) => {
 };
 
 /* what the core needs from the server: the person's wording, and files as the server can read them */
-export const tplOf = (state: State) => Core.tplFrom(state.opts?.prompts);
-const envOf = (state: State, tree: Tree): Env => { const v = new TreeView(tree); return { tpl: tplOf(state), file: fileStub, path: (id) => v.path(id), chain: (id) => v.chain(id) }; };
+export const tplOf = (state: State) => { const t = Core.tplFrom(state.opts?.prompts); return (k: string) => t(k) ?? Ops.PROMPTS[k]?.def ?? ''; };
+export const envOf = (state: State, tree: Tree): Env => { const v = new TreeView(tree); return { tpl: tplOf(state), file: fileStub, path: (id) => v.path(id), chain: (id) => v.chain(id) }; };
 
 /* model settings in effect at a prompt */
 export const settingsFor = (tree: Tree, id: number) => Core.settingsFor(tree, id).values;

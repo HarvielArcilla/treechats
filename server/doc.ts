@@ -91,7 +91,9 @@ export function replace(next: Doc, tab: string) {
 /* A change by the server itself (a scheduled task, an agent): fn edits the document; the ops are worked out from what
    changed in the projects it names (and any it adds), so this stays quick however big the document is. */
 export function mutate<T>(sids: string[] | null, fn: (doc: Doc) => T, tab = 'server'): T {
-  const d = ensure(); if (!d) throw new Error('Treechats has nothing saved yet. Open it once first.');
+  /* nothing saved yet (an agent before the page was ever opened): start an empty document */
+  if (!ensure()) doc = { db: { spaces: {}, order: [], current: null, nextSpace: 1 }, opts: {} };
+  const d = doc!;
   const spacesBefore = new Set(Object.keys(d.db.spaces || {}));
   const top = (x: Doc) => D.units({ db: { ...x.db, spaces: {} }, opts: x.opts });
   const scope = sids ? [...sids] : null;
