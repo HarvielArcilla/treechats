@@ -4,11 +4,12 @@
    them, so they happen while the page is closed too, as long as Treechats is running (and unlocked, with the password
    lock). A run that was due while Treechats was off happens once when it starts again.
 
-   A run sends the prompt with the context of where it goes, the way the page would, and puts the result in an inbox.
-   The page adds what's in the inbox to the chat (marked unread if you're elsewhere) and clears it. Keeping the writing
-   of the tree in one place, the page, means the two never overwrite each other's changes. */
+   A run sends the prompt with the context of where it goes, the way the page would, and adds the prompt and its reply
+   to the chat itself (server/doc.ts), marked unread; open pages get the change pushed. A run that fails says why in
+   the task list, and open pages show it. */
 import { sampleOnce, type SampleRequest } from './claude.ts';
-import { loadState, settingsFor, turnsForNew, type Tree } from './context.ts';
+import { loadState, settingsFor, TreeView, turnsForNew, type Tree } from './context.ts';
+import { mutate } from './doc.ts';
 import { getValue, putPlainValue } from './store.ts';
 
 export type When = { once: number } | { every: 'hour'; minute: number } | { every: 'day' | 'weekday'; time: string } | { every: 'week'; day: number; time: string };
@@ -51,6 +52,23 @@ function tasks(): { tasks: Task[]; state: ReturnType<typeof loadState> } | null 
 
 const running = new Set<string>();
 let onResult: (r: Result) => void = () => {};
+
+/* the prompt and its reply, added where the task points: at the end of its branch, or as a new chat */
+function deliver(r: Result) {
+  if (r.error) return;
+  mutate([r.sid], (d) => {
+    const sp = d.db.spaces[r.sid]; if (!sp || !sp.tree) return;
+    const t = sp.tree as Tree & { nextId: number; nextRef: number; nodes: Record<string, any> };
+    const parent = r.parent != null && t.nodes[r.parent] ? r.parent : null, nid = t.nextId++;
+    t.nodes[nid] = { id: nid, parents: parent != null ? [parent] : [], text: r.text, reply: r.reply, ts: r.started, rt: [r.started, r.finished], model: r.tier, sched: { id: r.task, name: r.name }, ...(r.usage ? { usage: r.usage } : {}) };
+    t.convs = t.convs || {};
+    if (parent != null) { for (const ref of Object.values(t.refs || {})) if (ref.tip === parent) ref.tip = nid; }
+    else { t.refs = t.refs || {}; t.refs['r' + (t.nextRef++)] = { name: 'main', tip: nid }; t.convs[nid] = { ...(t.convs[nid] || {}), title: r.name.slice(0, 120) }; }
+    /* the chat counts as active now, and unread until you open it (an open page clears it if you're looking at it) */
+    const k = new TreeView(t).convKey(new TreeView(t).rootOf(nid));
+    t.convs[k] = { ...(t.convs[k] || {}), t: Date.now(), unread: true };
+  });
+}
 export function onScheduleResult(fn: (r: Result) => void) { onResult = fn; }
 
 /* where a run goes: the end of the task's branch if it still exists, else the prompt it was set up after, else a new chat */
@@ -77,14 +95,19 @@ export async function runTask(id: string): Promise<Result | null> {
   } catch (e) {
     r = { key: `${id}:${started}`, task: id, name, sid: task.sid, parent, text: task.text, tier, started, finished: Date.now(), error: (e as Error).message };
   } finally { running.delete(id); }
-  const b = book(); b.inbox.push(r); if (r.error) b.errors[id] = r.error; keep(b);
+  try { deliver(r); } catch (e) { r.error = `It ran, but its reply couldn’t be saved: ${(e as Error).message}`; }
+  const b = book(); if (r.error) b.errors[id] = r.error; keep(b);
   onResult(r);
   return r;
 }
 
 /* checks every 20 seconds for tasks that are due */
 export function startScheduler() {
+  /* results an older version left for the page to add */
+  const moveInbox = () => { const b = book(); if (!b.inbox.length) return true; try { for (const r of b.inbox) deliver(r); } catch { return false; } b.inbox = []; keep(b); return true; };
+  let moved = false;
   const tick = () => {
+    if (!moved) { try { moved = moveInbox(); } catch { /* locked */ } }
     const got = tasks(); if (!got) return;
     const b = book(), now = Date.now();
     for (const t of got.tasks) { const n = nextOf(t, b); if (n != null && n <= now && !running.has(t.id)) runTask(t.id).catch(() => {}); }
@@ -100,5 +123,4 @@ export function scheduleStatus() {
   for (const t of got?.tasks || []) out[t.id] = { last: b.last[t.id] ?? null, next: nextOf(t, b), running: running.has(t.id), error: b.errors[t.id] || null };
   return out;
 }
-export const inbox = () => book().inbox;
-export function ack(keys: string[]) { const b = book(), drop = new Set(keys); b.inbox = b.inbox.filter((r) => !drop.has(r.key)); keep(b); }
+

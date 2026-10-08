@@ -134,6 +134,9 @@ export function vaultRecord(): vault.VaultRecord | null {
   return row ? JSON.parse(row.value) : null;
 }
 export function saveVaultRecord(r: vault.VaultRecord) { putMeta.run('vault', JSON.stringify(r)); }
+/* small bookkeeping values that aren't secret (the document's revision number) */
+export const metaValue = (k: string) => (getMeta.get(k) as { value: string } | undefined)?.value ?? null;
+export const setMetaValue = (k: string, v: string) => { putMeta.run(k, v); };
 
 /* rewrites every saved value with fn, in one transaction, then compacts the file so no old copy is left in free
    pages or the journal */

@@ -76,9 +76,13 @@
   window.TREECHATS_LOCAL = cfg || { offline: true };
   if (!cfg) return; /* opened without the server: the app falls back to browser storage and no Claude */
 
-  /* ---- saving ---- */
+  /* ---- saving ----
+     The server owns the document (server/doc.ts). The page loads it here with its revision, then sends its changes
+     itself as ops (see "Sync with the server" in index.html), and gets other writers' changes pushed. The full
+     document is only sent once: the first time, to move over what this browser kept before. */
   var mem = {};
-  var saved = getSync('/api/state');
+  var sx = xhr('GET', '/api/state'), saved = sx && sx.status === 200 ? sx.responseText : '';
+  window.TREECHATS_DOC = { raw: saved || null, rev: sx ? Number(sx.getResponseHeader('x-treechats-rev') || 0) : 0 };
   if (saved) mem[KEY] = saved;
   else {
     /* first run: carry over anything this browser saved before */
@@ -90,14 +94,15 @@
   /* done: called once the server has it (used to delete the copy an older version kept in this browser) */
   function put(body, done) {
     if (inflight) { queued = body; return; }
-    inflight = fetch('/api/state', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: body, keepalive: body.length < 60000 })
-      .then(function (r) { if (!r.ok) throw new Error('save ' + r.status); window.TREECHATS_SAVE_ERROR = null; if (done) done(); })
+    inflight = fetch('/api/state', { method: 'PUT', headers: { 'content-type': 'application/json', 'x-treechats-tab': window.TREECHATS_TAB }, body: body, keepalive: body.length < 60000 })
+      .then(function (r) { if (!r.ok) throw new Error('save ' + r.status); window.TREECHATS_SAVE_ERROR = null; window.TREECHATS_DOC = { raw: body, rev: Number(r.headers.get('x-treechats-rev') || 0) }; if (done) done(); })
       .catch(function (e) { window.TREECHATS_SAVE_ERROR = e; console.warn('Treechats could not save to the server:', e); })
       .then(function () { inflight = null; if (queued != null) { var q = queued; queued = null; put(q); } else { var w = idle; idle = []; w.forEach(function (f) { f(); }); } });
   }
   var proto = Storage.prototype, oGet = proto.getItem, oSet = proto.setItem, oRemove = proto.removeItem;
   proto.getItem = function (k) { return this === window.localStorage && k === KEY ? (k in mem ? mem[k] : null) : oGet.call(this, k); };
-  proto.setItem = function (k, v) { if (this === window.localStorage && k === KEY) { mem[k] = String(v); put(mem[k]); return; } return oSet.call(this, k, v); };
+  /* the page's own saves go through its sync (TREECHATS_SYNC); this is only the fallback before it has started */
+  proto.setItem = function (k, v) { if (this === window.localStorage && k === KEY) { mem[k] = String(v); if (!window.TREECHATS_SYNC) put(mem[k]); return; } return oSet.call(this, k, v); };
   proto.removeItem = function (k) { if (this === window.localStorage && k === KEY) { delete mem[k]; return; } return oRemove.call(this, k); };
 
   /* ---- Claude ---- */

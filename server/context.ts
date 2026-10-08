@@ -7,7 +7,8 @@
    linked folder, and otherwise appears by name only. */
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve as resolvePath, sep as pathSep } from 'node:path';
-import { getFile, getValue } from './store.ts';
+import { getFile } from './store.ts';
+import { current } from './doc.ts';
 /* how each turn is sent (full, summary, excerpt, prompt only, reply only): the page's own file, so both build the same
    request */
 import '../web/public/sendmodes.js';
@@ -23,7 +24,7 @@ type Send = {
 export const Send = (globalThis as unknown as { TreechatsSend: Send }).TreechatsSend;
 
 type Node = { id: number; parents: number[]; text: string; reply?: string; kind?: string; alt?: number; skip?: boolean; send?: string; sum?: { text?: string; of?: string; pending?: boolean; by?: string }; ex?: { p?: unknown[]; r?: unknown[]; ed?: { p?: string; r?: string }; edOf?: { p?: string; r?: string } }; seam?: string; files?: { id: string; name: string; kind?: string }[]; note?: string; from?: string; into?: string; star?: boolean; ctx?: { h: string; at: string }; set?: Record<string, unknown>; usage?: { input: number; output: number; cost?: number }; thinking?: string; replyEdited?: boolean; combined?: { from: number[] }; reviewOf?: { id: number }; by?: string };
-export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number }>; files?: { id: string; name: string }[] };
+export type Tree = { nodes: Record<string, Node>; refs: Record<string, { name: string; tip: number }>; head?: string | null; active?: Record<string, number>; convs?: Record<string, { title?: string; sel?: number; t?: number; unread?: boolean }>; files?: { id: string; name: string }[] };
 type State = { db: { spaces: Record<string, { id: string; name: string; tree: Tree; sel?: number | null }>; order: string[]; current: string }; opts?: { prompts?: Record<string, string> } };
 
 type Turn = { role: 'user' | 'assistant'; content: string };
@@ -47,9 +48,11 @@ type Core = {
 export const Core = (globalThis as unknown as { TreechatsCore: Core }).TreechatsCore;
 export const FILE_EDITS = Core.DEFAULTS.fileEdits;
 export const SEAM = Core.DEFAULTS.seam;
-const KEY = 'treechats-v1';
 
-export function loadState(raw: string | null = getValue(KEY)): State | null {
+/* The document as the server holds it now (server/doc.ts), or one parsed from raw text. Read-only: changes go through
+   mutate() in doc.ts. */
+export function loadState(raw?: string | null): State | null {
+  if (raw === undefined) { const d = current().doc as State | null; return d && d.db && d.db.spaces ? d : null; }
   if (!raw) return null;
   try { const d = JSON.parse(raw); return d && d.db && d.db.spaces ? d : null; } catch { return null; }
 }

@@ -11,6 +11,8 @@ import { config, modelLabel, root } from './config.ts';
 import { openBrowser } from './proc.ts';
 import { provider, streamReply, type SampleRequest } from './claude.ts';
 import { cliStatus } from './cli.ts';
+import * as docStore from './doc.ts';
+import { STATE_KEY } from './doc.ts';
 import { decryptAll, encryptAll, fileIds, getFile, getValue, putFile, putValue, resetToken, saveVaultRecord, snapshot, snapshots, token, vaultRecord, type FileRecord } from './store.ts';
 import * as vault from './vault.ts';
 import { DATA_KEY, keychain, keyStatus, loadKeyFromKeychain, readSecret, removeKey, removeSecret, saveKey, saveSecret, SecretError } from './secrets.ts';
@@ -20,11 +22,10 @@ import { loadState } from './context.ts';
 import { FolderError, listFolder, readFolderFiles, writeFolderFile } from './folders.ts';
 import { listSessions, parseSession, readSession, SessionError } from './sessions.ts';
 import { gitDiff, gitStatus, runCommand } from './run.ts';
-import { ack, inbox, onScheduleResult, runTask, scheduleStatus, startScheduler } from './schedule.ts';
+import { onScheduleResult, runTask, scheduleStatus, startScheduler } from './schedule.ts';
 
 const app = new Hono();
 loadKeyFromKeychain();
-const STATE_KEY = 'treechats-v1';
 const MAX_STATE_BYTES = 200 * 1024 * 1024;
 
 /* Who may use Treechats. Three checks, each for a different way in:
@@ -99,7 +100,7 @@ app.onError((e, c) => {
 const lockListeners = new Set<SSEStreamingApi>();
 const isPassword = () => { const r = vaultRecord(); return !!r && vault.modeOf(r) === 'password'; };
 function lockNow() {
-  vault.forget();
+  vault.forget(); docStore.forget();
   for (const s of lockListeners) s.writeSSE({ event: 'lock', data: '' }).catch(() => {});
 }
 /* with the password lock, locks by itself after the chosen number of idle minutes (no requests from the page or MCP) */
@@ -272,15 +273,14 @@ app.post('/api/key/remove', (c) => { removeKey(); return c.json(keyStatus()); })
 
 /* ---- scheduled tasks (see server/schedule.ts) ---- */
 app.get('/api/schedule/status', (c) => c.json(scheduleStatus()));
-app.get('/api/schedule/inbox', (c) => c.json(inbox()));
-app.post('/api/schedule/ack', async (c) => { const b = await body(c); ack(Array.isArray(b.keys) ? b.keys.map(String) : []); return c.json({ ok: true }); });
 app.post('/api/schedule/run', async (c) => {
   const b = await body(c);
   /* answers at once; the result arrives through the inbox like any other run */
   runTask(String(b.id || '')).catch(() => {});
   return c.json({ ok: true });
 });
-onScheduleResult(() => { for (const s of lockListeners) s.writeSSE({ event: 'inbox', data: '' }).catch(() => {}); });
+/* a scheduled task ran: open pages say so (the chat itself changed through the document) */
+onScheduleResult((r) => { const data = JSON.stringify({ task: r.task, name: r.name, sid: r.sid, error: r.error || null }); for (const s of lockListeners) s.writeSSE({ event: 'scheduled', data }).catch(() => {}); });
 startScheduler();
 
 /* Claude Code's sign-in is checked when Treechats starts, and again whenever the page loads while it isn't ready */
@@ -311,16 +311,32 @@ app.get('/api/config', async (c) => {
   });
 });
 
+/* The document (see server/doc.ts): the server owns it. The page loads it with its revision, sends its changes as
+   ops made from that revision, and gets every other writer's changes pushed (the "doc" event on /api/agent/events). */
 app.get('/api/state', (c) => {
-  const v = getValue(STATE_KEY);
-  return v == null ? c.body(null, 204) : c.body(v, 200, { 'content-type': 'application/json; charset=utf-8' });
+  const { doc, rev } = docStore.current();
+  return doc == null ? c.body(null, 204, { 'x-treechats-rev': String(rev) }) : c.body(JSON.stringify(doc), 200, { 'content-type': 'application/json; charset=utf-8', 'x-treechats-rev': String(rev) });
 });
+/* the whole document at once: the first save (moving over what a browser kept), or restoring a snapshot */
 app.put('/api/state', async (c) => {
   const body = await c.req.text();
   if (body.length > MAX_STATE_BYTES) return c.json({ code: 'too_large' }, 413);
-  try { JSON.parse(body); } catch { return c.json({ code: 'bad_json' }, 400); }
-  putValue(STATE_KEY, body);
-  return c.body(null, 204);
+  let d; try { d = JSON.parse(body); } catch { return c.json({ code: 'bad_json' }, 400); }
+  if (!d || !d.db || typeof d.db !== 'object') return c.json({ code: 'bad_doc' }, 400);
+  const rev = docStore.replace(d, c.req.header('x-treechats-tab') || 'page');
+  return c.body(null, 204, { 'x-treechats-rev': String(rev) });
+});
+app.post('/api/state/patch', async (c) => {
+  const body = await c.req.text();
+  if (body.length > MAX_STATE_BYTES) return c.json({ code: 'too_large' }, 413);
+  let b; try { b = JSON.parse(body); } catch { return c.json({ code: 'bad_json' }, 400); }
+  if (!b || typeof b.base !== 'number' || !Array.isArray(b.ops) || !b.ops.every((o: any) => o && Array.isArray(o.p) && o.p.length >= 2)) return c.json({ code: 'bad_patch' }, 400);
+  const r = docStore.patch(b.base, b.ops, String(b.tab || 'page'));
+  return c.json(r, r.ok ? 200 : 409);
+});
+app.get('/api/state/since/:rev', (c) => {
+  const got = docStore.since(Number(c.req.param('rev')), c.req.query('tab') || undefined);
+  return got == null ? c.json({ ok: false, reload: true, rev: docStore.revision() }, 409) : c.json({ ok: true, rev: docStore.revision(), missed: got });
 });
 app.get('/api/snapshots', (c) => c.json(snapshots(STATE_KEY)));
 app.get('/api/snapshots/:id', (c) => {
@@ -359,10 +375,11 @@ app.post('/api/sample', async (c) => {
 /* the open page carries out agent commands (see server/relay.ts) */
 app.get('/api/agent/events', (c) => streamSSE(c, async (stream) => {
   const detach = attachPage((data) => { stream.writeSSE({ data }).catch(() => {}); });
+  const offDoc = docStore.onChange((e) => { stream.writeSSE({ event: 'doc', data: JSON.stringify(e) }).catch(() => {}); });
   lockListeners.add(stream);
   const ping = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }).catch(() => {}); }, 20000);
   await new Promise<void>((resolve) => { stream.onAbort(() => resolve()); c.req.raw.signal.addEventListener('abort', () => resolve(), { once: true }); });
-  clearInterval(ping); detach(); lockListeners.delete(stream);
+  clearInterval(ping); detach(); offDoc(); lockListeners.delete(stream);
 }));
 app.post('/api/agent/result', async (c) => {
   let body; try { body = await c.req.json(); } catch { return c.json({ code: 'bad_request' }, 400); }
