@@ -1741,8 +1741,8 @@ async function runLoop(L){
     if(L.done>0 && L.every){ L.status='waiting'; paintLoop(L); if(!await loopSleep(L, L.every)) break; }
     const i=L.done+1;
     const nid=loopApply(L, ()=>{
-      const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[L.tip], text:L.prompt, loop:{id:L.id, i, of:L.times, ...(L.until?{until:L.until}:{})}};
-      const rids=refsAt(L.tip); if(rids.length) for(const r of rids) S.refs[r].tip=nid; else newRef(autoName(convOf(L.tip)), nid);
+      const nid=Ops.addTurn(S, L.tip, L.prompt); S.nodes[nid].loop={id:L.id, i, of:L.times, ...(L.until?{until:L.until}:{})};
+      Ops.extend(S, L.tip, nid, true);
       return nid;
     }, `Loop: sent ${i} of ${L.times}`);
     L.cur=nid; L.status='sending'; paintLoop(L);
@@ -3108,7 +3108,8 @@ function commit(msg, fn, o={}){
   setActivePath(sel); syncHead(); if(o.touch!==false) touch(sel); save();
   reconcileReplies();
   if(o.swap) swapView(()=>render(true)); else showSelection(prevSel);
-  if(!o.quiet) toast(msg, true, o.action);
+  /* the message can be worked out from the change itself (a function, called after it) */
+  if(!o.quiet) toast(typeof msg==='function' ? msg() : msg, true, o.action);
   if(typeof scanNewBranches==='function') setTimeout(scanNewBranches, 0);
 }
 const snapshotDB = () => JSON.stringify({spaces:DB.spaces, order:DB.order, current:DB.current, nextSpace:DB.nextSpace});
@@ -3460,89 +3461,46 @@ function run(op, id){
     const conversation = byClaude ? transcript(anc) : '';
     let sid=null;
     commit(`Rerooted #${id}`+(opts.cow?' as a copy':''), ()=>{
-      let parents=[];
-      if(opts.summary){
-        sid=S.nextId++;
-        S.nodes[sid]={id:sid, kind:'summary', parents:[], text: byClaude ? '' : templateText};
-        if(byClaude) S.nodes[sid].pending=true;
-        parents=[sid];
-      }
-      if(opts.cow) sel = copySubtree(id, parents); else { n.parents = parents; delete n.alt; }
+      const r=Ops.reroot(S, id, opts.summary ? {text: byClaude ? '' : templateText, pending:byClaude} : null, opts.cow);
+      sid=r.summary; if(opts.cow) sel=r.at;
     });
     if(byClaude && sid!=null) summarizeInto(sid, conversation, {text:templateText});
     else if(opts.summary && opts.rerootBy==='claude') summaryUnavailable();
   }
   if(op==='splice') commit(`Spliced out #${id}`, ()=>{
     const ks = kids(id);
-    for(const k of ks){
-      const out=[]; for(const p of k.parents){ if(p===id) out.push(...n.parents); else out.push(p); }
-      k.parents=[...new Set(out)];
-    }
     sel = n.parents[0] ?? (ks[0]&&ks[0].id) ?? null;
-    delete S.nodes[id];
+    Ops.splice(S, [id]);
   });
   if(op==='prune'){
-    const del=new Set([id]), d=[...desc(id)];
-    let grew=true; while(grew){ grew=false; for(const x of d) if(!del.has(x) && S.nodes[x].parents.every(p=>del.has(p))){ del.add(x); grew=true; } }
-    commit(`Deleted ${del.size} prompt${del.size>1?'s':''}`, ()=>{
-      for(const x of del) delete S.nodes[x];
-      for(const m of all()) m.parents = m.parents.filter(p=>!del.has(p));
-      sel = n.parents[0] ?? null;
-    });
+    let r;
+    commit(()=>`Deleted ${r.deleted.size} prompt${r.deleted.size>1?'s':''}`, ()=>{ r=Ops.prune(S, id); sel = r.up ?? null; });
   }
-  if(op==='unmerge') commit(`Undid the merge at #${id}`, ()=>{
-    const p0=n.parents[0];
-    for(const k of kids(id)) k.parents=[...new Set(k.parents.map(q=>q===id?p0:q))];
-    for(const r of Object.values(S.refs)) if(r.tip===id) r.tip=p0;
-    sel=p0; delete S.nodes[id];
-  });
+  if(op==='unmerge') commit(`Undid the merge at #${id}`, ()=>{ sel=Ops.unmerge(S, id); });
 }
 
 function finishPick(t){
   const {op, src, line} = pick; pick=null;
   if(op==='replayonto'){ askReplay(src, t, line); return; }
   const n=S.nodes[src];
-  if(op==='graft') commit(`Rebased #${src} onto #${t}`, ()=>{ n.parents=[...new Set([t, ...n.parents.slice(1)])]; delete n.alt; });
+  if(op==='graft') commit(`Rebased #${src} onto #${t}`, ()=>{ Ops.rebase(S, src, t); });
   if(op==='merge'){
-    const into=refsAt(t), from=refsAt(src).map(refName)[0] || `#${src}`, intoName=into.map(refName)[0] || `#${t}`;
-    commit(`Merged ${from} into ${intoName}`, ()=>{
-      const mid=S.nextId++;
-      S.nodes[mid]={id:mid, kind:'merge', parents:[t, src], text:'', from, into:intoName};
-      if(into.length){ for(const rid of into) S.refs[rid].tip=mid; S.head=into[0]; }
-      else S.head=newRef(autoName(convOf(t)), mid);
-      sel=mid;
-    });
+    let r;
+    commit(()=>`Merged ${r.from} into ${r.into}`, ()=>{ r=Ops.merge(S, src, t); S.head=r.rid; sel=r.mid; });
   }
-  if(op==='cherry') commit(`Copied #${src} under #${t}`, ()=>{ const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[t], text:n.text}; sel=nid; /* reply is left empty: it was written for a different context */ });
+  /* the copy's reply is left empty: it was written for a different context */
+  if(op==='cherry') commit(`Copied #${src} under #${t}`, ()=>{ sel=Ops.cherryPick(S, src, t); });
   if(op==='squash'){
-    const c=chain(src), seg=c.slice(c.indexOf(t)), byClaude = opts.squashBy==='claude' && canSummarize();
+    const seg=Ops.squashLine(S, t, src), byClaude = opts.squashBy==='claude' && canSummarize();
     const joinedText=seg.map(x=>S.nodes[x].text).filter(Boolean).join('\n\n'), rsAll=seg.map(x=>S.nodes[x].reply).filter(Boolean);
     const conversation = byClaude ? transcript(seg) : '';
-    commit(`Squashed ${seg.length} prompts into #${t}`, ()=>{
-      const A=S.nodes[t], dA=desc(t), removed=new Set(seg.slice(1));
-      if(byClaude){ A.text=''; A.pending=true; delete A.reply; }
-      else { A.text = joinedText; if(rsAll.length) A.reply=rsAll.join('\n\n'); else delete A.reply; }
-      if(A.kind!=='summary') A.kind='squash';
-      for(const x of removed) for(const p of S.nodes[x].parents.slice(1)) if(!removed.has(p) && !dA.has(p) && !A.parents.includes(p)) A.parents.push(p);
-      for(const x of removed) delete S.nodes[x];
-      for(const m of all()) m.parents=[...new Set(m.parents.map(p=>removed.has(p)?t:p))].filter(p=>p!==m.id);
-      sel=t;
-    });
+    commit(`Squashed ${seg.length} prompts into #${t}`, ()=>{ Ops.squash(S, t, src, byClaude); sel=t; });
     if(byClaude) summarizeInto(t, conversation, {text:joinedText, reply: rsAll.length ? rsAll.join('\n\n') : undefined});
     else if(opts.squashBy==='claude') summaryUnavailable();
   }
 }
 
-function copySubtree(id, parents){
-  const map=new Map();
-  (function rec(oid, par){
-    const o=S.nodes[oid], nid=S.nextId++; map.set(oid,nid);
-    S.nodes[nid]={id:nid, text:o.text, parents:par}; if(o.kind) S.nodes[nid].kind=o.kind; if(o.reply) S.nodes[nid].reply=o.reply;
-    for(const k of vKids(oid)) rec(k.id,[nid]);
-  })(id, parents);
-  for(const [oid,nid] of map){ if(oid===id) continue; for(const p of S.nodes[oid].parents.slice(1)) S.nodes[nid].parents.push(map.get(p) ?? p); }
-  return map.get(id);
-}
+function copySubtree(id, parents){ return Ops.copySubtree(S, id, parents); }
 
 function addPrompt(parent, text){
   text=text.trim(); if(!text && !pendingFiles.length){ toast('Write a prompt first.'); return; }
@@ -3550,7 +3508,7 @@ function addPrompt(parent, text){
   composeFor=null; renaming=false;
   if(parent==null){
     const files=takePending();
-    commit('Started a chat on main', ()=>{ const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[], text}; if(files) S.nodes[nid].files=files; S.head=newRef('main', nid); sel=nid; });
+    commit('Started a chat on main', ()=>{ const nid=Ops.addTurn(S, null, text, {files}); S.head=newRef('main', nid); sel=nid; });
     wantReplies([sel]);
     return;
   }
@@ -3562,10 +3520,8 @@ function addPrompt(parent, text){
   const name0 = rid0 ? refName(rid0) : autoName(convOf(parent));
   commit(one ? (rid0 ? `Continued on ${name0}` : `Started ${name0} at #${parent}`) : `Replied to ${targets.length} prompts`, ()=>{
     for(const t of targets){
-      const here=refsAt(t), rid = t===parent ? rid0 : here[0];
-      const name = rid ? refName(rid) : autoName(convOf(t));
-      const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[t], text}; if(files) S.nodes[nid].files=clone(files);
-      if(rid){ S.refs[rid].tip=nid; if(t===parent) S.head=rid; } else { const r=newRef(name, nid); if(t===parent) S.head=r; }
+      const nid=Ops.addTurn(S, t, text, {files}), rid=Ops.extend(S, t, nid);
+      if(t===parent) S.head=rid;
       created.push(nid);
     }
     sel=created[0];
@@ -3578,8 +3534,9 @@ const NAME_RE=Ops.NAME_RE;
 function renameRef(rid, to){
   const r=S.refs[rid]; if(!r) return;
   to=to.trim(); if(to===r.name) return;
-  if(!NAME_RE.test(to)){ toast('Use letters, numbers, dots, dashes, slashes or underscores (no spaces).'); renderBranches(); return; }
-  if(namesIn(convOf(r.tip), rid).has(to)){ toast(`This chat already has a branch named ${to}.`); renderBranches(); return; }
+  const why=Ops.renameError(S, rid, to);
+  if(why==='invalid'){ toast('Use letters, numbers, dots, dashes, slashes or underscores (no spaces).'); renderBranches(); return; }
+  if(why==='taken'){ toast(`This chat already has a branch named ${to}.`); renderBranches(); return; }
   const from=r.name;
   commit(`Renamed ${from} to ${to}`, ()=>{ S.refs[rid].name=to; });
 }
@@ -3848,12 +3805,8 @@ function regenerate(id, newText){
   const below = edit ? replayCount(lineFrom(id).slice(1)) : 0;
   const was = edit ? (refsAt(id).includes(S.head) ? refName(S.head) : refsAt(id).map(refName)[0] || refsThrough(id).map(refName)[0] || '') : '';
   commit(edit ? '' : `Asking for another reply to #${id}. The old one is kept.`, ()=>{
-    const gid = n.alt ?? n.id; n.alt = gid;
-    nid=S.nextId++;
-    S.nodes[nid]={id:nid, parents:[...n.parents], text: edit ? newText : n.text, alt:gid}; if(n.kind) S.nodes[nid].kind=n.kind; if(n.files) S.nodes[nid].files=clone(n.files); if(n.set) S.nodes[nid].set=clone(n.set);
-    S.active[gid]=nid;
-    if(edit){ name=autoName(convOf(id)); S.head=newRef(name, nid); }
-    else for(const rid of refsAt(id)) S.refs[rid].tip=nid;
+    const r=Ops.newVersion(S, id, edit ? {text:newText} : {});
+    nid=r.nid; if(edit){ name=r.name; S.head=r.rid; }
     sel=nid;
   }, {quiet:edit});
   if(edit) toast(`Sent your edit as #${nid} on a new branch, ${name}.${was?` The original stays on ${was}${below?` with the ${below} prompt${below===1?'':'s'} after it`:''}.`:''}`, true, below ? {label:`${AI}Replay ${below} below`, fn:()=>askReplay(id, nid)} : undefined);
@@ -3930,14 +3883,7 @@ function rangeAction(k){
     range=null;
     const above=S.nodes[first] ? S.nodes[first].parents[0] : null, after=vKids(last)[0];
     commit(`Spliced out #${first}–#${last}`, ()=>{
-      for(const id of [...asks].reverse()){
-        const n=S.nodes[id]; if(!n) continue;
-        for(const kd of kids(id)){ const out=[]; for(const p of kd.parents){ if(p===id) out.push(...n.parents); else out.push(p); } kd.parents=[...new Set(out)]; }
-        for(const r of Object.values(S.refs)) if(r.tip===id) r.tip=n.parents[0] ?? r.tip;
-        delete S.nodes[id];
-      }
-      /* a merge whose sides now share their history merges nothing: drop the side already in the line */
-      for(const n of Object.values(S.nodes)) if(n.kind==='merge' && n.parents.length>1){ const base=new Set(path(n.parents[0])); n.parents=[n.parents[0], ...n.parents.slice(1).filter(p=>!base.has(p))]; }
+      const here=asks.filter(x=>S.nodes[x]); if(here.length) Ops.splice(S, here);
       sel = after && S.nodes[after.id] ? after.id : above!=null && S.nodes[above] ? above : (ids.map(x=>S.nodes[x]).find(Boolean)||{}).id ?? defaultSel();
     });
     return;
@@ -4045,23 +3991,14 @@ function replayRunHTML(){
 }
 /* ---- Mainline ----
    main is just the branch named main; the straight line in the drawing follows it. */
-function onMain(id){
-  const c=convOf(id);
-  return Object.values(S.refs).some(r=>r.name==='main' && S.nodes[r.tip] && convOf(r.tip)===c && chain(r.tip).includes(id));
-}
+function onMain(id){ return Ops.onMain(S, id); }
 function refsThrough(id){ return Ops.refsThrough(S, id, chain); }
 function promote(id){
   if(onMain(id)){ toast('This prompt is already on main.'); return; }
-  const c=convOf(id), through=refsThrough(id);
-  let rid = through.includes(S.head) ? S.head : through.sort((a,b)=>chain(S.refs[a].tip).length-chain(S.refs[b].tip).length)[0];
-  const mains=Object.keys(S.refs).filter(r=>S.refs[r].name==='main' && S.nodes[S.refs[r].tip] && convOf(S.refs[r].tip)===c);
-  const old = rid ? refName(rid) : null;
-  commit(old ? `${old} is now main. The old main is now ${old}.` : `The line through #${id} is now main`, ()=>{
-    if(!rid) rid=newRef(autoName(c), leafOf(id));
-    const was=S.refs[rid].name;
-    for(const m of mains) S.refs[m].name=was;
-    S.refs[rid].name='main'; S.head=rid;
-    if(sel==null || !chain(S.refs[rid].tip).includes(sel)) sel=id;
+  let r;
+  commit(()=>r.old ? `${r.old} is now main. The old main is now ${r.old}.` : `The line through #${id} is now main`, ()=>{
+    r=Ops.makeMainline(S, id); S.head=r.rid;
+    if(sel==null || !chain(S.refs[r.rid].tip).includes(sel)) sel=id;
   });
 }
 
@@ -4141,7 +4078,7 @@ function fanCreate(){
   fan=null;
   commit(`Fanned out #${id} into ${list.length} branch${list.length===1?'':'es'}`, ()=>{
     for(const o of ordered){
-      const nid=S.nextId++; S.nodes[nid]={id:nid, parents:[id], text:o.prompt.trim()};
+      const nid=Ops.addTurn(S, id, o.prompt.trim());
       if(o===main){ if(rid0){ S.refs[rid0].tip=nid; S.head=rid0; } else S.head=newRef(slugName(o.title, conv), nid); }
       else newRef(slugName(o.title, conv), nid);
       made.push(nid);

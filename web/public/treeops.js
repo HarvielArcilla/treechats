@@ -89,6 +89,165 @@
   const cmpKids = (t, id, ix) => vKids(t, id, ix).filter(k => k.kind !== 'merge');
   function uniqueSpaceName(db, base){ const used = new Set(db.order.filter(id => db.spaces[id]).map(id => db.spaces[id].name)); if(!used.has(base)) return base; let k = 2; while(used.has(`${base} ${k}`)) k++; return `${base} ${k}`; }
 
+  /* ---- Tree operations ----
+     What you do with clicks and what agents do over MCP, one definition each. Each changes the tree t and returns
+     what it made; the caller adds what's its own: the page its selection, checked-out branch and Undo (commit), the
+     server its run project (mutate). The *Error functions say why an operation can't be done, or return null. */
+  /* a new prompt (or a new chat's first prompt, with parent null) */
+  function addTurn(t, parent, text, o = {}){
+    const nid = t.nextId++; t.nodes[nid] = {id:nid, parents: parent == null ? [] : [parent], text};
+    if(o.by) t.nodes[nid].by = o.by;
+    if(o.tier) t.nodes[nid].askTier = o.tier;
+    if(o.files) t.nodes[nid].files = clone(o.files);
+    return nid;
+  }
+  /* continuing a branch: the branch at parent (the checked-out one first; every one with all) moves to nid, or a new
+     branch starts there; returns the branch */
+  function extend(t, parent, nid, all){
+    const rids = refsAt(t, parent);
+    if(!rids.length) return newRef(t, autoName(t, convOf(t, parent)), nid);
+    for(const r of (all ? rids : [rids[0]])) t.refs[r].tip = nid;
+    return rids[0];
+  }
+  /* a branch name: the one asked for if it's valid and free in the chat, else one made from it (or from base) */
+  const nameFor = (t, conv, want, base) => want && NAME_RE.test(want) && !namesIn(t, conv).has(want) ? want : slugName(t, want || base, conv);
+  /* why a branch can't be renamed: 'invalid', 'taken', or null */
+  function renameError(t, rid, to){ const r = t.refs[rid]; if(!NAME_RE.test(to)) return 'invalid'; if(r && to !== r.name && namesIn(t, convOf(t, r.tip), rid).has(to)) return 'taken'; return null; }
+  /* Regenerate and Edit: a new version of a prompt beside the old one. Edit (o.text) puts it on a new branch;
+     regenerate moves the branches at the old version to it. Returns {nid, rid, name}. */
+  function newVersion(t, id, o = {}){
+    const n = t.nodes[id], gid = n.alt ?? n.id; n.alt = gid;
+    const nid = t.nextId++;
+    t.nodes[nid] = {id:nid, parents:[...n.parents], text: o.text != null ? o.text : n.text, alt:gid};
+    if(o.by) t.nodes[nid].by = o.by;
+    if(n.kind) t.nodes[nid].kind = n.kind;
+    if(n.files) t.nodes[nid].files = clone(n.files);
+    if(n.set) t.nodes[nid].set = clone(n.set);
+    if(o.tier) t.nodes[nid].askTier = o.tier;
+    t.active[gid] = nid;
+    let rid = null, name = '';
+    if(o.text != null){ name = autoName(t, convOf(t, id)); rid = newRef(t, name, nid); }
+    else for(const r of refsAt(t, id)) t.refs[r].tip = nid;
+    return {nid, rid, name};
+  }
+  /* Merge: a merge point after into, bringing src's branch in; the branch at into moves to it. Returns {mid, rid, from, into} */
+  function mergeError(t, src, into){ return Core.path(t, into).includes(src) || Core.path(t, src).includes(into) ? 'Those are on the same line; there is nothing to merge.' : null; }
+  function merge(t, src, into, by){
+    const at = refsAt(t, into), from = refsAt(t, src).map(r => refName(t, r))[0] || `#${src}`, intoName = at.map(r => refName(t, r))[0] || `#${into}`;
+    const mid = t.nextId++;
+    t.nodes[mid] = {id:mid, kind:'merge', parents:[into, src], text:'', from, into:intoName};
+    if(by) t.nodes[mid].by = by;
+    let rid;
+    if(at.length){ for(const r of at) t.refs[r].tip = mid; rid = at[0]; }
+    else rid = newRef(t, autoName(t, convOf(t, into)), mid);
+    return {mid, rid, from, into:intoName};
+  }
+  /* Undo merge: what came after the merge point follows the branch it merged into again. Returns that prompt */
+  function unmerge(t, id){
+    const p0 = t.nodes[id].parents[0];
+    for(const k of kids(t, id)) k.parents = [...new Set(k.parents.map(q => q === id ? p0 : q))];
+    for(const r of Object.values(t.refs)) if(r.tip === id) r.tip = p0;
+    delete t.nodes[id];
+    return p0;
+  }
+  /* a copy of a prompt and what's below it (visible versions only), under parents; returns the copy */
+  function copySubtree(t, id, parents){
+    const map = new Map();
+    (function rec(oid, par){
+      const o = t.nodes[oid], nid = t.nextId++; map.set(oid, nid);
+      t.nodes[nid] = {id:nid, text:o.text, parents:par}; if(o.kind) t.nodes[nid].kind = o.kind; if(o.reply) t.nodes[nid].reply = o.reply;
+      for(const k of vKids(t, oid)) rec(k.id, [nid]);
+    })(id, parents);
+    for(const [oid, nid] of map){ if(oid === id) continue; for(const p of t.nodes[oid].parents.slice(1)) t.nodes[nid].parents.push(map.get(p) ?? p); }
+    return map.get(id);
+  }
+  /* Reroot: a prompt starts its own chat, after a summary root if one is given ({text, pending, by}); with copy, a
+     copy of it and what's below does, and the original stays. Returns {at, summary} */
+  function reroot(t, id, summary, copy){
+    let parents = [], sid = null;
+    if(summary){
+      sid = t.nextId++;
+      t.nodes[sid] = {id:sid, kind:'summary', parents:[], text:summary.text || ''};
+      if(summary.by) t.nodes[sid].by = summary.by;
+      if(summary.pending) t.nodes[sid].pending = true;
+      parents = [sid];
+    }
+    if(copy) return {at:copySubtree(t, id, parents), summary:sid};
+    const n = t.nodes[id]; n.parents = parents; delete n.alt;
+    return {at:id, summary:sid};
+  }
+  /* Splice out: the prompts go; what followed each follows what came before it. Returns the prompt above them */
+  function splice(t, ids){
+    const top = t.nodes[ids[0]].parents[0];
+    for(const id of [...ids].reverse()){
+      const n = t.nodes[id];
+      for(const k of kids(t, id)){ const out = []; for(const p of k.parents){ if(p === id) out.push(...n.parents); else out.push(p); } k.parents = [...new Set(out)]; }
+      for(const r of Object.values(t.refs)) if(r.tip === id && n.parents[0] != null) r.tip = n.parents[0];
+      delete t.nodes[id];
+    }
+    /* a merge whose sides now share their history merges nothing: drop the side already in the line */
+    for(const n of Object.values(t.nodes)) if(n.kind === 'merge' && n.parents.length > 1){ const base = new Set(Core.path(t, n.parents[0])); n.parents = [n.parents[0], ...n.parents.slice(1).filter(p => !base.has(p))]; }
+    return top;
+  }
+  /* Delete subtree: a prompt and what follows only from it (a merge point with another parent outside survives).
+     Branches into it move back to the prompt above. Returns {deleted, up} */
+  function prune(t, id){
+    const del = new Set([id]), d = [...desc(t, id)];
+    let grew = true; while(grew){ grew = false; for(const x of d) if(!del.has(x) && t.nodes[x].parents.every(p => del.has(p))){ del.add(x); grew = true; } }
+    const up = t.nodes[id].parents[0];
+    for(const x of del) delete t.nodes[x];
+    for(const m of all(t)) m.parents = m.parents.filter(p => !del.has(p));
+    for(const r of Object.values(t.refs)) if(del.has(r.tip) && up != null) r.tip = up;
+    return {deleted:del, up};
+  }
+  /* Rebase onto: a prompt and what follows move under another prompt */
+  function rebaseError(t, id, onto){ return onto === id || desc(t, id).has(onto) ? 'Can’t rebase a prompt onto itself or what follows it.' : null; }
+  function rebase(t, id, onto){ const n = t.nodes[id]; n.parents = [...new Set([onto, ...n.parents.slice(1)])]; delete n.alt; }
+  /* Cherry-pick: a copy of a prompt's text (and attached files) under another prompt, without its reply, which was
+     written for a different context. Returns the copy */
+  function cherryPick(t, id, onto, by){
+    const n = t.nodes[id], nid = t.nextId++;
+    t.nodes[nid] = {id:nid, parents:[onto], text:n.text};
+    if(by) t.nodes[nid].by = by;
+    if(n.files) t.nodes[nid].files = clone(n.files);
+    return nid;
+  }
+  /* Squash: the line from top down to bottom becomes one prompt (top), its prompts and replies joined, or left for a
+     summary (pending). What hung off the stretch now hangs off top. Returns the stretch */
+  function squashLine(t, top, bottom){ const c = Core.chain(t, bottom), i = c.indexOf(top); return i < 0 ? null : c.slice(i); }
+  function squashError(t, top, bottom){
+    const seg = squashLine(t, top, bottom);
+    if(!seg) return `#${top} isn’t on the line up to #${bottom}.`;
+    if(seg.length < 2) return 'Squash needs at least two prompts.';
+    if(seg.some(x => t.nodes[x].kind === 'merge')) return 'The stretch crosses a merge.';
+    return null;
+  }
+  function squash(t, top, bottom, pending){
+    const seg = squashLine(t, top, bottom), A = t.nodes[top], removed = new Set(seg.slice(1)), dA = desc(t, top);
+    if(pending){ A.text = ''; A.pending = true; delete A.reply; }
+    else { A.text = seg.map(x => t.nodes[x].text).filter(Boolean).join('\n\n'); const rs = seg.map(x => t.nodes[x].reply).filter(Boolean); if(rs.length) A.reply = rs.join('\n\n'); else delete A.reply; }
+    if(A.kind !== 'summary') A.kind = 'squash';
+    for(const x of removed) for(const p of t.nodes[x].parents.slice(1)) if(!removed.has(p) && !dA.has(p) && !A.parents.includes(p)) A.parents.push(p);
+    for(const x of removed) delete t.nodes[x];
+    for(const m of all(t)) m.parents = [...new Set(m.parents.map(p => removed.has(p) ? top : p))].filter(p => p !== m.id);
+    for(const r of Object.values(t.refs)) if(removed.has(r.tip)) r.tip = top;
+    return seg;
+  }
+  /* Make mainline: the branch through a prompt (the checked-out one if it goes through, else the shortest) becomes
+     main, and the old main takes its name; with no branch through it, one is made. Returns {rid, old} */
+  function onMain(t, id){ const c = convOf(t, id); return Object.values(t.refs).some(r => r.name === 'main' && t.nodes[r.tip] && convOf(t, r.tip) === c && Core.chain(t, r.tip).includes(id)); }
+  function makeMainline(t, id){
+    const c = convOf(t, id), through = refsThrough(t, id);
+    let rid = through.includes(t.head) ? t.head : through.sort((a, b) => Core.chain(t, t.refs[a].tip).length - Core.chain(t, t.refs[b].tip).length)[0];
+    const mains = Object.keys(t.refs).filter(r => t.refs[r].name === 'main' && t.nodes[t.refs[r].tip] && convOf(t, t.refs[r].tip) === c && r !== rid);
+    const old = rid ? refName(t, rid) : null;
+    if(!rid) rid = newRef(t, autoName(t, c), leafOf(t, id));
+    const was = t.refs[rid].name;
+    for(const m of mains) t.refs[m].name = was;
+    t.refs[rid].name = 'main';
+    return {rid, old};
+  }
+
   /* ---- reading options from a reply (Fan out without Claude) ---- */
   const stripMd = t => t.replace(/\*\*|__|`/g, '').replace(/^\s*#+\s*/, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
   function shortTitle(line){
@@ -289,6 +448,7 @@
     emptyTree, all, kids, primaryKids, activeOf, visible, vKids, desc, convKey, convOf, convKeyOf, setActivePath,
     refsAt, refName, namesIn, autoName, newRef, slugName, leafOf, refsThrough, sharedParent, cmpKids, uniqueSpaceName,
     stripMd, shortTitle, listOptions, fanAsk,
+    addTurn, extend, nameFor, renameError, newVersion, mergeError, merge, unmerge, copySubtree, reroot, splice, prune, rebaseError, rebase, cherryPick, squashLine, squashError, squash, onMain, makeMainline,
     copyOne, replayCount, checkFit, runReplay, compareMaterial, judge, combine, addCombined, reviewMaterial, addReviewChat, loopCheck,
   };
 })();

@@ -95,11 +95,7 @@ function agentSettings(a: A) {
   if (Number.isFinite(a.max_tokens)) st.maxTokens = Math.round(a.max_tokens);
   return Ops.hasSettings(st) ? st : null;
 }
-function addTurn(t: T, parent: number | null, text: string, by: string, tier: string | null) {
-  const nid = t.nextId++; t.nodes[nid] = { id: nid, parents: parent == null ? [] : [parent], text, by };
-  if (tier) t.nodes[nid].askTier = tier;
-  return nid;
-}
+const addTurn = (t: T, parent: number | null, text: string, by: string, tier: string | null): number => Ops.addTurn(t, parent, text, { by, tier });
 async function reply(sid: string, id: number, base: Done): Promise<Done> {
   const r = await writeReply(sid, id);
   if (r.error) throw new Error(`#${id} got no reply: ${r.error}`);
@@ -147,7 +143,7 @@ const ops: Record<string, (a: A) => Promise<any> | any> = {
     const after = branchTip(t, a, 'Say where to continue: after (a prompt number) or branch.');
     const id = change(sid, (tt) => {
       const nid = addTurn(tt, after, a.prompt, by, tierOf(a.model));
-      const rids = Ops.refsAt(tt, after); if (rids.length) tt.refs[rids[0]].tip = nid; else Ops.newRef(tt, Ops.autoName(tt, convOf(tt, after)), nid);
+      Ops.extend(tt, after, nid);
       return nid;
     });
     return reply(sid, id, { ...where(sid, id), message: 'Asked' });
@@ -163,7 +159,7 @@ const ops: Record<string, (a: A) => Promise<any> | any> = {
       const from = after;
       const nid = change(sid, (tt) => {
         const nid = addTurn(tt, from, a.prompt, by, tierOf(a.model)); tt.nodes[nid].loop = { id: L.id, i, of: times, ...(L.until ? { until: L.until } : {}) };
-        const rids = Ops.refsAt(tt, from); if (rids.length) for (const r of rids) tt.refs[r].tip = nid; else Ops.newRef(tt, Ops.autoName(tt, convOf(tt, from)), nid);
+        Ops.extend(tt, from, nid, true);
         return nid;
       });
       const r = await writeReply(sid, nid); requests++;
@@ -181,9 +177,7 @@ const ops: Record<string, (a: A) => Promise<any> | any> = {
     const id = change(sid, (tt) => {
       const nid = addTurn(tt, a.at, a.prompt, by, tierOf(a.model));
       const st = agentSettings(a); if (st) tt.nodes[nid].set = st;
-      const conv = convOf(tt, a.at);
-      const name = a.name && Ops.NAME_RE.test(a.name) && !Ops.namesIn(tt, conv).has(a.name) ? a.name : Ops.slugName(tt, a.name || 'fork', conv);
-      Ops.newRef(tt, name, nid);
+      Ops.newRef(tt, Ops.nameFor(tt, convOf(tt, a.at), a.name, 'fork'), nid);
       return nid;
     });
     return reply(sid, id, { ...where(sid, id), message: `Forked after #${a.at}` });
@@ -238,16 +232,7 @@ const ops: Record<string, (a: A) => Promise<any> | any> = {
   },
   async regenerate(a) {
     const sid = runSpace(a.run), t = treeOf(sid), by = a.agent || 'agent'; need(t, a.prompt);
-    const id = change(sid, (tt) => {
-      const n = tt.nodes[a.prompt], gid = n.alt ?? n.id; n.alt = gid;
-      const nid = tt.nextId++;
-      tt.nodes[nid] = { id: nid, parents: [...n.parents], text: n.text, alt: gid, by };
-      if (n.files) tt.nodes[nid].files = structuredClone(n.files); if (n.set) tt.nodes[nid].set = structuredClone(n.set);
-      const tier = tierOf(a.model) || n.model; if (tier) tt.nodes[nid].askTier = tier;
-      tt.active[gid] = nid;
-      for (const rid of Ops.refsAt(tt, n.id)) tt.refs[rid].tip = nid;
-      return nid;
-    });
+    const id = change(sid, (tt) => Ops.newVersion(tt, a.prompt, { by, tier: tierOf(a.model) || tt.nodes[a.prompt].model }).nid);
     return reply(sid, id, { ...where(sid, id), replaced: a.prompt, message: `New version of #${a.prompt} (the old one is kept)` });
   },
   /* replay: the line from a prompt to the end of a branch (or to the end of the line), one prompt at a time, as new
@@ -278,15 +263,7 @@ const ops: Record<string, (a: A) => Promise<any> | any> = {
     const sid = runSpace(a.run), t = treeOf(sid), by = a.agent || 'agent'; need(t, a.prompt);
     if (!String(a.text || '').trim()) throw new Error('Give the new text of the prompt.');
     let name = '';
-    const id = change(sid, (tt) => {
-      const n = tt.nodes[a.prompt], gid = n.alt ?? n.id; n.alt = gid;
-      const nid = tt.nextId++;
-      tt.nodes[nid] = { id: nid, parents: [...n.parents], text: String(a.text), alt: gid, by };
-      if (n.files) tt.nodes[nid].files = structuredClone(n.files); if (n.set) tt.nodes[nid].set = structuredClone(n.set);
-      const tier = tierOf(a.model) || n.model; if (tier) tt.nodes[nid].askTier = tier;
-      tt.active[gid] = nid; name = Ops.autoName(tt, convOf(tt, n.id)); Ops.newRef(tt, name, nid);
-      return nid;
-    });
+    const id = change(sid, (tt) => { const r = Ops.newVersion(tt, a.prompt, { text: String(a.text), by, tier: tierOf(a.model) || tt.nodes[a.prompt].model }); name = r.name; return r.nid; });
     return reply(sid, id, { ...where(sid, id), replaced: a.prompt, message: `Edited #${a.prompt} as #${id} on a new branch, ${name}; the original keeps its branch and what followed` });
   },
   /* fan out: the options a reply offers, one branch each. Reading them is one request (unless you give them) */
@@ -320,17 +297,17 @@ const ops: Record<string, (a: A) => Promise<any> | any> = {
       const convOfS = (id: number) => convOf(S, id);
       if (op === 'star') { const n = want(a.prompt); const on = a.value !== false; if (on) n.star = true; else delete n.star; msg = on ? `Starred #${a.prompt}` : `Unstarred #${a.prompt}`; }
       else if (op === 'note') { const n = want(a.prompt); const txt = String(a.text || '').trim(); if (a.value === false || !txt) { delete n.note; msg = `Cleared the note on #${a.prompt}`; } else { n.note = a.append && n.note ? n.note + '\n\n' + txt : txt; msg = `Noted on #${a.prompt} (never sent to the model)`; } }
-      else if (op === 'branch') { want(a.prompt); const name = a.name && Ops.NAME_RE.test(a.name) && !Ops.namesIn(S, convOfS(a.prompt)).has(a.name) ? a.name : Ops.slugName(S, a.name || 'branch', convOfS(a.prompt)); Ops.newRef(S, name, a.prompt); msg = `Started branch ${name} at #${a.prompt}`; }
-      else if (op === 'rename_branch') { const r: any = Object.values(S.refs).find((r: any) => r.name === a.branch && S.nodes[r.tip]); if (!r) throw new Error(`No branch named "${a.branch}".`); if (!a.name || !Ops.NAME_RE.test(a.name)) throw new Error('Give a new name: up to 40 letters, numbers, dots, dashes, slashes or underscores, with no spaces.'); if (a.name !== r.name && Ops.namesIn(S, convOfS(r.tip)).has(a.name)) throw new Error(`This chat already has a branch named ${a.name}.`); msg = `Renamed ${r.name} to ${a.name}`; r.name = a.name; }
-      else if (op === 'make_mainline') { want(a.prompt); const c = convOfS(a.prompt), through = Ops.refsThrough(S, a.prompt); let rid = through.sort((x: string, y: string) => Core.chain(S, S.refs[x].tip).length - Core.chain(S, S.refs[y].tip).length)[0]; const mains = Object.keys(S.refs).filter((r) => S.refs[r].name === 'main' && S.nodes[S.refs[r].tip] && convOfS(S.refs[r].tip) === c && r !== rid); if (!rid) rid = Ops.newRef(S, Ops.autoName(S, c), Ops.leafOf(S, a.prompt)); const was = S.refs[rid].name; for (const m of mains) S.refs[m].name = was; S.refs[rid].name = 'main'; msg = `The line through #${a.prompt} is now main`; }
-      else if (op === 'merge') { want(a.prompt, 'prompt (the branch tip to merge)'); want(a.onto, 'onto (the prompt to merge into)'); if (Core.path(S, a.onto).includes(a.prompt) || Core.path(S, a.prompt).includes(a.onto)) throw new Error('Those are on the same line; there is nothing to merge.'); const into = Ops.refsAt(S, a.onto), from = Ops.refsAt(S, a.prompt).map((r: string) => Ops.refName(S, r))[0] || `#${a.prompt}`, intoName = into.map((r: string) => Ops.refName(S, r))[0] || `#${a.onto}`; const mid = S.nextId++; S.nodes[mid] = { id: mid, kind: 'merge', parents: [a.onto, a.prompt], text: '', from, into: intoName, by }; if (into.length) for (const rid of into) S.refs[rid].tip = mid; else Ops.newRef(S, Ops.autoName(S, convOfS(a.onto)), mid); at = mid; msg = `Merged ${from} into ${intoName} at #${mid}`; }
-      else if (op === 'unmerge') { const n = S.nodes[a.prompt]; if (!n) throw new Error(`There is no #${a.prompt} in this run.`); if (n.kind !== 'merge') throw new Error(`#${a.prompt} isn’t a merge point.`); const p0 = n.parents[0]; for (const k of Ops.kids(S, a.prompt)) k.parents = [...new Set(k.parents.map((q: number) => q === a.prompt ? p0 : q))]; for (const r of Object.values(S.refs) as any[]) if (r.tip === a.prompt) r.tip = p0; delete S.nodes[a.prompt]; msg = `Removed the merge at #${a.prompt}`; at = p0; }
-      else if (op === 'reroot') { const n = want(a.prompt); let parents: number[] = []; if (String(a.text || '').trim()) { const sid2 = S.nextId++; S.nodes[sid2] = { id: sid2, kind: 'summary', parents: [], text: String(a.text).trim(), by }; parents = [sid2]; } n.parents = parents; delete n.alt; msg = `#${a.prompt} now starts its own chat${parents.length ? `, after a summary (#${parents[0]})` : ''}`; }
-      else if (op === 'squash') { want(a.prompt); want(a.until, 'until (the last prompt to include)'); const seg = lineBetween(a.prompt, a.until); if (seg.length < 2) throw new Error('Squash needs at least two prompts.'); if (seg.some((x) => S.nodes[x].kind === 'merge')) throw new Error('The stretch crosses a merge.'); const A0 = S.nodes[a.prompt], removed = new Set(seg.slice(1)), dA = Ops.desc(S, a.prompt); A0.text = seg.map((x) => S.nodes[x].text).filter(Boolean).join('\n\n'); const rs = seg.map((x) => S.nodes[x].reply).filter(Boolean); if (rs.length) A0.reply = rs.join('\n\n'); else delete A0.reply; if (A0.kind !== 'summary') A0.kind = 'squash'; for (const x of removed) for (const p of S.nodes[x].parents.slice(1)) if (!removed.has(p) && !dA.has(p) && !A0.parents.includes(p)) A0.parents.push(p); for (const x of removed) delete S.nodes[x]; for (const m of Ops.all(S)) m.parents = [...new Set(m.parents.map((p: number) => removed.has(p) ? a.prompt : p))].filter((p) => p !== m.id); for (const r of Object.values(S.refs) as any[]) if (removed.has(r.tip)) r.tip = a.prompt; msg = `Squashed #${seg[0]}–#${seg[seg.length - 1]} into #${a.prompt}`; }
-      else if (op === 'splice') { want(a.prompt); const seg = lineBetween(a.prompt, a.until).filter((x) => S.nodes[x].kind !== 'merge'); const top = S.nodes[seg[0]].parents[0]; for (const id of [...seg].reverse()) { const n = S.nodes[id]; for (const k of Ops.kids(S, id)) { const out: number[] = []; for (const p of k.parents) { if (p === id) out.push(...n.parents); else out.push(p); } k.parents = [...new Set(out)]; } for (const r of Object.values(S.refs) as any[]) if (r.tip === id && n.parents[0] != null) r.tip = n.parents[0]; delete S.nodes[id]; } at = top; msg = `Spliced out ${seg.map((x) => '#' + x).join(', ')}; what followed now follows #${top ?? 'nothing'}`; }
-      else if (op === 'delete') { want(a.prompt); const del = new Set([a.prompt]), d = [...Ops.desc(S, a.prompt)]; let grew = true; while (grew) { grew = false; for (const x of d) if (!del.has(x) && S.nodes[x].parents.every((p: number) => del.has(p))) { del.add(x); grew = true; } } const up = S.nodes[a.prompt].parents[0]; for (const x of del) delete S.nodes[x]; for (const m of Ops.all(S)) m.parents = m.parents.filter((p: number) => !del.has(p)); for (const r of Object.values(S.refs) as any[]) if (del.has(r.tip) && up != null) r.tip = up; at = up; msg = `Deleted ${del.size} prompt${del.size === 1 ? '' : 's'} from #${a.prompt}`; }
-      else if (op === 'rebase') { const n = want(a.prompt); want(a.onto, 'onto (the new parent)'); if (a.onto === a.prompt || Ops.desc(S, a.prompt).has(a.onto)) throw new Error('Can’t rebase a prompt onto itself or what follows it.'); n.parents = [...new Set([a.onto, ...n.parents.slice(1)])]; delete n.alt; msg = `Moved #${a.prompt} and what follows under #${a.onto}; their replies stay as they were (see get_prompt for context changes)`; }
-      else if (op === 'cherry_pick') { const n = want(a.prompt); want(a.onto, 'onto (where the copy goes)'); const nid = S.nextId++; S.nodes[nid] = { id: nid, parents: [a.onto], text: n.text, by }; if (n.files) S.nodes[nid].files = structuredClone(n.files); at = nid; msg = `Copied #${a.prompt}'s text under #${a.onto} as #${nid}, without a reply (ask regenerate for one)`; }
+      else if (op === 'branch') { want(a.prompt); const name = Ops.nameFor(S, convOfS(a.prompt), a.name, 'branch'); Ops.newRef(S, name, a.prompt); msg = `Started branch ${name} at #${a.prompt}`; }
+      else if (op === 'rename_branch') { const rid = Object.keys(S.refs).find((r) => S.refs[r].name === a.branch && S.nodes[S.refs[r].tip]); if (!rid) throw new Error(`No branch named "${a.branch}".`); const why = a.name ? Ops.renameError(S, rid, a.name) : 'invalid'; if (why === 'invalid') throw new Error('Give a new name: up to 40 letters, numbers, dots, dashes, slashes or underscores, with no spaces.'); if (why === 'taken') throw new Error(`This chat already has a branch named ${a.name}.`); msg = `Renamed ${S.refs[rid].name} to ${a.name}`; S.refs[rid].name = a.name; }
+      else if (op === 'make_mainline') { want(a.prompt); Ops.makeMainline(S, a.prompt); msg = `The line through #${a.prompt} is now main`; }
+      else if (op === 'merge') { want(a.prompt, 'prompt (the branch tip to merge)'); want(a.onto, 'onto (the prompt to merge into)'); const why = Ops.mergeError(S, a.prompt, a.onto); if (why) throw new Error(why); const r = Ops.merge(S, a.prompt, a.onto, by); at = r.mid; msg = `Merged ${r.from} into ${r.into} at #${r.mid}`; }
+      else if (op === 'unmerge') { const n = S.nodes[a.prompt]; if (!n) throw new Error(`There is no #${a.prompt} in this run.`); if (n.kind !== 'merge') throw new Error(`#${a.prompt} isn’t a merge point.`); at = Ops.unmerge(S, a.prompt); msg = `Removed the merge at #${a.prompt}`; }
+      else if (op === 'reroot') { want(a.prompt); const text = String(a.text || '').trim(); const r = Ops.reroot(S, a.prompt, text ? { text, by } : null, false); msg = `#${a.prompt} now starts its own chat${r.summary != null ? `, after a summary (#${r.summary})` : ''}`; }
+      else if (op === 'squash') { want(a.prompt); want(a.until, 'until (the last prompt to include)'); const why = Ops.squashError(S, a.prompt, a.until); if (why) throw new Error(why); const seg = Ops.squash(S, a.prompt, a.until, false); msg = `Squashed #${seg[0]}–#${seg[seg.length - 1]} into #${a.prompt}`; }
+      else if (op === 'splice') { want(a.prompt); const seg = lineBetween(a.prompt, a.until).filter((x) => S.nodes[x].kind !== 'merge'); const top = Ops.splice(S, seg); at = top; msg = `Spliced out ${seg.map((x) => '#' + x).join(', ')}; what followed now follows #${top ?? 'nothing'}`; }
+      else if (op === 'delete') { want(a.prompt); const r = Ops.prune(S, a.prompt); at = r.up; msg = `Deleted ${r.deleted.size} prompt${r.deleted.size === 1 ? '' : 's'} from #${a.prompt}`; }
+      else if (op === 'rebase') { want(a.prompt); want(a.onto, 'onto (the new parent)'); const why = Ops.rebaseError(S, a.prompt, a.onto); if (why) throw new Error(why); Ops.rebase(S, a.prompt, a.onto); msg = `Moved #${a.prompt} and what follows under #${a.onto}; their replies stay as they were (see get_prompt for context changes)`; }
+      else if (op === 'cherry_pick') { want(a.prompt); want(a.onto, 'onto (where the copy goes)'); const nid = Ops.cherryPick(S, a.prompt, a.onto, by); at = nid; msg = `Copied #${a.prompt}'s text under #${a.onto} as #${nid}, without a reply (ask regenerate for one)`; }
       else if (op === 'rename_chat') { want(a.prompt); const name = String(a.name || '').trim(); if (!name) throw new Error('Give the new title as name.'); const k = Ops.convKeyOf(S, a.prompt); S.convs[k] = Object.assign(S.convs[k] || {}, { title: name.slice(0, 80) }); msg = `Renamed the chat to "${name.slice(0, 80)}"`; }
       else if (op === 'model_settings') { const n = want(a.prompt); if (a.value === false) { delete n.set; msg = `Cleared the model settings on #${a.prompt}`; } else { const st = agentSettings(a); if (!st) throw new Error('Give at least one of system, thinking, effort, temperature, max_tokens (or value: false to clear).'); n.set = Object.assign(n.set || {}, st); msg = `Model settings from #${a.prompt}: ${Ops.setSummary(n.set)}`; } }
       else throw new Error(`Unknown operation "${op}". Call describe to see them.`);
