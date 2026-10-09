@@ -1,0 +1,84 @@
+/* Chat view. */
+
+/* Chat | Editor */
+.viewsw{display:inline-flex;align-items:center;flex:none}
+.vtrack{position:relative;display:grid;grid-template-columns:1fr 1fr;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.vthumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:4px;background:var(--surface);box-shadow:0 1px 2px var(--shadow), 0 0 0 1px var(--line);transition:transform .22s cubic-bezier(.2,.75,.2,1)}
+.viewsw[data-view="chat"] .vthumb{transform:translateX(100%)}
+.vtrack button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;background:none;border-radius:4px;padding:4px 11px;font:inherit;font-size:.85rem;color:var(--muted);cursor:pointer}
+.vtrack button[aria-checked="true"]{color:var(--fg)}
+.vtrack button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.vtrack svg{width:15px;height:15px;flex:none}
+@container main (max-width:620px){.vtrack .vtxt{display:none}.vtrack button{padding:4px 9px}}
+@media (prefers-reduced-motion:reduce){.vthumb{transition:none}}
+/* Chat view: titles together, the input bar pinned to the bottom like any chat */
+.shell.simple header.top{display:none}
+.shell.simple .main{padding-bottom:0}
+.chathead{display:grid;gap:2px;margin:0 0 18px}
+.chatproj{justify-self:start;border:0;background:none;color:var(--muted);font:500 .78rem var(--mono);letter-spacing:.04em;padding:2px 0;cursor:pointer}
+.chatproj:hover{color:var(--fg)}
+.chattitle{display:flex;align-items:center;gap:8px;min-width:0}
+.chattitle h1{margin:0;font:700 1.5rem/1.25 var(--display);letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
+.chathead .viewbar{margin-top:8px}
+.shell.simple section.conv.thread{display:flex;flex-direction:column;min-height:calc(100vh - 90px)}
+.shell.simple ul.tree.thread{flex:1 0 auto;align-content:start}
+.shell.simple .simpleops{position:sticky;bottom:0;z-index:6;background:var(--bg);padding:12px 0 calc(16px + env(safe-area-inset-bottom,0px));margin-top:22px;box-shadow:0 -14px 14px -10px var(--bg)}
+.shell.simple ul.thread .rfoot{display:none}
+.shell.simple ul.thread .row.editing{width:min(85%,640px)}
+.shell.simple ul.thread .rfoot .ver{display:none}
+.mapbr{margin:0 0 12px;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.mapbr > summary{cursor:pointer;font:600 .82rem var(--display);padding:2px 0}
+.mapbr .branches{margin:6px 0 2px}
+.fork{display:inline-flex;align-items:center;gap:2px;font:.74rem var(--mono);color:var(--muted);white-space:nowrap}
+.fork button{border:0;background:none;color:inherit;cursor:pointer;padding:0 4px;font-size:1rem;line-height:1}
+.fork button:hover:not(:disabled){color:var(--fg)}
+.fork button:disabled{opacity:.3;cursor:default}
+.switchbtn{display:inline-flex;align-items:center;gap:8px}
+.switchbtn .track{width:28px;height:16px;border-radius:999px;background:var(--line);position:relative;flex:none;transition:background .15s}
+.switchbtn .knob{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px var(--shadow);transition:transform .15s}
+.switchbtn[aria-checked="true"] .track{background:var(--accent)}
+.switchbtn[aria-checked="true"] .knob{transform:translateX(12px)}
+@media (prefers-reduced-motion:reduce){.switchbtn .track,.switchbtn .knob{transition:none}}
+.row.also{border-color:var(--accent);border-style:dashed;background:color-mix(in srgb, var(--accent-soft) 55%, transparent)}
+.tag.alsotag{color:var(--accent);background:var(--accent-soft)}
+.alsobar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+.alsohint{margin:0}
+.optset{border:0;margin:0;padding:0;display:grid;gap:4px}
+.optset legend{font-size:.8rem;color:var(--muted);padding:0;margin-bottom:4px}
+.flabel{font-size:.8rem;color:var(--muted);margin-bottom:-4px}
+ol.ctx .cr{display:block;color:var(--muted);font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ol.ctx .cr::before{content:"↳ "}
+details.cardd > summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0;font:inherit}
+details.cardd > summary > :first-child{flex:1;min-width:0}
+details.cardd > summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}
+.cardbody{display:grid;gap:10px;min-width:0}
+details.cardd > summary::-webkit-details-marker{display:none}
+details.cardd > summary::after{content:"▾";color:var(--muted);transition:transform .2s;flex:none;font-size:.9rem}
+details.cardd:not([open]) > summary::after{transform:rotate(-90deg)}
+details.cardd[open] > summary{margin-bottom:10px}
+.oplist{display:grid;gap:2px;margin:6px 0 10px}
+details.opd{border-radius:8px}
+details.opd[open]{background:var(--bg)}
+details.opd > summary{list-style:none;display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;font:500 .9rem var(--body);cursor:pointer}
+details.opd > summary::-webkit-details-marker{display:none}
+details.opd > summary::before{content:"▸";color:var(--muted);font-size:.75rem;transition:transform .18s}
+details.opd[open] > summary::before{transform:rotate(90deg)}
+details.opd > summary:hover{background:var(--bg)}
+details.opd > summary kbd{margin-left:auto}
+.opname.danger{color:var(--danger)}
+.opbody{display:grid;gap:10px;padding:0 10px 12px 26px}
+.opbody .dd{margin:0;font-size:.84rem;color:var(--muted)}
+.opbody .dd em{font-style:normal;color:var(--fg)}
+.tag.custom{color:var(--l1);background:color-mix(in srgb, var(--l1) 14%, transparent)}
+.pe{display:grid;gap:6px}
+.pe-head{display:flex;align-items:center;gap:8px}
+.pe textarea{min-height:76px;font-size:.86rem}
+.pe-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.pe-foot .note{flex:1}
+ol.ctx li.instr .cid,ol.ctx li.instr .ct{color:var(--l1)}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);border-radius:8px;padding:9px 14px;display:flex;gap:12px;align-items:center;font-size:.88rem;max-width:calc(100vw - 32px);z-index:45}
+/* in Chat view the toast sits above the input bar, not on it */
+html:has(.shell.simple) .toast{bottom:calc(var(--composerH,140px) + 12px)}
+.toast button{background:none;border:0;color:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
+@media (prefers-reduced-motion:no-preference){.row{transition:background .12s,border-color .12s}}

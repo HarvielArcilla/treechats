@@ -1,0 +1,52 @@
+/* Include as and the excerpt highlighter. */
+
+/* send modes */
+.menu button.two{white-space:normal;display:grid;gap:1px}
+.menu button.two small{color:var(--muted);font-size:.74rem;line-height:1.3}
+.menu button.radio{padding-left:24px;position:relative}
+.menu button.radio[aria-checked="true"]::before{content:'✓';position:absolute;left:8px;top:7px;color:var(--accent);font-weight:700}
+button.sendtag{cursor:pointer;font:inherit;border:0}
+button.tag.sendtag{background:var(--accent-soft);color:var(--accent);font:500 .66rem var(--mono);text-transform:uppercase;letter-spacing:.05em;border-radius:3px;padding:1px 5px}
+.reply.unsent .rbody{opacity:.55}
+.sendnote{border:1px dashed var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:8px 10px;margin:6px 0 8px;display:grid;gap:6px;background:color-mix(in srgb, var(--accent-soft) 45%, transparent)}
+.sendnote .snhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:.84rem}
+.sendnote .snacts{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+.sendnote .note{margin:0}
+.sendnote .sntext{font-size:.9rem}
+.sendnote .sntext > :first-child{margin-top:0}.sendnote .sntext > :last-child{margin-bottom:0}
+.sendnote textarea{width:100%;font:inherit;font-size:.9rem;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);resize:vertical}
+.sendnote .bar{display:flex;gap:8px}
+.sendnote details summary{cursor:pointer;font-size:.82rem;color:var(--muted)}
+ol.ctx li.moded .ctog{color:var(--accent);visibility:visible}
+/* the excerpt highlighter */
+.exbox{width:min(980px,100%);grid-template-rows:auto minmax(0,1fr)}
+.exbox .cmptitle .note{white-space:normal;overflow:visible;text-overflow:clip}
+.exbody{overflow:auto;padding:14px 18px 18px;display:grid;gap:16px;align-content:start;min-height:0}
+.exside{display:grid;gap:6px}
+.exsidehead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.exsidehead h3{margin:0;font-size:.95rem}
+.exsidehead .bar{margin-left:auto;display:flex;gap:6px}
+.extext{white-space:pre-wrap;overflow-wrap:anywhere;font:.86rem/1.55 var(--mono);background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;max-height:46vh;overflow:auto;cursor:text;user-select:text;-webkit-user-select:text}
+.extext:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.extext mark.exhl{background:color-mix(in srgb, var(--accent) 30%, transparent);color:inherit;border-radius:3px;box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);cursor:pointer}
+.extext mark.exhl:hover{background:color-mix(in srgb, var(--danger) 25%, transparent)}
+.exfoot{display:grid;gap:10px;justify-items:start}
+.exfoot details{width:100%}
+.exfoot summary{cursor:pointer;color:var(--muted);font-size:.86rem}
+.expv{display:grid;gap:4px;margin-top:8px}
+.expv pre{white-space:pre-wrap;overflow-wrap:anywhere;font:.8rem/1.5 var(--mono);margin:0 0 6px;padding:8px 10px;border-radius:6px;background:var(--code-bg);max-height:30vh;overflow:auto}
+.note.warn{color:var(--danger)}
+html.lazy section.conv{content-visibility:auto;contain-intrinsic-size:auto 900px}
+
+.qlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.qrow{display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr) auto auto;gap:4px 12px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.qrow.on{background:var(--surface)}
+.qrow .chk{font-size:.88rem}
+.qrow .danger{color:var(--danger)}
+.qhint{font-size:.78rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qmove{display:flex;gap:4px;min-width:62px;justify-content:flex-end}
+@media (max-width:640px){.qrow{grid-template-columns:minmax(0,1fr) auto}.qrow .qhint,.qrow kbd{display:none}}
+html.compact .row{padding:3px 8px;margin:0}
+html.compact .wrap{gap:12px}
+html.compact .card{padding:11px;gap:8px}
+html.motion-off *, html.motion-off *::before, html.motion-off *::after{transition:none !important;animation:none !important}

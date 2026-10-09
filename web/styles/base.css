@@ -1,0 +1,199 @@
+/* Layout, the top bar, buttons and shared pieces. */
+
+/* Layout: spaces sidebar on the left (a drawer on narrow screens), the conversation tree in the middle with git-graph lanes, inspector on the right */
+:root{
+  --bg:#EDF0ED; --surface:#FAFBF9; --fg:#18201D; --muted:#5A6761; --line:#CDD6D1;
+  --accent:#2350D8; --accent-soft:#DFE7FB; --on-accent:#FFFFFF;
+  --merge:#9A5B00; --merge-soft:#F6E8D2; --danger:#B8342F; --danger-soft:#F7DEDC;
+  --summary:#6B4FB3; --summary-soft:#E9E3F6;
+  --l0:#2350D8; --l1:#0E8A6A; --l2:#B86A00; --l3:#8A3FB5;
+  --reply-bg:#F1EEE6; --reply-rule:#8A6A2E; --code-bg:#E6E9E5; --side:#E2E8E3; --panel:#E8EDE9; --shadow:rgba(20,30,25,.16);
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#101513; --surface:#171E1B; --fg:#E3E9E5; --muted:#93A19A; --line:#2B3732;
+  --accent:#7C9BFF; --accent-soft:#1D2946; --on-accent:#0C1224;
+  --merge:#E3A64E; --merge-soft:#33260F; --danger:#F07A70; --danger-soft:#3A1917;
+  --summary:#B59DF2; --summary-soft:#261F3A;
+  --l0:#7C9BFF; --l1:#4CC9A2; --l2:#E3A64E; --l3:#C58BEB; --reply-bg:#1E1C17; --reply-rule:#D2B173; --code-bg:#0E1311; --side:#0B100E; --panel:#0E1311; --shadow:rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101513; --surface:#171E1B; --fg:#E3E9E5; --muted:#93A19A; --line:#2B3732;
+  --accent:#7C9BFF; --accent-soft:#1D2946; --on-accent:#0C1224;
+  --merge:#E3A64E; --merge-soft:#33260F; --danger:#F07A70; --danger-soft:#3A1917;
+  --summary:#B59DF2; --summary-soft:#261F3A;
+  --l0:#7C9BFF; --l1:#4CC9A2; --l2:#E3A64E; --l3:#C58BEB; --reply-bg:#1E1C17; --reply-rule:#D2B173; --code-bg:#0E1311; --side:#0B100E; --panel:#0E1311; --shadow:rgba(0,0,0,.5); color-scheme:dark}
+
+*{box-sizing:border-box}
+html{font-size:16px}
+body{margin:0;background:var(--bg);color:var(--fg);font:.9375rem/1.5 var(--body)}
+.shell{display:grid;grid-template-columns:minmax(0,1fr);min-height:100vh}
+.main{padding-inline:16px;padding-block:20px 80px;min-width:0;container:main / inline-size}
+@media (min-width:1100px){
+  .shell{--sw:236px;--cw:268px;grid-template-columns:var(--sw) var(--cw) minmax(0,1fr)}
+  .shell.hide-spaces{--sw:0px}
+  .shell.hide-convs{--cw:0px}
+  .shell.hide-spaces .side,.shell.hide-convs .convs{visibility:hidden;padding-inline:0;border-right-width:0}
+}
+@media (min-width:1100px) and (prefers-reduced-motion:no-preference){
+  .shell{transition:grid-template-columns .26s cubic-bezier(.2,.75,.2,1)}
+  .side,.convs{transition:visibility 0s, padding .26s}
+  .shell.hide-spaces .side,.shell.hide-convs .convs{transition:visibility 0s .26s, padding .26s}
+}
+button,textarea,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:18px}
+
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.titlerow{display:flex;align-items:center;gap:8px;min-width:0}
+.eyebrow{font:500 .7rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 4px}
+.btn.icon{padding:4px 9px;font-size:1rem;line-height:1}
+/* sticky app bar: actions are always in reach, and the app name shows here whenever the spaces panel is out of view */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;display:flex;align-items:center;gap:6px;margin:-20px -16px 14px;padding:10px 16px;background:var(--bg);border-bottom:1px solid transparent;transition:border-color .2s}
+.topbar.scrolled{border-bottom-color:var(--line)}
+.tb-brand{display:flex;align-items:center;gap:7px;font:700 1.12rem var(--display);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;max-width:0;opacity:0;transform:translateX(-8px);margin-right:0}
+.tb-brand svg{width:20px;height:20px;flex:none}
+.tb-spacer{flex:1}
+.topbar .ico{display:none}
+/* the app name sits at the top of the left-most open sidebar, and in the top bar when both are closed */
+.brand.cbrand,.stitle{display:none}
+@media (min-width:1100px){
+  .shell.hide-spaces.hide-convs .tb-brand{max-width:170px;opacity:1;transform:none;margin-right:6px}
+  .shell.hide-spaces:not(.hide-convs) .brand.cbrand{display:flex}
+}
+@media (min-width:1100px){
+  .shell:not(.hide-spaces) #spacesBtn{display:none}
+  .shell:not(.hide-convs) #convsBtn{display:none}
+  .toSpaces{display:none}
+}
+@media (max-width:1099px){
+  .tb-brand{max-width:170px;opacity:1;transform:none;margin-right:6px}
+  #spacesBtn{display:none}
+}
+.topbar .btn{white-space:nowrap;flex:none}
+/* as the main column narrows, the smaller buttons drop their words first, then everything does */
+@container main (max-width:900px){
+  #undoBtn .lbl,#redoBtn .lbl,#mapBtn .lbl,#paletteBtn .lbl,#settingsBtn .lbl,.topbar .tbk{display:none}
+  #undoBtn .ico,#redoBtn .ico,#mapBtn .ico,#paletteBtn .ico,#settingsBtn .ico{display:inline}
+}
+@container main (max-width:620px){
+  .topbar .lbl{display:none}
+  .topbar .tbk{display:none}
+  .topbar .ico{display:inline}
+  #convsBtn .lbl{display:none}
+}
+@media (prefers-reduced-motion:no-preference){
+  .tb-brand{transition:max-width .26s cubic-bezier(.2,.75,.2,1), opacity .22s, transform .26s cubic-bezier(.2,.75,.2,1), margin .26s}
+}
+.cvtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cvbar{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
+.cvbar .cvview{flex:none}
+.cvbar .cvviewlabel{font:600 .72rem var(--body);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-left:4px}
+.cvbar .cvsort{color:var(--muted);border-color:transparent;background:none;white-space:nowrap}
+.cvbar .cvsort:hover{color:var(--fg);border-color:var(--line)}
+.cvbar .pill{font:.68rem var(--mono);color:var(--muted);margin-left:3px}
+.cvsec.cvdate{font:600 .72rem var(--body);text-transform:none;letter-spacing:0;padding-top:12px}
+.pin{width:12px;height:12px;color:var(--muted);margin-right:5px;vertical-align:-1px;flex:none}
+.cvtag{font:500 .62rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:1px}
+.cv.archived .cvmain{opacity:.75}
+.cvbar .cvviewbtn{padding-left:4px}
+.menu .mh{margin-top:4px}
+.udot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:1px;flex:none}
+.cv.unread .cvname{font-weight:700;color:var(--fg)}
+.cv.dropabove{box-shadow:inset 0 2px 0 var(--accent)}
+.cv.dropbelow{box-shadow:inset 0 -2px 0 var(--accent)}
+.setbox.ssheet{width:min(640px,100%)}
+.slist{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.srow{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);flex-wrap:wrap}
+.srow.paused{opacity:.7}
+.smain{display:grid;gap:2px;min-width:0;flex:1 1 260px}
+.smain b{font-size:.9rem;overflow-wrap:anywhere}
+.smain .note{font-size:.78rem;overflow-wrap:anywhere}
+.serr{color:var(--danger)}
+.sacts{display:flex;gap:4px;flex-wrap:wrap}
+.sempty{margin-top:12px}
+.sform{display:grid;gap:12px;padding-top:12px}
+.sform textarea,.sform input,.sform select{font:inherit;font-weight:400!important;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.sfset{border:1px solid var(--line);border-radius:10px;padding:8px 12px 12px;display:grid;gap:8px;margin:0}
+.sfset legend{font-size:.84rem;font-weight:600;padding:0 4px}
+.sradio{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:baseline;font-size:.88rem;cursor:pointer}
+.sradio .note{grid-column:2;font-size:.78rem}
+.srowin{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.srowin .inl{display:flex;gap:6px;align-items:center;font-size:.86rem}
+.srowin input[type=number]{width:72px}
+.archnote{margin:4px 0 0;font-size:.8rem;color:var(--muted);display:flex;gap:8px;align-items:center}
+.cvtools:empty{display:none}
+.cvtools .btn.xs{display:inline-flex;align-items:center;gap:5px}
+.cvtools .btn.xs svg{width:13px;height:13px}
+.cvtools .pill{font:.68rem var(--mono);color:var(--muted);background:var(--bg);border-radius:8px;padding:0 6px}
+.cvtools.selecting{display:grid;gap:8px;padding:10px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:10px}
+.seltop{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.seltop .count{font:600 .8rem var(--body);color:var(--accent);margin-right:auto}
+.selacts{display:flex;flex-wrap:wrap;gap:6px}
+.selhint{margin:0;font-size:.76rem;color:var(--muted)}
+.selfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid color-mix(in srgb, var(--accent) 30%, transparent);padding-top:8px}
+.btn.xs.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.vis{flex:none;width:28px;height:28px;margin-left:2px;border:0;background:none;cursor:pointer;border-radius:6px;display:grid;place-items:center}
+.vis::before{content:"";width:11px;height:11px;border-radius:50%;border:2px solid var(--accent);background:var(--accent);box-sizing:border-box}
+.vis[aria-pressed="false"]::before{background:transparent;border-color:color-mix(in srgb, var(--muted) 70%, transparent)}
+.vis:hover{background:var(--bg)}
+.cv.off .cvmain{opacity:.5}
+.cv.off .cvname{color:var(--muted)}
+.cvtools.choosing{display:grid;gap:8px;padding:10px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:10px}
+@media (prefers-reduced-motion:no-preference){.cvtools.choosing,.cvtools.selecting{animation:toolsIn .26s ease-out}@keyframes toolsIn{from{border-color:transparent;background:transparent}}}
+.cvtools.choosing .count{color:var(--accent);font:600 .8rem var(--body);padding:0}
+ul.convlist.choosing .cvmain{cursor:pointer}
+ul.convlist.choosing .cv:hover{background:color-mix(in srgb, var(--accent-soft) 70%, transparent)}
+ul.convlist.choosing .cv .cvmain{padding-block:7px}
+@media (prefers-reduced-motion:no-preference){.vis::before{transition:background .15s, border-color .15s}.cv .cvmain{transition:opacity .2s}}
+.cvtools .count{font:.74rem var(--mono);color:var(--muted);margin-right:auto;padding-left:4px}
+.cvtools:not(.choosing):not(.selecting) .count{flex-basis:100%}
+.cvbtns{display:flex;gap:4px;width:100%;min-width:0}
+.vishead{display:flex;align-items:baseline;justify-content:space-between;width:100%;padding:0 4px}
+.vislabel{font:500 .68rem var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.vishead .count{flex-basis:auto !important;padding:0;margin:0 0 0 auto}
+.vismodes{display:grid;grid-template-columns:repeat(2,1fr);width:100%;padding:3px;gap:2px;background:var(--bg);border:1px solid var(--line);border-radius:9px}
+.vm{border:0;background:none;border-radius:6px;padding:5px 0;font-size:.82rem;cursor:pointer;color:var(--muted)}
+.vm:hover{color:var(--fg)}
+.vismodes{position:relative}
+.vmpill{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 4px);background:var(--surface);border-radius:6px;box-shadow:0 1px 3px var(--shadow)}
+.vismodes[data-mode="focus"] .vmpill{left:calc(50% + 1px)}
+.vm{position:relative;z-index:1}
+.vm[aria-pressed="true"]{color:var(--fg);font-weight:600}
+@media (prefers-reduced-motion:no-preference){.vm{transition:background .2s, color .2s, box-shadow .2s}}
+.vishint{margin:0;width:100%;font-size:.76rem;color:var(--muted);padding:0 4px}
+.pickacts{display:flex;flex-wrap:wrap;gap:4px;width:100%}
+.views{display:flex;flex-wrap:wrap;align-items:center;gap:4px;width:100%;padding:2px 0}
+.views .vislabel{margin-right:2px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:2px 10px;font-size:.78rem;cursor:pointer;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip:hover{background:var(--bg)}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip.add{border-style:dashed;color:var(--muted)}
+.chip.add:hover{color:var(--fg)}
+.viewinput{border:1px solid var(--accent);border-radius:12px;padding:2px 10px;font-size:.78rem;background:var(--surface);width:9em}
+.pickacts .btn.xs{flex:1 1 auto;justify-content:center;padding:4px 6px;white-space:nowrap}
+/* one-shot actions: no lingering accent border; a quick flash confirms the click instead */
+.pickacts .btn.xs:hover:not(:disabled){border-color:var(--line);background:var(--bg)}
+.pickacts .btn.xs:active{transform:scale(.97)}
+.pickacts .btn.xs:focus:not(:focus-visible){outline:none}
+.pickacts .btn.pickmode{border-color:var(--accent);color:var(--accent);font-weight:600;margin-right:6px;position:relative;flex:0 0 auto;min-width:5.2em}
+.pickacts .btn.pickmode::after{content:"";position:absolute;right:-6px;top:4px;bottom:4px;border-right:1px solid var(--line)}
+.pickacts .btn.pickmode:hover:not(:disabled){border-color:var(--accent);background:var(--accent-soft)}
+.pickacts .btn.pickmode[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+ul.convlist.choosing .cv{box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)}
+.cvbtns .btn.xs{flex:1 1 auto;justify-content:center;padding:4px 6px;white-space:nowrap;min-width:0}
+.offnote{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:6px;font-size:.82rem;color:var(--muted);padding:4px 8px 10px}
+.offnote .linkbtn{padding:2px 6px;font-size:.82rem;color:var(--accent)}
+.eye{flex:none;border:0;background:none;cursor:pointer;color:var(--muted);border-radius:6px;width:26px;height:26px;display:grid;place-items:center;opacity:0}
+.eye svg{width:15px;height:15px}
+.cv:hover .eye,.eye:focus-visible{opacity:1}
+.eye:hover{background:var(--bg);color:var(--fg)}
+@media (hover:none){.eye{opacity:1}}
+.cvcheck{flex:none;margin:0 2px 0 8px;width:16px;height:16px;accent-color:var(--accent)}
+.cv.checked{background:var(--accent-soft)}
+.conv{scroll-margin-top:calc(var(--barH,54px) + 18px)}
+/* scrolling to a turn keeps it clear of the top bar, and in Chat view of the input bar */
+#tree .row{scroll-margin-top:calc(var(--barH,54px) + 18px + env(safe-area-inset-top,0px))}
+.shell.simple #tree .row,.shell.simple #tree .reply{scroll-margin-bottom:calc(var(--composerH,140px) + 8px)}
+.hiddennote{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:.84rem;color:var(--muted);padding:8px 12px;border:1px dashed var(--line);border-radius:10px}

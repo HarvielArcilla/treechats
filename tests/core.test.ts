@@ -82,8 +82,11 @@ test('core: context changed lists changes in send order, names files, and ignore
 
 test('the page builds context with the shared core, loaded before its own script', () => {
   const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
-  const at = (s: string) => html.indexOf(s);
-  assert.ok(at('<script src="/sendmodes.js">') < at('<script src="/treecore.js">') && at('<script src="/treecore.js">') < at('\n<script>\n'));
+  const at = (x: string) => html.indexOf(x);
+  assert.ok(at('<script src="/sendmodes.js">') < at('<script src="/treecore.js">') && at('<script src="/treecore.js">') < at('<script src="/app.js">'));
+  /* the page's script is web/src, joined in the order of web/src/ORDER */
+  const dir = new URL('../web/src/', import.meta.url);
+  const page = readFileSync(new URL('ORDER', dir), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).map((f) => readFileSync(new URL(f.trim(), dir), 'utf8')).join('\n');
   for (const call of ['Core.turnsFor(', 'Core.entries(', 'Core.ctxSig(', 'Core.ctxChanges(', 'Core.settingsFor(', 'Core.contextPrompt(', 'Core.path(', 'Core.chain('])
-    assert.ok(html.includes(call), `the page uses ${call}`);
+    assert.ok(page.includes(call), `the page uses ${call}`);
 });

@@ -34,6 +34,8 @@ foundation once the agent interface has been tried on a real task, then everythi
 - Range selection (Shift-click) and picking prompts anywhere (Ctrl/⌘-click), each with a bar of what works on them
 - One context builder: the tree and the request a prompt sends are defined once (treecore.js) for the page, MCP and
   scheduled tasks
+- The page's script split by topic into web/src (joined into one script with a source map), and its styles into
+  web/styles, for people reading the code
 - The server owns the document: files kept on the server; changes sent as small ops with revisions and merged per
   unit, so tabs, agents and scheduled tasks never overwrite each other; every change pushed to open pages; Undo
   rebased over other writers' changes

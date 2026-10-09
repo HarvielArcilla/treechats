@@ -1,0 +1,68 @@
+/* Who wrote what, and lazy drawing of chats off screen. */
+
+/* Chat view: authorship marks sit above the message, so the actions under it keep the same spacing */
+.rtop{margin:0 0 4px}
+.rtop .edtag{margin-left:0}
+.ptop{display:flex;justify-content:flex-end;margin:0 0 4px}
+.ptop .edtag{margin-left:0}
+.fitmodes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px}
+.fitmodes>span{font-size:.82rem;color:var(--muted);margin-right:4px}
+.thinkbox{margin:0 0 8px;border-left:2px solid var(--line);padding:2px 0 2px 10px}
+.thinkbox summary{cursor:pointer;font-size:.8rem;color:var(--muted)}
+.thinkbox .rbody{font-size:.88em;color:var(--muted);margin-top:6px}
+.tag.settag{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
+.bset{margin:10px 0;padding-top:8px;border-top:1px solid var(--line)}
+.bsetlist{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:3px;font-size:.82rem}
+.bsetlist li{display:flex;justify-content:space-between;gap:10px}
+.bsetlist li>span:first-child{color:var(--muted)}
+.bsetlist .note{margin-left:4px}
+.bset textarea{width:100%;margin-bottom:6px}
+.bsrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;font-size:.84rem}
+.bsrow input,.bsrow select{width:9rem}
+.usage{margin:8px 0}
+.pe.sp .pe-head{gap:8px}
+.spname{flex:1;min-width:0;font-weight:600}
+.rvlinks{display:inline-flex;gap:4px}
+.rvlinks .linkbtn{font-size:.8rem;padding:2px 6px}
+.fan.review .segs{margin:4px 0 8px}
+.row.inrange{background:var(--accent-soft);border-color:color-mix(in srgb, var(--accent) 35%, var(--line))}
+.rangebar{flex-wrap:wrap;background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+.rangebar .btn{background:var(--surface);color:var(--fg);border-color:var(--line)}
+.rgacts{display:flex;flex-wrap:wrap;gap:6px}
+.pinplace{margin-left:auto;font-size:.8rem}
+.rwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.offbr{margin:2px 0 6px 18px}
+.offbr .linkbtn{font-size:.78rem;padding:3px 6px}
+.ctxwrap{display:inline-flex;align-items:baseline;gap:6px;margin-left:auto;font-size:.76rem;color:var(--muted)}
+.ctxmark{font:inherit;color:var(--muted)}
+.ctxwrap .linkbtn{font-size:inherit}
+.ractrow .ctxwrap{opacity:1}
+.fan.replay .note{margin:4px 0 8px}
+.mapshow{border:0;background:none;cursor:pointer;color:var(--accent);font:inherit;padding:4px 6px;border-radius:6px}
+.mapshow:hover{background:var(--accent-soft)}
+.ovmap.collapsed{padding-bottom:6px}
+.ovmap.collapsed #ovSvg,.ovmap.collapsed [data-maphide],.ovmap:not(.collapsed) .mapshow{display:none}
+.ovhead{display:flex;justify-content:space-between;align-items:center;font:500 .7rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+#ovSvg{display:block;margin:0 auto;cursor:pointer;max-width:100%}
+#ovSvg .mrow:hover{fill:var(--accent-soft)}
+.mapbox{width:min(980px,100%)}
+.mapbody{overflow:auto;padding:12px 18px 18px;min-height:0}
+.mapgraph{position:relative}
+.mapgraph > svg{position:absolute;left:0;top:0;pointer-events:none}
+.maprows{display:grid}
+.maprow{display:flex;align-items:center;gap:8px;min-width:0;border:0;border-radius:6px;background:none;color:var(--fg);font:inherit;font-size:.86rem;text-align:left;cursor:pointer;padding-right:8px}
+.maprow:hover,.maprow:focus-visible{background:var(--accent-soft);outline:none}
+.maprow.sel{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.maprow.off{color:var(--muted)}
+.maprow .mid{font:.72rem var(--mono);color:var(--muted);flex:none}
+.maprow .mtxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.maprow .mtags{display:flex;gap:4px;flex:none}
+.maprow.merge .mtxt{font-size:.8rem;color:var(--muted)}
+.pes{display:grid;gap:14px}
+.pes textarea{width:100%;min-height:5.5em;resize:vertical;font:.84rem/1.45 var(--mono)}
+.pefmt code{font:.76rem var(--mono);background:var(--code-bg);padding:1px 4px;border-radius:3px;overflow-wrap:anywhere}
+.maplegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.76rem;color:var(--muted);padding:0 18px 12px}
+/* conversations off screen skip layout and painting until you scroll to them (html.lazy, set by the script). A chat
+   drawn at its real height when it comes on screen is a different height from its estimate, and the browser has to
+   keep the page still while that happens. Chrome and Firefox do; Safari didn't before version 27, and since then it
+   moves the page further the more chats come on screen at once (so more when zoomed out). So not in Safari. */

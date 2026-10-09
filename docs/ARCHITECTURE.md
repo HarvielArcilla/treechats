@@ -1,7 +1,10 @@
 # Architecture
 
 ```
-web/index.html          the app: tree model, operations and screens (ported from the claude.ai version)
+web/index.html          the page's markup
+web/src/                the page's script, in files by topic, joined in order into /app.js (see web/src/README.md)
+web/styles/             the page's styles
+scripts/app-script.ts   the Vite plugin that joins web/src into app.js, with a source map
 web/markdown.js         renders replies: Markdown, math (KaTeX), highlighted code
 web/public/sendmodes.js  Include as rules: what each turn sends in each mode (shared with the server)
 web/public/treecore.js  the tree and the context a prompt sends: path, merge notes, model settings, the request,
@@ -77,8 +80,10 @@ another site can't do without a CORS preflight that Treechats doesn't answer.
 | `POST /api/folder/run` | Runs a command in a linked folder; refused unless Settings › System allows it and the folder is linked, both checked against the saved state. Secrets in the output are hidden |
 | `POST /api/sessions/list`, `/read`, `/parse` | Claude Code and Codex session logs as chats (server/sessions.ts), read-only |
 
-## Why the app is still one file
+## How the page's script is organised
 
-The page is the claude.ai artifact version running unchanged behind a small shim, so everything works locally
-from day one. The next phase splits it into modules (see the roadmap); the shim marks exactly the seam between
-the app and its environment.
+The page began as a single-file claude.ai artifact. Its script is now split by topic into `web/src`, and the files
+are joined back into one script (`app.js`), so they share one scope and need no imports: the code moved without being
+rewritten. A source map keeps errors pointing at the right file. Turning files into ES modules with imports, one at a
+time, is the natural next step where it helps; the shared files in `web/public` are already used by the server as
+modules. `local-shim.js` marks the seam between the app and its environment (the server).
